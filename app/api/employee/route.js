@@ -3,16 +3,18 @@ import connectDB from "@/lib/mongoose";
 import Employee from "@/models/Employee";
 import User from "@/models/User";
 import bcrypt from "bcryptjs";
+import fs from "fs";
+import path from "path";
+import { EMPLOYEE_UPLOAD_DIR } from "@/lib/uploadConfig";
 
-export async function GET(request) {
+export async function GET(req) {
   try {
     await connectDB();
-    const { searchParams } = new URL(request.url);
-    const orgId = searchParams.get("orgId");
-
+    const { searchParams } = new URL(req.url);
     const page = parseInt(searchParams.get("page")) || 1;
-    const limit = parseInt(searchParams.get("limit")) || 10;
+    const limit = parseInt(searchParams.get("limit")) || 20;
     const skip = (page - 1) * limit;
+    const orgId = searchParams.get("orgId");
 
     const [employees, total] = await Promise.all([
       Employee.find({ orgId }).skip(skip).limit(limit),
@@ -25,85 +27,115 @@ export async function GET(request) {
         page,
         limit,
         total,
+        totalPages: Math.ceil(total / limit),
       },
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      },
+      { status: 200 },
     );
-  } catch (error) {
-    console.error("Error fetching employee:", error);
-    return NextResponse.json("Failed to fetch employee", { status: 500 });
+  } catch (err) {
+    console.error("Error fetching employees:", err);
+    return NextResponse.json(
+      { message: "Something went wrong!" },
+      { status: 500 },
+    );
   }
 }
 
-export async function POST(request) {
-  try {
-    await connectDB();
-    const body = await request.json();
-    const name = body.name;
-    const email = body.email;
-    const phone = body.phone;
-    const photo = body.photo;
-    const designation = body.designation;
-    const isManager = body.isManager;
-    const status = "Active";
-    const reportingManager = body.reportingManager;
-    const reportingTo = body.reportingTo;
-    const orgId = body.orgId;
-    let empId = "EMP" + Date.now(); // Simple ID generation
-    const password = body.password;
-    const configName = "EMP_ID";
+function sanitizeFileName(name) {
+  return name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+}
 
-    const config = await Config.findOne({ name: configName, orgId });
-    if (config) {
-      empId = config.prefix + config.suffix;
+export async function POST(req) {
+  await connectDB();
+  try {
+    const formData = await req.formData();
+
+    const name = formData.get("name");
+    const email = formData.get("email");
+    const phone = formData.get("phone");
+    const empId = formData.get("employeeId");
+    const orgId = formData.get("orgId");
+
+    const [existingEmpId, existingEmail] = await Promise.all([
+      Employee.findOne({ empId, orgId }),
+      Employee.findOne({ email, orgId }),
+    ]);
+
+    if (existingEmpId) {
+      return NextResponse.json(
+        { message: `Employee ID "${empId}" is already in use.` },
+        { status: 409 },
+      );
     }
-    const employee = new Employee({
+    if (existingEmail) {
+      return NextResponse.json(
+        { message: `Email "${email}" is already in use.` },
+        { status: 409 },
+      );
+    }
+
+    const file = formData.get("photo");
+    let fileName = "";
+    if (file && typeof file !== "string" && file.size > 0) {
+      if (!fs.existsSync(EMPLOYEE_UPLOAD_DIR)) {
+        fs.mkdirSync(EMPLOYEE_UPLOAD_DIR, { recursive: true });
+      }
+      const originalName = sanitizeFileName(file.name || "upload.jpg");
+      fileName = `${Date.now()}-${originalName}`;
+      const filePath = path.join(EMPLOYEE_UPLOAD_DIR, fileName);
+
+      const bytes = await file.arrayBuffer();
+      const buffer = Buffer.from(bytes);
+      fs.writeFileSync(filePath, buffer);
+    }
+
+    const emp = await Employee.create({
       name,
       empId,
-      email,
       phone,
-      photo,
-      designation,
-      isManager,
-      status,
-      reportingManager,
-      reportingTo,
+      email,
+      designation: formData.get("designation"),
+      isManager: formData.get("isManager") === "true",
+      reportingManager: formData.get("managerName") || "",
       orgId,
+      photo: fileName,
     });
-    const createdEmployee = await employee.save();
-    if (createdEmployee) {
-      //increment the suffix in the config
-      if (config) {
-        config.suffix = (parseInt(config.suffix) + 1).toString();
-        await config.save();
-      }
+
+    if (emp) {
+      const hashedPassword = await bcrypt.hash("emp@1", 10);
 
       let role = "USER";
+      if (emp.isManager) role = "MANAGER";
+      if (emp.designation === "Director") role = "ADMIN";
+      if (emp.designation === "ACCOUNTANT") role = "ACCOUNTANT";
 
-      if (createdEmployee.designation === "Manager") {
-        role = "MANAGER";
-      } else if (
-        createdEmployee.designation === "DIRECTOR" ||
-        createdEmployee.designation === "MANAGING DIRECTOR"
-      ) {
-        role = "ADMIN";
-      }
-      const user = new User({
-        username: empId,
-        password: bcrypt.hashSync(password, 10),
-        role,
+      await User.create({
+        username: emp.empId,
+        password: hashedPassword,
+        employeeName: emp.name,
         status: "Active",
+        role,
         isFirstLogin: true,
-        employeeId: createdEmployee._id,
-        orgId,
+        orgId: emp.orgId,
       });
-      await user.save();
     }
-    return NextResponse.json("Employee created successfully", { status: 201 });
-  } catch (error) {
-    console.error("Error creating employee:", error);
-    return NextResponse.json("Failed to create employee", { status: 500 });
+
+    return NextResponse.json(
+      { message: "Employee created successfully", empId },
+      { status: 201 },
+    );
+  } catch (err) {
+    console.error("Error in employee creation:", err);
+
+    if (err.code === 11000) {
+      return NextResponse.json(
+        { message: "An employee with this ID or email already exists." },
+        { status: 409 },
+      );
+    }
+
+    return NextResponse.json(
+      { message: "Failed to create employee" },
+      { status: 500 },
+    );
   }
 }

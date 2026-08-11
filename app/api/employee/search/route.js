@@ -1,41 +1,45 @@
 import { NextResponse } from "next/server";
 import connectDB from "@/lib/mongoose";
-import Holiday from "@/models/Holiday";
+import Employee from "@/models/Employee";
 
 export async function GET(request) {
   try {
     await connectDB();
     const { searchParams } = new URL(request.url);
     const orgId = searchParams.get("orgId");
-    const year = parseInt(searchParams.get("year"));
     const q = searchParams.get("q");
     const page = parseInt(searchParams.get("page")) || 1;
     const limit = parseInt(searchParams.get("limit")) || 10;
     const skip = (page - 1) * limit;
 
     const query = { orgId };
-    if (!isNaN(year)) {
-      query.year = year;
-    }
 
     if (q && q.trim() !== "") {
       const regex = new RegExp(q.trim(), "i");
-      query.$or = [{ name: regex }, { note: regex }];
+      query.$or = [
+        { name: regex },
+        { empId: regex },
+        { email: regex },
+        { phone: regex },
+        { designation: regex },
+        { reportingManager: regex },
+        { status: regex },
+      ];
     }
 
-    const [holidays, total] = await Promise.all([
-      Holiday.find(query).skip(skip).limit(limit),
-      Holiday.countDocuments(query),
+    const [employees, total] = await Promise.all([
+      Employee.find(query).skip(skip).limit(limit),
+      Employee.countDocuments(query),
     ]);
 
     return NextResponse.json(
-      { holidays, page, limit, total, totalPages: Math.ceil(total / limit) },
+      { employees, page, limit, total },
       { status: 200 },
     );
   } catch (error) {
-    console.error("Error searching holidays:", error);
+    console.error("Error searching employees:", error);
     return NextResponse.json(
-      { error: "Failed to search holidays" },
+      { error: "Failed to search employees" },
       { status: 500 },
     );
   }

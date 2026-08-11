@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 const leaveRequestSchema = new mongoose.Schema(
   {
-    _id: mongoose.Types.ObjectId,
+    //_id: mongoose.Types.ObjectId,
     userId: { type: mongoose.Types.ObjectId, ref: "User", required: true },
     leaveType: {
       type: String,

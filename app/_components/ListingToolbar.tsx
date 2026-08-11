@@ -21,6 +21,11 @@ type ListingToolbarProps = {
 
   searchPlaceholder?: string;
   rightSlot?: ReactNode;
+
+  // Optional year filter — only renders when both props are provided
+  selectedYear?: number;
+  onYearChange?: (year: number) => void;
+  yearRange?: number; // years before/after current year to show, default 5
 };
 
 export default function ListingToolbar({
@@ -37,7 +42,20 @@ export default function ListingToolbar({
   addLabel = "Add New",
   searchPlaceholder = "Search...",
   rightSlot,
+  selectedYear,
+  onYearChange,
+  yearRange = 1,
 }: ListingToolbarProps) {
+  const showYearFilter = selectedYear !== undefined && onYearChange !== undefined;
+
+  const currentYear = new Date().getFullYear();
+  const years: number[] = [];
+  if (showYearFilter) {
+    for (let y = currentYear - yearRange; y <= currentYear + yearRange; y++) {
+      years.push(y);
+    }
+  }
+
   return (
     <div className="mb-4 flex flex-col gap-3 rounded-lg border bg-white p-4 md:flex-row md:items-center md:justify-between">
       <div className="w-full md:max-w-sm">
@@ -51,6 +69,20 @@ export default function ListingToolbar({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 md:justify-end">
+        {showYearFilter && (
+          <select
+            value={selectedYear}
+            onChange={(e) => onYearChange!(Number(e.target.value))}
+            className="rounded-md border px-3 py-2 text-sm outline-none focus:border-blue-500"
+          >
+            {years.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+        )}
+
         <select
           value={pageSize}
           onChange={(e) => onPageSizeChange(Number(e.target.value))}

@@ -1,3 +1,7 @@
+import { NextResponse } from "next/server";
+import connectDB from "@/lib/mongoose";
+import Holiday from "@/models/Holiday";
+
 export async function GET(request) {
   try {
     await connectDB();
@@ -42,12 +46,14 @@ export async function POST(request) {
   try {
     await connectDB();
     const body = await request.json();
-    const { name, date, year, note, orgId } = body;
+    const { name, date, year, note, orgId, isRecurring, isOptional } = body;
 
     const holiday = new Holiday({
       name,
       date,
-      year: year ? year : new Date().getFullYear(), // Only set year if provided
+      isRecurring: isRecurring === true || isRecurring === "true",
+      isOptional: isOptional === true || isOptional === "true",
+      year: year ? year : new Date().getFullYear(),
       note,
       orgId,
     });

@@ -1,95 +1,121 @@
 "use client";
+import ListingToolbar from "@/app/_components/ListingToolbar";
+import PageHeader from "@/app/_components/PageHeader";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import React, { useEffect, useState } from "react";
+import { CURRENT_USER_ID, ORG_ID } from "@/lib/constants";
 
-import { useState } from "react";
-import Link from "next/link";
-import React from "react";
+export async function fetchLeaves({
+  orgId,
+  userId,
+  page,
+  limit,
+  search,
+}: {
+  orgId: string;
+  userId: string;
+  page: number;
+  limit: number;
+  search: string;
+}) {
+  const res = await fetch(
+    `/api/leave/search?orgId=${orgId}&userId=${userId}&page=${page}&limit=${limit}&search=${search}`,
+  );
 
-// Leave status types
-type LeaveStatus = "Approved" | "Rejected" | "Requested";
+  if (!res.ok) {
+    throw new Error("Failed to fetch leaves");
+  }
 
-// Leave data structure
-interface LeaveRequest {
-  id: string;
-  employeeName: string;
-  employeeId: string;
-  department: string;
-  leaveType: "Annual" | "Sick" | "Casual" | "Unpaid" | "Other";
-  startDate: string;
-  endDate: string;
-  totalDays: number;
-  reason: string;
-  status: LeaveStatus;
-  submittedDate: string;
+  return res.json();
 }
 
-// Mock data - Replace with your API call
-const mockLeaves: LeaveRequest[] = [
-  {
-    id: "1",
-    employeeName: "John Doe",
-    employeeId: "EMP001",
-    department: "Engineering",
-    leaveType: "Annual",
-    startDate: "2024-01-15",
-    endDate: "2024-01-19",
-    totalDays: 5,
-    reason: "Family vacation",
-    status: "Approved",
-    submittedDate: "2024-01-01",
-  },
-  {
-    id: "2",
-    employeeName: "John Doe",
-    employeeId: "EMP001",
-    department: "Engineering",
-    leaveType: "Sick",
-    startDate: "2024-02-10",
-    endDate: "2024-02-12",
-    totalDays: 3,
-    reason: "Medical treatment",
-    status: "Rejected",
-    submittedDate: "2024-02-05",
-  },
-  {
-    id: "3",
-    employeeName: "John Doe",
-    employeeId: "EMP001",
-    department: "Engineering",
-    leaveType: "Casual",
-    startDate: "2024-03-05",
-    endDate: "2024-03-06",
-    totalDays: 2,
-    reason: "Personal errands",
-    status: "Requested",
-    submittedDate: "2024-03-01",
-  },
-  {
-    id: "4",
-    employeeName: "John Doe",
-    employeeId: "EMP001",
-    department: "Engineering",
-    leaveType: "Unpaid",
-    startDate: "2024-04-20",
-    endDate: "2024-04-25",
-    totalDays: 6,
-    reason: "Wedding ceremony",
-    status: "Approved",
-    submittedDate: "2024-04-01",
-  },
-];
+async function fetchLeaveInfo({
+  orgId,
+  userId,
+  year,
+}: {
+  orgId: string;
+  userId: string;
+  year: number;
+}) {
+  const res = await fetch(
+    `/api/leave/info?orgId=${orgId}&userId=${userId}&year=${year}`,
+  );
+  if (!res.ok) {
+    throw new Error("Failed to fetch leave info");
+  }
+  return res.json();
+}
 
-// Status badge component
-function StatusBadge({ status }: { status: LeaveStatus }) {
-  const statusStyles = {
-    Approved: "bg-green-100 text-green-800 border-green-200",
-    Rejected: "bg-red-100 text-red-800 border-red-200",
-    Requested: "bg-blue-100 text-blue-800 border-blue-200",
+interface LeaveRequestRow {
+  _id: string;
+  userId: string;
+  leaveType: string;
+  startDate: string;
+  endDate: string;
+  days: number;
+  reason?: string;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  approvedBy?: string;
+  approvedAt?: string;
+  rejectionReason?: string;
+}
+
+interface LeaveCardStat {
+  label: string;
+  allocated: number;
+  availed: number;
+  balance: number;
+}
+
+function LeaveCard({ stat }: { stat: LeaveCardStat }) {
+  return (
+    <Card className="shadow-sm">
+      <CardContent className="p-4 space-y-3">
+        <p className="text-sm font-semibold text-gray-800">{stat.label}</p>
+
+        <div className="flex flex-col gap-2">
+          <div className="rounded-md bg-blue-50 px-3 py-2 flex items-center justify-between">
+            <p className="text-xs font-medium text-blue-700">Allocated</p>
+            <p className="text-base font-bold text-blue-900">{stat.allocated}</p>
+          </div>
+
+          <div className="rounded-md bg-green-50 px-3 py-2 flex items-center justify-between">
+            <p className="text-xs font-medium text-green-700">Balance</p>
+            <p className="text-base font-bold text-green-900">{stat.balance}</p>
+          </div>
+
+          <div className="rounded-md bg-orange-50 px-3 py-2 flex items-center justify-between">
+            <p className="text-xs font-medium text-orange-700">Availed</p>
+            <p className="text-base font-bold text-orange-900">{stat.availed}</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    pending: "bg-yellow-50 text-yellow-700 border-yellow-200",
+    approved: "bg-green-50 text-green-700 border-green-200",
+    rejected: "bg-red-50 text-red-700 border-red-200",
+    cancelled: "bg-gray-50 text-gray-700 border-gray-200",
   };
-
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${
-        statusStyles[status]
+      className={`inline-block px-2 py-1 rounded-md text-xs font-medium border capitalize ${
+        styles[status] || styles.pending
       }`}
     >
       {status}
@@ -97,226 +123,219 @@ function StatusBadge({ status }: { status: LeaveStatus }) {
   );
 }
 
-// Format date helper
-function formatDate(dateString: string) {
-  const date = new Date(dateString);
-  return date.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
 export default function LeavesPage() {
-  const [leaves, setLeaves] = useState<LeaveRequest[]>(mockLeaves);
-  const [isLoading, setIsLoading] = useState(true);
-  const [filterStatus, setFilterStatus] = useState<LeaveStatus | "All">("All");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+  const currentYear = new Date().getFullYear();
 
-  // Fetch leaves from API (replace with your actual API call)
-  React.useEffect(() => {
-    async function fetchLeaves() {
-      try {
-        // Example API call:
-        // const res = await fetch("/api/leaves");
-        // const data = await res.json();
-        // setLeaves(data);
-        
-        // Simulate API delay
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        setLeaves(mockLeaves);
-      } catch (error) {
-        console.error("Failed to fetch leaves:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    }
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["leaves", ORG_ID, CURRENT_USER_ID, page, limit, search],
+    queryFn: () =>
+      fetchLeaves({
+        orgId: ORG_ID,
+        userId: CURRENT_USER_ID,
+        page,
+        limit,
+        search,
+      }),
+    placeholderData: keepPreviousData,
+  });
 
-    fetchLeaves();
-  }, []);
+  const leavesData: LeaveRequestRow[] = data?.leaves ?? [];
+  const totalRecords: number = data?.total ?? 0;
 
-  // Filter leaves by status
-  const filteredLeaves =
-    filterStatus === "All"
-      ? leaves
-      : leaves.filter((leave) => leave.status === filterStatus);
+  const { data: leaveInfo, isLoading: leaveInfoLoading } = useQuery({
+    queryKey: ["leave-info", ORG_ID, CURRENT_USER_ID, currentYear],
+    queryFn: () =>
+      fetchLeaveInfo({ orgId: ORG_ID, userId: CURRENT_USER_ID, year: currentYear }),
+  });
 
-  // Calculate statistics
-  const stats = {
-    total: leaves.length,
-    approved: leaves.filter((l) => l.status === "Approved").length,
-    rejected: leaves.filter((l) => l.status === "Rejected").length,
-    requested: leaves.filter((l) => l.status === "Requested").length,
+  const casualAllocated = leaveInfo?.casual ?? 0;
+  const casualAvailed = leaveInfo?.usedCasual ?? 0;
+  const sickAllocated = leaveInfo?.sick ?? 0;
+  const sickAvailed = leaveInfo?.usedSick ?? 0;
+  const earnedAllocated = leaveInfo?.earned ?? 0;
+  const earnedAvailed = leaveInfo?.usedEarned ?? 0;
+  const maternityAllocated = leaveInfo?.maternity ?? 0;
+  const maternityAvailed = leaveInfo?.usedMaternity ?? 0;
+  const paternityAllocated = leaveInfo?.paternity ?? 0;
+  const paternityAvailed = leaveInfo?.usedPaternity ?? 0;
+
+  const totalAllocated = casualAllocated + sickAllocated + earnedAllocated;
+  const totalAvailed = casualAvailed + sickAvailed + earnedAvailed;
+
+  const cardStats: LeaveCardStat[] = [
+    {
+      label: "Available Leaves",
+      allocated: totalAllocated,
+      availed: totalAvailed,
+      balance: totalAllocated - totalAvailed,
+    },
+    {
+      label: "Earned Leaves",
+      allocated: earnedAllocated,
+      availed: earnedAvailed,
+      balance: earnedAllocated - earnedAvailed,
+    },
+    {
+      label: "Casual Leaves",
+      allocated: casualAllocated,
+      availed: casualAvailed,
+      balance: casualAllocated - casualAvailed,
+    },
+    {
+      label: "Sick Leaves",
+      allocated: sickAllocated,
+      availed: sickAvailed,
+      balance: sickAllocated - sickAvailed,
+    },
+    {
+      label: "Maternity / Paternity",
+      allocated: maternityAllocated + paternityAllocated,
+      availed: maternityAvailed + paternityAvailed,
+      balance:
+        maternityAllocated + paternityAllocated - (maternityAvailed + paternityAvailed),
+    },
+  ];
+
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return "-";
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  const handleExport = async () => {
+    const rows = leavesData.map((item) => ({
+      date: item.startDate,
+      type: item.leaveType,
+      status: item.status,
+    }));
+
+    //console.log("Export these rows:", rows);
   };
 
   return (
-    <div className="min-h-screen bg-blue-50 py-10">
-      <div className="mx-auto max-w-6xl px-4 py-10">
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">My Leaves</h1>
-            <p className="text-sm text-gray-600">
-              View and track all your leave requests
-            </p>
-          </div>
-          <Link
-            href="/leaves/requests"
-            className="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
+    <div>
+      <PageHeader title="Leaves" />
+
+      <div className="pt-3">
+        <ListingToolbar
+          searchValue={search}
+          onSearchChange={setSearch}
+          pageSize={page}
+          onPageSizeChange={setPage}
+          onExport={handleExport}
+          showAddButton
+          addHref="/leaves/create"
+          addLabel="Leave Request"
+          searchPlaceholder="Search leaves..."
+        />
+      </div>
+
+      {/* Leave balance cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 pt-1">
+        {leaveInfoLoading
+          ? cardStats.map((stat) => (
+              <Card key={stat.label} className="shadow-sm">
+                <CardContent className="p-4">
+                  <p className="text-sm font-semibold text-gray-800">{stat.label}</p>
+                  <p className="text-xs text-gray-400 mt-2">Loading...</p>
+                </CardContent>
+              </Card>
+            ))
+          : cardStats.map((stat) => <LeaveCard key={stat.label} stat={stat} />)}
+      </div>
+
+      {/* Leave requests table */}
+      <div className="mt-6 bg-white rounded-xl shadow border overflow-hidden">
+        <Table>
+          <TableHeader className="sticky top-0 bg-cyan-200 z-10 shadow-sm">
+            <TableRow>
+              <TableHead className="font-bold">Emp Name</TableHead>
+              <TableHead className="font-bold">Leave Type</TableHead>
+              <TableHead className="font-bold">Total Days</TableHead>
+              <TableHead className="font-bold">Status</TableHead>
+              <TableHead className="font-bold">Approved By</TableHead>
+              <TableHead className="font-bold">Approved At</TableHead>
+              <TableHead className="font-bold">Rejection Reason</TableHead>
+            </TableRow>
+          </TableHeader>
+
+          <TableBody>
+            {isLoading && (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-6 text-gray-500">
+                  Loading...
+                </TableCell>
+              </TableRow>
+            )}
+
+            {!!error && (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-6 text-red-500">
+                  Failed to load leave requests.
+                </TableCell>
+              </TableRow>
+            )}
+
+            {!isLoading && !error && leavesData.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-6 text-gray-500">
+                  No leave requests found
+                </TableCell>
+              </TableRow>
+            )}
+
+            {!isLoading &&
+              !error &&
+              leavesData.map((leave) => (
+                <TableRow key={leave._id} className="hover:bg-gray-50">
+                  <TableCell className="font-medium">{leave.userId}</TableCell>
+                  <TableCell className="capitalize">{leave.leaveType}</TableCell>
+                  <TableCell>{leave.days}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={leave.status} />
+                  </TableCell>
+                  <TableCell>{leave.approvedBy || "-"}</TableCell>
+                  <TableCell>{formatDate(leave.approvedAt)}</TableCell>
+                  <TableCell className="max-w-[220px] truncate">
+                    {leave.status === "rejected" ? leave.rejectionReason || "-" : "-"}
+                  </TableCell>
+                </TableRow>
+              ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Pagination */}
+      <div className="flex flex-col md:flex-row items-center justify-between gap-4 mt-4">
+        <div className="text-sm text-muted-foreground">
+          Total Records: {totalRecords}
+        </div>
+        <div className="flex justify-end items-center gap-3">
+          <Button
+            variant="outline"
+            disabled={page === 1}
+            onClick={() => setPage((p) => p - 1)}
           >
-            <svg
-              className="mr-2 h-4 w-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-            Request Leave
-          </Link>
-        </div>
+            Prev
+          </Button>
 
-        {/* Statistics Cards */}
-        <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-sm font-medium text-gray-500">Total Requests</p>
-            <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
-          </div>
-          <div className="rounded-lg border border-green-200 bg-white p-4 shadow-sm">
-            <p className="text-sm font-medium text-green-600">Approved</p>
-            <p className="text-2xl font-bold text-green-700">{stats.approved}</p>
-          </div>
-          <div className="rounded-lg border border-red-200 bg-white p-4 shadow-sm">
-            <p className="text-sm font-medium text-red-600">Rejected</p>
-            <p className="text-2xl font-bold text-red-700">{stats.rejected}</p>
-          </div>
-          <div className="rounded-lg border border-blue-200 bg-white p-4 shadow-sm">
-            <p className="text-sm font-medium text-blue-600">Pending</p>
-            <p className="text-2xl font-bold text-blue-700">{stats.requested}</p>
-          </div>
-        </div>
+          <span className="text-sm font-medium">Page {page}</span>
 
-        {/* Filter Buttons */}
-        <div className="mb-4 flex gap-2">
-          {(["All", "Approved", "Rejected", "Requested"] as const).map(
-            (status) => (
-              <button
-                key={status}
-                onClick={() => setFilterStatus(status)}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                  filterStatus === status
-                    ? "bg-blue-600 text-white"
-                    : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-300"
-                }`}
-              >
-                {status}
-              </button>
-            )
-          )}
-        </div>
-
-        {/* Leave Requests Table */}
-        <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="text-sm text-gray-500">Loading leave requests...</div>
-            </div>
-          ) : filteredLeaves.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <svg
-                className="mb-3 h-12 w-12 text-gray-300"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                />
-              </svg>
-              <p className="text-sm text-gray-500">No leave requests found</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="border-b border-gray-200 bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                      Leave Type
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                      Duration
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                      Total Days
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                      Reason
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                      Submitted
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                      Status
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {filteredLeaves.map((leave) => (
-                    <tr
-                      key={leave.id}
-                      className="transition hover:bg-gray-50"
-                    >
-                      <td className="whitespace-nowrap px-4 py-3">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {leave.leaveType} Leave
-                          </p>
-                        </div>
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3">
-                        <div className="text-sm text-gray-900">
-                          <p>{formatDate(leave.startDate)}</p>
-                          <p className="text-xs text-gray-500">
-                            to {formatDate(leave.endDate)}
-                          </p>
-                        </div>
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3">
-                        <span className="text-sm font-medium text-gray-900">
-                          {leave.totalDays}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <p className="max-w-xs truncate text-sm text-gray-700" title={leave.reason}>
-                          {leave.reason}
-                        </p>
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3">
-                        <span className="text-sm text-gray-500">
-                          {formatDate(leave.submittedDate)}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3">
-                        <StatusBadge status={leave.status} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Footer info */}
-        <div className="mt-4 text-center text-xs text-gray-500">
-          Showing {filteredLeaves.length} of {leaves.length} leave requests
+          <Button
+            variant="outline"
+            disabled={page * limit >= totalRecords}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Next
+          </Button>
         </div>
       </div>
     </div>

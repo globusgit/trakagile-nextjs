@@ -13,12 +13,13 @@ import styles from "./AppShell.module.css";
 
 const menuItems = [
   { label: "Dashboard", href: "/dashboard", icon: <Home size={20} /> },
-  { label: "Employees", href: "/employees", icon: <User size={20} /> },
+  
   {
     label: "Attendance",
     href: "/attendance",
     icon: <CalendarCheck2Icon size={20} />,
   },
+  { label: "Employees", href: "/employees", icon: <User size={20} /> },
   { label: "Leaves", href: "/leaves", icon: <ListCheckIcon size={20} /> },
   {
     label: "Holidays",
