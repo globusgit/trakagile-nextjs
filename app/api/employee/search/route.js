@@ -37,9 +37,31 @@ export async function GET(request) {
       { status: 200 },
     );
   } catch (error) {
-    console.error("Error searching employees:", error);
+    console.error("Error searching employees:", error.message);
+    
+    // Check if it's a MongoDB connection error
+    if (error.message.includes("MongoDB connection failed")) {
+      return NextResponse.json(
+        {
+          error: "Database connection unavailable",
+          message: "MongoDB Atlas connection failed. See MONGODB_TROUBLESHOOTING.md for help.",
+          employees: [],
+          page: 1,
+          limit: 10,
+          total: 0,
+        },
+        { status: 503 }, // Service Unavailable
+      );
+    }
+    
     return NextResponse.json(
-      { error: "Failed to search employees" },
+      { 
+        error: "Failed to search employees",
+        employees: [],
+        page: 1,
+        limit: 10,
+        total: 0,
+      },
       { status: 500 },
     );
   }
