@@ -25,7 +25,7 @@ type ListingToolbarProps = {
   // Optional year filter — only renders when both props are provided
   selectedYear?: number;
   onYearChange?: (year: number) => void;
-  yearRange?: number; // years before/after current year to show, default 5
+  yearRange?: number; // years before/after current year to show, default 1
 };
 
 export default function ListingToolbar({
@@ -111,7 +111,7 @@ export default function ListingToolbar({
         {addHref && (
           <Link
             href={addHref}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="rounded-md bg-cyan-900 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-700"
           >
             {addLabel}
           </Link>

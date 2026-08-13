@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import PageHeader from "@/app/_components/PageHeader";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,8 +26,8 @@ interface Designation {
 export default function EditEmployee() {
   const router = useRouter();
   const params = useParams();
-
-  const orgId = "ORG1"; // TODO: replace once auth/session is wired up
+  const { data: session } = useSession();
+  const orgId = session?.user?.orgId ?? "";
 
   const [form, setForm] = useState({
     name: "",
@@ -79,6 +80,7 @@ export default function EditEmployee() {
   }, [params.id]);
 
   useEffect(() => {
+    if (!orgId) return;
     const fetchDesignations = async () => {
       const res = await fetch(`/api/system-list?listName=Designation&orgId=${orgId}`);
       const data = await res.json();
@@ -98,10 +100,10 @@ export default function EditEmployee() {
   }, [photo]);
 
   const currentPhotoSrc = photoPreview
-  ? photoPreview
-  : form.photo
-  ? `/api/files/employees/${encodeURIComponent(form.photo)}`
-  : "/default-avatar.jpg";
+    ? photoPreview
+    : form.photo
+    ? `/api/files/employees/${encodeURIComponent(form.photo)}`
+    : "/default-avatar.jpg";
 
   const handleSubmit = async () => {
     setLoading(true);

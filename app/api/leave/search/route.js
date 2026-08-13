@@ -20,12 +20,22 @@ export async function GET(request) {
     }
 
     if (search && search.trim() !== "") {
-      const regex = new RegExp(search.trim(), "i");
+      const term = search.trim();
+      const regex = new RegExp(term, "i");
       query.$or = [
         { leaveType: regex },
         { status: regex },
         { reason: regex },
         { rejectionReason: regex },
+        {
+          $expr: {
+            $regexMatch: {
+              input: { $toString: "$days" }, // convert number to string first
+              regex: term,
+              options: "i",
+            },
+          },
+        },
       ];
     }
 

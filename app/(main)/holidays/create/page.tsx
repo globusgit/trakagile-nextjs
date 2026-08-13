@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import PageHeader from "@/app/_components/PageHeader";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,9 +14,11 @@ import { Textarea } from "@/components/ui/textarea";
 
 export default function CreateHoliday() {
   const router = useRouter();
+  const { data: session } = useSession();
+  const orgId = session?.user?.orgId ?? "";
 
   // TODO: replace with real orgId once auth/session is wired up
-  const orgId = "ORG1";
+  //const orgId = "ORG1";
 
   const [form, setForm] = useState({
     name: "",
