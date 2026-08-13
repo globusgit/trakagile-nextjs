@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import PageHeader from "@/app/_components/PageHeader";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,13 +14,9 @@ import { Textarea } from "@/components/ui/textarea";
 
 export default function AddFutureHoliday() {
   const router = useRouter();
+  const { data: session } = useSession();
+  const orgId = session?.user?.orgId ?? "";
 
-  // TODO: replace with real orgId once auth/session is wired up
-  const orgId = "ORG1";
-
-  // Locked to next year — this page exists specifically for planning
-  // ahead, not for the current year (use the regular Create Holiday
-  // page under /holidays/create for that).
   const targetYear = new Date().getFullYear() + 1;
 
   const [form, setForm] = useState({
@@ -49,7 +46,6 @@ export default function AddFutureHoliday() {
     setSubmitStatus("idle");
     if (!validate()) return;
 
-    // Safety check: the date picked must actually fall within the target year
     const pickedYear = new Date(form.date).getFullYear();
     if (pickedYear !== targetYear) {
       setServerError(

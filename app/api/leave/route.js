@@ -40,7 +40,7 @@ export async function POST(request) {
   try {
     await connectDB();
     const body = await request.json();
-    const { userId, leaveType, startDate, endDate, days, reason, orgId } = body;
+    const { userId,employeeName, leaveType, startDate, endDate, days, reason, orgId } = body;
 
     // Once auth exists, userId will always come from the logged-in
     // session — no fallback/auto-generation needed at that point.
@@ -53,6 +53,7 @@ export async function POST(request) {
 
     const leave = new LeaveRequest({
       userId,
+      employeeName: body.employeeName, // Assuming employeeName is provided in the request body
       leaveType,
       startDate,
       endDate,

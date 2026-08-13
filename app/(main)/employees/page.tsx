@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Pencil } from "lucide-react";
 
@@ -52,9 +53,8 @@ async function fetchEmployees({
 
 export default function EmployeeList() {
   const router = useRouter();
-
-  // TODO: replace with real orgId once auth/session is wired up
-  const orgId = "ORG1";
+  const { data: session, status } = useSession();
+  const orgId = session?.user?.orgId ?? "";
 
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -64,6 +64,7 @@ export default function EmployeeList() {
     queryKey: ["employees", orgId, page, limit, search],
     queryFn: () => fetchEmployees({ orgId, page, limit, q: search }),
     placeholderData: keepPreviousData,
+    enabled: !!orgId,
   });
 
   const employees: Employee[] = data?.employees ?? [];
@@ -72,6 +73,10 @@ export default function EmployeeList() {
   const handleExport = async () => {
     console.log("Export not wired up yet — need /api/employee/export route.");
   };
+
+  if (status === "loading") {
+    return <div className="p-8 text-center text-gray-500">Loading session...</div>;
+  }
 
   return (
     <div>
@@ -91,7 +96,6 @@ export default function EmployeeList() {
         />
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-xl shadow border overflow-hidden">
         <Table>
           <TableHeader className="sticky top-0 bg-cyan-200 z-10 shadow-sm">
@@ -174,7 +178,6 @@ export default function EmployeeList() {
         </Table>
       </div>
 
-      {/* Pagination */}
       <div className="flex flex-col md:flex-row items-center justify-between gap-4 mt-4">
         <div className="text-sm text-muted-foreground">
           Total Records: {total}

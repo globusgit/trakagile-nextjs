@@ -2,6 +2,7 @@
 import ListingToolbar from "@/app/_components/ListingToolbar";
 import PageHeader from "@/app/_components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
+import { useRouter } from "next/navigation";
 import {
   Table,
   TableBody,
@@ -13,7 +14,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import React, { useEffect, useState } from "react";
-import { CURRENT_USER_ID, ORG_ID } from "@/lib/constants";
+
+import { useSession } from "next-auth/react";
+import { Pencil } from "lucide-react";
 
 export async function fetchLeaves({
   orgId,
@@ -60,6 +63,7 @@ async function fetchLeaveInfo({
 interface LeaveRequestRow {
   _id: string;
   userId: string;
+  employeeName: string;
   leaveType: string;
   startDate: string;
   endDate: string;
@@ -80,7 +84,7 @@ interface LeaveCardStat {
 
 function LeaveCard({ stat }: { stat: LeaveCardStat }) {
   return (
-    <Card className="shadow-sm">
+    <Card className="shadow-sm transition-all hover:shadow-lg duration-200 hover:translate-y-1 hover:border-cyan-700 cursor-pointer">
       <CardContent className="p-4 space-y-3">
         <p className="text-sm font-semibold text-gray-800">{stat.label}</p>
 
@@ -124,31 +128,37 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function LeavesPage() {
+  const router = useRouter();
+  const { data: session } = useSession();
+  const userId = session?.user?.id ?? "";
+  const orgId = session?.user?.orgId ?? "";
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const currentYear = new Date().getFullYear();
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["leaves", ORG_ID, CURRENT_USER_ID, page, limit, search],
+    queryKey: ["leaves", orgId, userId, page, limit, search],
     queryFn: () =>
       fetchLeaves({
-        orgId: ORG_ID,
-        userId: CURRENT_USER_ID,
+        orgId,
+        userId,
         page,
         limit,
         search,
       }),
     placeholderData: keepPreviousData,
+    enabled: !!orgId && !!userId,
   });
 
   const leavesData: LeaveRequestRow[] = data?.leaves ?? [];
   const totalRecords: number = data?.total ?? 0;
 
   const { data: leaveInfo, isLoading: leaveInfoLoading } = useQuery({
-    queryKey: ["leave-info", ORG_ID, CURRENT_USER_ID, currentYear],
+    queryKey: ["leave-info", orgId, userId, currentYear],
     queryFn: () =>
-      fetchLeaveInfo({ orgId: ORG_ID, userId: CURRENT_USER_ID, year: currentYear }),
+      fetchLeaveInfo({ orgId, userId, year: currentYear }),
+    enabled: !!orgId && !!userId,
   });
 
   const casualAllocated = leaveInfo?.casual ?? 0;
@@ -257,12 +267,13 @@ export default function LeavesPage() {
         <Table>
           <TableHeader className="sticky top-0 bg-cyan-200 z-10 shadow-sm">
             <TableRow>
+              <TableHead className="w-[70px] font-bold">Edit</TableHead>
               <TableHead className="font-bold">Emp Name</TableHead>
               <TableHead className="font-bold">Leave Type</TableHead>
               <TableHead className="font-bold">Total Days</TableHead>
               <TableHead className="font-bold">Status</TableHead>
-              <TableHead className="font-bold">Approved By</TableHead>
-              <TableHead className="font-bold">Approved At</TableHead>
+              <TableHead className="font-bold">Approved/Rejected By</TableHead>
+              <TableHead className="font-bold">Approved Date</TableHead>
               <TableHead className="font-bold">Rejection Reason</TableHead>
             </TableRow>
           </TableHeader>
@@ -270,7 +281,7 @@ export default function LeavesPage() {
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-6 text-gray-500">
+                <TableCell colSpan={8} className="text-center py-6 text-gray-500">
                   Loading...
                 </TableCell>
               </TableRow>
@@ -278,7 +289,7 @@ export default function LeavesPage() {
 
             {!!error && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-6 text-red-500">
+                <TableCell colSpan={8} className="text-center py-6 text-red-500">
                   Failed to load leave requests.
                 </TableCell>
               </TableRow>
@@ -286,7 +297,7 @@ export default function LeavesPage() {
 
             {!isLoading && !error && leavesData.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-6 text-gray-500">
+                <TableCell colSpan={8} className="text-center py-6 text-gray-500">
                   No leave requests found
                 </TableCell>
               </TableRow>
@@ -296,7 +307,17 @@ export default function LeavesPage() {
               !error &&
               leavesData.map((leave) => (
                 <TableRow key={leave._id} className="hover:bg-gray-50">
-                  <TableCell className="font-medium">{leave.userId}</TableCell>
+                  <TableCell>
+                    <button
+                      onClick={() => router.push(`/leaves/${leave._id}`)}
+                      className="text-orange-500 hover:text-orange-700"
+                      aria-label="Edit leave request"
+                    >
+                      <Pencil size={16} />
+                    </button>
+                  </TableCell>
+
+                  <TableCell className="font-medium">{leave.employeeName}</TableCell>
                   <TableCell className="capitalize">{leave.leaveType}</TableCell>
                   <TableCell>{leave.days}</TableCell>
                   <TableCell>

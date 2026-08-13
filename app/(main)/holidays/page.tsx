@@ -1,6 +1,7 @@
 "use client";
 // HolidayList.tsx (summary - see full component in document)
 import React, { useState, useMemo } from "react";
+import { useSession } from "next-auth/react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import ListingToolbar from "@/app/_components/ListingToolbar";
 import PageHeader from "@/app/_components/PageHeader";
@@ -56,7 +57,9 @@ export default function HolidayList() {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(20);
-  const orgId = "ORG1";
+  //const orgId = "ORG1";
+  const { data: session } = useSession();
+  const orgId = session?.user?.orgId ?? "";
   const { data, error, isLoading, refetch } = useQuery({
     queryKey: ["holidays", orgId, year, page, size, query],
     queryFn: () => fetchHolidays({ orgId, year, page, size, q: query }),
@@ -86,7 +89,11 @@ export default function HolidayList() {
       <div className="pt-2">
         <ListingToolbar
         searchValue={search}
-        onSearchChange={setSearch}
+         onSearchChange={(val) => {
+            setSearch(val);
+            setQuery(val);
+            setPage(1); // reset to page 1 when search changes
+          }}
         pageSize={page}
         onPageSizeChange={setPage}
         onExport={handleExport}

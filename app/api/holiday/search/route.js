@@ -19,8 +19,30 @@ export async function GET(request) {
     }
 
     if (q && q.trim() !== "") {
-      const regex = new RegExp(q.trim(), "i");
-      query.$or = [{ name: regex }, { note: regex }];
+      const term = q.trim();
+      const regex = new RegExp(term, "i");
+      // "Yes"/"No" search support for the boolean fields
+      const wantsYes = /^y(es)?$/i.test(term);
+      const wantsNo = /^n(o)?$/i.test(term);
+
+      query.$or = [
+        { name: regex }, 
+        { note: regex },
+        {
+          $expr: {
+            $regexMatch: {
+              input: {
+                $dateToString: { format: "%Y-%m-%d", date: "$date" },
+              },
+              regex: term,
+              options: "i",
+            },
+          },
+        },
+        ...(wantsYes ? [{ isRecurring: true }, { isOptional: true }] : []),
+        ...(wantsNo ? [{ isRecurring: false }, { isOptional: false }] : []),
+
+      ];
     }
 
     const [holidays, total] = await Promise.all([

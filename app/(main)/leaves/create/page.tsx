@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import PageHeader from "@/app/_components/PageHeader";
-import { CURRENT_USER_ID, ORG_ID } from "@/lib/constants";
+import { useSession } from "next-auth/react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,9 @@ const LEAVE_TYPES = [
 
 export default function LeaveRequestPage() {
   const router = useRouter();
+  const { data: session } = useSession();
+  const userId = session?.user?.id ?? "";
+  const orgId = session?.user?.orgId ?? "";
 
   const [leaveType, setLeaveType] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -101,15 +104,14 @@ export default function LeaveRequestPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          // TODO: once auth exists, replace CURRENT_USER_ID with
-          // session.user.id — this is the only line that needs to change.
-          userId: CURRENT_USER_ID,
+          userId,
+          employeeName: session?.user?.empId ?? "", // Assuming empId is the employee's name or identifier
           leaveType,
           startDate,
           endDate,
           days,
           reason,
-          orgId: ORG_ID,
+          orgId,
         }),
       });
 
