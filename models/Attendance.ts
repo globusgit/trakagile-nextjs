@@ -1,49 +1,50 @@
 import mongoose from "mongoose";
 
-const attendanceSchema = new mongoose.Schema(
+const LocationSchema = new mongoose.Schema(
   {
-    _id: mongoose.Types.ObjectId,
-    empObjId: {
-      type: mongoose.Types.ObjectId,
-      ref: "Employee",
-      required: true,
+    latitude: { type: Number, required: true, min: -90, max: 90 },
+    longitude: { type: Number, required: true, min: -180, max: 180 },
+    accuracy: { type: Number, min: 0 },
+    capturedAt: { type: Date, required: true },
+    receivedAt: { type: Date, required: true },
+  },
+  { _id: false },
+);
+
+const AttendanceSchema = new mongoose.Schema(
+  {
+    empObjId: { type: mongoose.Types.ObjectId, ref: "Employee", required: true },
+    empId: { type: String, required: true },
+    orgId: { type: String, required: true },
+    attendanceDate: { type: String, required: true },
+    markIn: {
+      time: { type: Date, required: true },
+      location: { type: LocationSchema, required: true },
     },
-    empId: {
+    markOut: {
+      time: Date,
+      location: LocationSchema,
+    },
+    lastKnownLocation: LocationSchema,
+    lastLocationReceivedAt: Date,
+    status: { type: String, enum: ["IN", "OUT"], default: "IN" },
+    trackingStatus: {
       type: String,
-      require: true,
+      enum: ["ACTIVE", "DELAYED", "OFFLINE", "STOPPED"],
+      default: "ACTIVE",
     },
-    date: { type: Date, required: true }, // YYYY-MM-DD (store as Date, but query by date)
-    checkIn: { type: Number },
-    checkOut: { type: Number },
-    totalWorkedMinutes: { type: Number },
-    status: {
-      type: String,
-      enum: [
-        "Present",
-        "Absent",
-        "Half_day",
-        "Late",
-        "On_leave",
-        "Holiday",
-        "Weekend",
-      ],
-      default: "Absent",
-    },
-    lateByMinutes: { type: Number },
-    notes: { type: String },
-    //source: { type: String, enum: ["web", "mobile", "manual"], default: "web" },
-    orgId: {
-      type: String,
-      required: true,
-    },
+    totalVisits: { type: Number, default: 0 },
+    totalDistanceMeters: { type: Number, default: 0 },
+    totalWorkedMinutes: { type: Number, default: 0 },
   },
   { timestamps: true },
 );
 
-// Compound index to ensure one attendance per user per day
-attendanceSchema.index({ orgId: 1, date: 1 });
-attendanceSchema.index({ employeeId: 1, date: 1 });
-attendanceSchema.index({ orgId: 1, employeeId: 1, date: 1 });
+AttendanceSchema.index(
+  { orgId: 1, empId: 1, attendanceDate: 1 },
+  { unique: true },
+);
+AttendanceSchema.index({ orgId: 1, attendanceDate: 1, status: 1 });
 
 export default mongoose.models.Attendance ||
-  mongoose.model("Attendance", attendanceSchema);
+  mongoose.model("Attendance", AttendanceSchema);

@@ -1,61 +1,28 @@
-// models/TrackingLocation.js
 import mongoose from "mongoose";
 
-// 1. Define a simple coordinate schema
-const CoordinateSchema = new mongoose.Schema(
-  {
-    lat: {
-      type: Number,
-      required: true,
-      min: -90,
-      max: 90,
-    },
-    lng: {
-      type: Number,
-      required: true,
-      min: -180,
-      max: 180,
-    },
-  },
-  { _id: false },
-); // Prevents generating an _id for every single coordinate
-
-// 2. Define your main model
 const TrackingLocationSchema = new mongoose.Schema(
   {
-    trackingDate: {
-      type: Date,
+    attendanceId: {
+      type: mongoose.Types.ObjectId,
+      ref: "Attendance",
       required: true,
+      index: true,
     },
-    startLocation: {
-      type: CoordinateSchema,
-      required: true,
-    },
-    lastKnownLocation: {
-      type: CoordinateSchema,
-      required: true,
-    },
-    endLocation: {
-      type: CoordinateSchema,
-      required: true,
-    },
-    // Store the list of coordinates
-    coordinates: [CoordinateSchema],
-    orgId: {
-      type: String,
-      required: true,
-    },
-    empId: {
-      type: String,
-      required: true,
-    },
+    employeeId: { type: String, required: true, index: true },
+    visitId: { type: mongoose.Types.ObjectId, ref: "EmployeeVisit", default: null },
+    orgId: { type: String, required: true, index: true },
+    latitude: { type: Number, required: true, min: -90, max: 90 },
+    longitude: { type: Number, required: true, min: -180, max: 180 },
+    accuracy: { type: Number, min: 0 },
+    speed: { type: Number, default: null },
+    heading: { type: Number, min: 0, max: 360, default: null },
+    capturedAt: { type: Date, required: true },
+    receivedAt: { type: Date, required: true },
   },
   { timestamps: true },
 );
 
-// 3. Next.js Catch: Prevent "OverwriteModelError" during hot-reloading
-const TrackingLocation =
-  mongoose.models.TrackingLocation ||
-  mongoose.model("TrackingLocation", TrackingLocationSchema);
+TrackingLocationSchema.index({ attendanceId: 1, capturedAt: 1 });
 
-export default TrackingLocation;
+export default mongoose.models.TrackingLocation ||
+  mongoose.model("TrackingLocation", TrackingLocationSchema);
