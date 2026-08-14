@@ -63,7 +63,7 @@ async function fetchLeaveInfo({
 interface LeaveRequestRow {
   _id: string;
   userId: string;
-  employeeName: string;
+  employeeName?: string | null;
   leaveType: string;
   startDate: string;
   endDate: string;
@@ -317,7 +317,9 @@ export default function LeavesPage() {
                     </button>
                   </TableCell>
 
-                  <TableCell className="font-medium">{leave.employeeName}</TableCell>
+                  <TableCell className="font-medium">
+                    {leave.employeeName || leave.userId}
+                  </TableCell>
                   <TableCell className="capitalize">{leave.leaveType}</TableCell>
                   <TableCell>{leave.days}</TableCell>
                   <TableCell>
