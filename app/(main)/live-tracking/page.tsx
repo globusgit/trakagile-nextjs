@@ -1,0 +1,74 @@
+"use client";
+
+import PageHeader from "@/app/_components/PageHeader";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Search, UserRound } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+
+type LiveEmployee = {
+  employee?: { name?: string; empId: string };
+  attendance: { totalDistanceMeters?: number };
+  location?: { latitude: number; longitude: number; accuracy?: number; speed?: number; locationName?: string; receivedAt: string };
+};
+
+export default function LiveTrackingPage() {
+  const [employees, setEmployees] = useState<LiveEmployee[]>([]);
+  const [now, setNow] = useState(0);
+  const [query, setQuery] = useState("");
+  const [selectedEmpId, setSelectedEmpId] = useState("");
+  const load = useCallback(async () => {
+    const response = await fetch("/api/attendance/live", { cache: "no-store" });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.message || "Unable to load live tracking.");
+    setEmployees(result.employees || []);
+  }, []);
+
+  useEffect(() => {
+    const refresh = () => { setNow(Date.now()); void load().catch(() => undefined); };
+    const initial = window.setTimeout(() => { setNow(Date.now()); void load().catch((error) => toast.error(error.message)); }, 0);
+    const timer = window.setInterval(refresh, 30_000);
+    return () => { window.clearTimeout(initial); window.clearInterval(timer); };
+  }, [load]);
+
+  const filtered = useMemo(() => {
+    const value = query.trim().toLowerCase();
+    if (!value) return employees;
+    return employees.filter((item) => item.employee?.name?.toLowerCase().includes(value) || item.employee?.empId.toLowerCase().includes(value));
+  }, [employees, query]);
+  const selected = employees.find((item) => item.employee?.empId === selectedEmpId);
+
+  return <div className="space-y-6 pb-10">
+    <PageHeader title="Live Employee Tracking" />
+    <p className="text-sm text-muted-foreground">Search by employee name or ID, then select one employee. Location refreshes every 30 seconds.</p>
+    {employees.length === 0 ? <Card><CardContent className="py-10 text-center text-muted-foreground">No reporting employees are currently marked in.</CardContent></Card> :
+      <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
+        <Card className="h-fit"><CardHeader><CardTitle className="text-base">Active employees</CardTitle></CardHeader><CardContent className="space-y-3">
+          <div className="relative"><Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" /><Input className="pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name or employee ID" /></div>
+          <p className="text-xs text-muted-foreground">{filtered.length} active employee(s)</p>
+          <div className="max-h-[520px] space-y-2 overflow-y-auto">{filtered.map((item) => {
+            const stale = !item.location || now - new Date(item.location.receivedAt).getTime() > 5 * 60_000;
+            return <button type="button" key={item.employee?.empId} onClick={() => setSelectedEmpId(item.employee?.empId || "")} className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left hover:bg-muted ${selectedEmpId === item.employee?.empId ? "border-primary bg-muted" : ""}`}>
+              <UserRound className="size-5 shrink-0" /><span className="min-w-0 flex-1"><span className="block truncate font-medium">{item.employee?.name || "Employee"}</span><span className="block text-xs text-muted-foreground">{item.employee?.empId}</span></span><Badge variant={stale ? "destructive" : "default"}>{stale ? "STALE" : "LIVE"}</Badge>
+            </button>;
+          })}{filtered.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">No matching employee.</p>}</div>
+        </CardContent></Card>
+        {!selected ? <Card><CardContent className="flex min-h-80 flex-col items-center justify-center gap-3 text-center text-muted-foreground"><UserRound className="size-10" /><p>Search and select an employee to open individual tracking.</p></CardContent></Card> : <EmployeeMap item={selected} now={now} />}
+      </div>}
+  </div>;
+}
+
+function EmployeeMap({ item, now }: { item: LiveEmployee; now: number }) {
+  const stale = !item.location || now - new Date(item.location.receivedAt).getTime() > 5 * 60_000;
+  const lat = item.location?.latitude; const lon = item.location?.longitude;
+  return <Card><CardHeader><CardTitle className="flex items-center justify-between"><span>{item.employee?.name || item.employee?.empId}</span><Badge variant={stale ? "destructive" : "default"}>{stale ? "STALE" : "LIVE"}</Badge></CardTitle></CardHeader><CardContent className="space-y-4">
+    <div className="grid gap-3 text-sm sm:grid-cols-2"><Detail label="Employee ID" value={item.employee?.empId || "—"} /><Detail label="Last update" value={item.location ? new Date(item.location.receivedAt).toLocaleString() : "—"} /><Detail label="Location" value={item.location?.locationName || "Location name pending"} /><Detail label="Distance travelled" value={`${((item.attendance.totalDistanceMeters || 0) / 1000).toFixed(2)} km`} /><Detail label="Coordinates" value={`${lat?.toFixed(6) || "—"}, ${lon?.toFixed(6) || "—"}`} /><Detail label="Accuracy / speed" value={`${item.location?.accuracy ? `±${Math.round(item.location.accuracy)} m` : "—"} · ${item.location?.speed != null ? `${(item.location.speed * 3.6).toFixed(1)} km/h` : "—"}`} /></div>
+    {lat != null && lon != null ? <iframe title={`Map for ${item.employee?.empId}`} className="h-[420px] w-full rounded-md border" loading="lazy" src={`https://www.openstreetmap.org/export/embed.html?bbox=${lon - 0.01}%2C${lat - 0.01}%2C${lon + 0.01}%2C${lat + 0.01}&layer=mapnik&marker=${lat}%2C${lon}`} /> : <div className="flex h-64 items-center justify-center rounded-md border text-muted-foreground">No location received.</div>}
+  </CardContent></Card>;
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return <div><p className="text-xs text-muted-foreground">{label}</p><p className="font-medium">{value}</p></div>;
+}

@@ -34,6 +34,16 @@ export async function PUT(req, { params }) {
   try {
     const { id } = await params;
     const formData = await req.formData();
+    const currentEmployee = await Employee.findById(id).select("orgId");
+    const managerName = String(formData.get("managerName") || "").trim();
+    const manager = managerName && currentEmployee
+      ? await Employee.findOne({
+          orgId: currentEmployee.orgId,
+          status: "Active",
+          _id: { $ne: id },
+          $or: [{ empId: managerName }, { name: managerName }],
+        }).select("_id")
+      : null;
 
     const updateData = {
       name: formData.get("name"),
@@ -42,7 +52,8 @@ export async function PUT(req, { params }) {
       email: formData.get("email"),
       designation: formData.get("designation"),
       isManager: formData.get("isManager") === "true",
-      reportingManager: formData.get("managerName") || "",
+      reportingManager: managerName,
+      reportingTo: manager?._id || null,
       status: formData.get("status") || "Active",
     };
 

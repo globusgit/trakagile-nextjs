@@ -88,6 +88,15 @@ export async function POST(req) {
       fs.writeFileSync(filePath, buffer);
     }
 
+    const managerName = String(formData.get("managerName") || "").trim();
+    const manager = managerName
+      ? await Employee.findOne({
+          orgId,
+          status: "Active",
+          $or: [{ empId: managerName }, { name: managerName }],
+        }).select("_id")
+      : null;
+
     const emp = await Employee.create({
       name,
       empId,
@@ -95,7 +104,8 @@ export async function POST(req) {
       email,
       designation: formData.get("designation"),
       isManager: formData.get("isManager") === "true",
-      reportingManager: formData.get("managerName") || "",
+      reportingManager: managerName,
+      reportingTo: manager?._id,
       orgId,
       photo: fileName,
     });
