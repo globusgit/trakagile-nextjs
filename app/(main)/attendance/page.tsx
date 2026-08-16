@@ -90,6 +90,7 @@ type AttendanceLocation = {
   longitude: number;
   accuracy?: number;
   capturedAt?: string;
+  locationName?: string;
 };
 
 type TrackingPoint = AttendanceLocation & {
@@ -458,6 +459,12 @@ function LocationMap({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        {location.locationName && (
+          <div className="rounded-lg border bg-muted/40 p-3 text-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Address</p>
+            <p className="mt-1 leading-relaxed">{location.locationName}</p>
+          </div>
+        )}
         <iframe
           title={`${title} map`}
           src={urls.embed}

@@ -16,7 +16,7 @@ import {
   minutesInTimeZone,
   requireAttendanceUser,
 } from "../_lib/attendance";
-import { notifyAttendance } from "../_lib/notifications";
+import { notifyAttendance, reverseGeocode } from "../_lib/notifications";
 import { deviceFrom } from "../../wfh/_lib/device";
 import { writeAudit } from "@/lib/audit";
 
@@ -29,6 +29,7 @@ export async function POST(request) {
     const body = await request.json();
     const now = new Date();
     const location = locationFrom(body, now);
+    location.locationName = await reverseGeocode(location.latitude, location.longitude);
     const attendanceType = ["FIELD_VISIT", "WORK_FROM_HOME"].includes(body.attendanceType)
       ? body.attendanceType
       : "OFFICE";
@@ -94,6 +95,7 @@ export async function POST(request) {
           attendanceDate: dayKey(now),
           markIn: { time: now, location },
           lastKnownLocation: location,
+          lastKnownLocationName: location.locationName,
           lastLocationReceivedAt: now,
           attendanceType,
           isEarlyStart: minutesInTimeZone(now, policy.timeZone) < policy.shiftStartMinutes,

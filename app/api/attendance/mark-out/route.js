@@ -13,7 +13,7 @@ import {
   reliableDistance,
   requireAttendanceUser,
 } from "../_lib/attendance";
-import { notifyAttendance } from "../_lib/notifications";
+import { notifyAttendance, reverseGeocode } from "../_lib/notifications";
 import { assertBoundDevice, deviceFrom } from "../../wfh/_lib/device";
 import { writeAudit } from "@/lib/audit";
 
@@ -26,6 +26,7 @@ export async function POST(request) {
     const body = await request.json();
     const now = new Date();
     const location = locationFrom(body, now);
+    location.locationName = await reverseGeocode(location.latitude, location.longitude);
     let closedAttendance;
 
     await dbSession.withTransaction(async () => {
@@ -67,6 +68,7 @@ export async function POST(request) {
       attendance.set({
         markOut: { time: now, location },
         lastKnownLocation: location,
+        lastKnownLocationName: location.locationName,
         lastLocationReceivedAt: now,
         status: "OUT",
         trackingStatus: "STOPPED",

@@ -7,6 +7,7 @@ const LocationSchema = new mongoose.Schema(
     accuracy: { type: Number, min: 0 },
     capturedAt: { type: Date, required: true },
     receivedAt: { type: Date, required: true },
+    locationName: { type: String, trim: true },
   },
   { _id: false },
 );
