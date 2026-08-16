@@ -4,6 +4,9 @@ import Employee from "@/models/Employee";
 import fs from "fs";
 import path from "path";
 import { EMPLOYEE_UPLOAD_DIR } from "@/lib/uploadConfig";
+import { AttendanceError, errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
+
+const allowedPhotoTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 function sanitizeFileName(name) {
   return name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
@@ -12,15 +15,20 @@ function sanitizeFileName(name) {
 export async function GET(req, { params }) {
   try {
     await connectDB();
+    const identity = await requireAttendanceUser();
     const { id } = await params;
-    const employee = await Employee.findById(id);
+    const employee = await Employee.findOne({ _id: id, orgId: identity.orgId });
 
     if (!employee) {
       return NextResponse.json({ message: "Employee not found" }, { status: 404 });
     }
+    if (!['ADMIN', 'MANAGER'].includes(identity.role) && employee.empId !== identity.empId) {
+      throw new AttendanceError("You are not allowed to view this employee.", 403);
+    }
 
     return NextResponse.json(employee, { status: 200 });
   } catch (err) {
+    if (err?.name === "AttendanceError") return errorResponse(err);
     console.error("Error fetching employee:", err);
     return NextResponse.json(
       { message: "Failed to fetch employee" },
@@ -32,9 +40,11 @@ export async function GET(req, { params }) {
 export async function PUT(req, { params }) {
   await connectDB();
   try {
+    const identity = await requireAttendanceUser(["ADMIN"]);
     const { id } = await params;
     const formData = await req.formData();
-    const currentEmployee = await Employee.findById(id).select("orgId");
+    const currentEmployee = await Employee.findOne({ _id: id, orgId: identity.orgId }).select("orgId");
+    if (!currentEmployee) throw new AttendanceError("Employee not found.", 404);
     const managerName = String(formData.get("managerName") || "").trim();
     const manager = managerName && currentEmployee
       ? await Employee.findOne({
@@ -59,6 +69,9 @@ export async function PUT(req, { params }) {
 
     const file = formData.get("photo");
     if (file && typeof file !== "string" && file.size > 0) {
+      if (!allowedPhotoTypes.has(file.type) || file.size > 5 * 1024 * 1024) {
+        throw new AttendanceError("Employee photo must be JPG, PNG or WebP and 5 MB or smaller.");
+      }
       if (!fs.existsSync(EMPLOYEE_UPLOAD_DIR)) {
         fs.mkdirSync(EMPLOYEE_UPLOAD_DIR, { recursive: true });
       }
@@ -71,12 +84,13 @@ export async function PUT(req, { params }) {
       updateData.photo = fileName;
     }
 
-    const updated = await Employee.findByIdAndUpdate(id, updateData, {
+    const updated = await Employee.findOneAndUpdate({ _id: id, orgId: identity.orgId }, updateData, {
       new: true,
     });
 
     return NextResponse.json(updated, { status: 200 });
   } catch (err) {
+    if (err?.name === "AttendanceError") return errorResponse(err);
     console.error("Error updating employee:", err);
     return NextResponse.json(
       { message: "Failed to update employee" },
