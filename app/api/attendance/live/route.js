@@ -4,6 +4,7 @@ import Employee from "@/models/Employee";
 import TrackingLocation from "@/models/TrackingLocation";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../_lib/attendance";
 import { notifyAttendance } from "../_lib/notifications";
+import { workStatusFor } from "../_lib/work-status";
 
 export async function GET() {
   try {
@@ -52,6 +53,7 @@ export async function GET() {
         employee: employeeById.get(attendance.empId),
         attendance,
         location: locationByAttendance.get(String(attendance._id)) || null,
+        workStatus: workStatusFor(attendance, locationByAttendance.get(String(attendance._id)) || null),
       })),
     });
   } catch (error) {

@@ -151,6 +151,13 @@ type Attendance = {
   autoMarkOutReason?: string;
 };
 
+type WorkStatus = {
+  state: string;
+  confidence: string;
+  label: string;
+  reason: string;
+};
+
 type AttendancePolicy = {
   timeZone: string;
   shiftStartMinutes: number;
@@ -617,6 +624,7 @@ export default function AttendancePage() {
     });
 
   const [policy, setPolicy] = useState<AttendancePolicy | null>(null);
+  const [workStatus, setWorkStatus] = useState<WorkStatus | null>(null);
   const [todayLocations, setTodayLocations] = useState<TrackingPoint[]>([]);
   const [wfhEnabled, setWfhEnabled] = useState(false);
   const [wfhDeviceAllowed, setWfhDeviceAllowed] = useState(true);
@@ -770,6 +778,7 @@ export default function AttendancePage() {
           today.attendance ||
             null
         );
+        setWorkStatus(today.workStatus || null);
 
         setVisits(
           Array.isArray(
@@ -1676,6 +1685,13 @@ export default function AttendancePage() {
               <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
                 {attendance.lastKnownLocationName}
               </p>
+            )}
+            {attendance && workStatus && (
+              <div className={`mt-3 rounded-md border p-2 text-xs ${workStatus.state === "VERIFIED" ? "border-emerald-300 bg-emerald-50 text-emerald-950" : "border-amber-300 bg-amber-50 text-amber-950"}`}>
+                <p className="font-semibold">Work status: {workStatus.label}</p>
+                <p className="mt-1">Confidence: {workStatus.confidence}</p>
+                <p className="mt-1 opacity-80">{workStatus.reason}</p>
+              </div>
             )}
           </CardContent>
         </Card>

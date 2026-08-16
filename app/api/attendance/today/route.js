@@ -2,6 +2,7 @@ import { connectDB } from "@/lib/mongoose";
 import Attendance from "@/models/Attendance";
 import EmployeeVisit from "@/models/EmployeeVisit";
 import { dayKey, errorResponse, requireAttendanceUser } from "../_lib/attendance";
+import { workStatusFor } from "../_lib/work-status";
 
 export async function GET() {
   try {
@@ -23,7 +24,7 @@ export async function GET() {
           .lean()
       : [];
 
-    return Response.json({ attendance, visits });
+    return Response.json({ attendance, visits, workStatus: workStatusFor(attendance, null) });
   } catch (error) {
     return errorResponse(error, "Unable to load today's attendance.");
   }
