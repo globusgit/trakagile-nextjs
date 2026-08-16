@@ -1,58 +1,51 @@
-import { NextResponse } from "next/server";
-import connectDB from "@/lib/mongoose";
 import mongoose from "mongoose";
+import { connectDB } from "@/lib/mongoose";
 import LeaveRequest from "@/models/LeaveRequest";
 import User from "@/models/User";
 import Employee from "@/models/Employee";
+import { errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
 
 async function attachEmployeeNames(leaves, orgId) {
-  const userIds = [...new Set(leaves.map((l) => l.userId?.toString()).filter(Boolean))];
+  const userIds = [...new Set(leaves.map((leave) => leave.userId?.toString()).filter(Boolean))];
   if (userIds.length === 0) return leaves;
 
   const users = await User.find({ _id: { $in: userIds } }).lean();
-  const usernameByUserId = {};
-  users.forEach((u) => {
-    usernameByUserId[u._id.toString()] = u.username;
-  });
-
-  const empIds = [...new Set(Object.values(usernameByUserId).filter(Boolean))];
-  const employees = await Employee.find({ empId: { $in: empIds }, orgId }).lean();
-  const nameByEmpId = {};
-  employees.forEach((e) => {
-    nameByEmpId[e.empId] = e.name;
-  });
+  const usernameByUserId = Object.fromEntries(
+    users.map((user) => [user._id.toString(), user.username]),
+  );
+  const employeeIds = [...new Set(Object.values(usernameByUserId).filter(Boolean))];
+  const employees = await Employee.find({ empId: { $in: employeeIds }, orgId }).lean();
+  const nameByEmployeeId = Object.fromEntries(
+    employees.map((employee) => [employee.empId, employee.name]),
+  );
 
   return leaves.map((leave) => {
-    const uid = leave.userId?.toString();
-    const empId = usernameByUserId[uid];
-    const employeeName = empId ? nameByEmpId[empId] : undefined;
-    return {
-      ...leave,
-      employeeName: employeeName || null,
-    };
+    const employeeId = usernameByUserId[leave.userId?.toString()];
+    return { ...leave, employeeName: nameByEmployeeId[employeeId] || null };
   });
 }
 
 export async function GET(request) {
   try {
     await connectDB();
+    const identity = await requireAttendanceUser();
     const { searchParams } = new URL(request.url);
-    const orgId = searchParams.get("orgId");
-    const userId = searchParams.get("userId");
-    const search = searchParams.get("search");
-    const page = parseInt(searchParams.get("page")) || 1;
-    const limit = parseInt(searchParams.get("limit")) || 10;
-    const skip = (page - 1) * limit;
+    const page = Math.max(1, parseInt(searchParams.get("page"), 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit"), 10) || 10));
+    const requestedUserId = searchParams.get("userId");
+    const query = { orgId: identity.orgId };
 
-    const query = { orgId };
-    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-      query.userId = userId;
+    if (["ADMIN", "MANAGER"].includes(identity.role)) {
+      if (requestedUserId && mongoose.Types.ObjectId.isValid(requestedUserId)) {
+        query.userId = requestedUserId;
+      }
+    } else {
+      query.userId = identity.userId;
     }
 
-    if (search && search.trim() !== "") {
-      const term = search.trim();
-      const regex = new RegExp(term, "i");
-
+    const search = searchParams.get("search")?.trim();
+    if (search) {
+      const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
       query.$or = [
         { leaveType: regex },
         { status: regex },
@@ -60,32 +53,24 @@ export async function GET(request) {
         { rejectionReason: regex },
         {
           $expr: {
-            $regexMatch: {
-              input: { $toString: "$days" },
-              regex: term,
-              options: "i",
-            },
+            $regexMatch: { input: { $toString: "$days" }, regex: regex.source, options: "i" },
           },
         },
       ];
     }
 
     const [rawLeaves, total] = await Promise.all([
-      LeaveRequest.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      LeaveRequest.find(query)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
       LeaveRequest.countDocuments(query),
     ]);
+    const leaves = await attachEmployeeNames(rawLeaves, identity.orgId);
 
-    const leaves = await attachEmployeeNames(rawLeaves, orgId);
-
-    return NextResponse.json(
-      { leaves, page, limit, total, totalPages: Math.ceil(total / limit) },
-      { status: 200 },
-    );
+    return Response.json({ leaves, page, limit, total, totalPages: Math.ceil(total / limit) });
   } catch (error) {
-    console.error("Error searching leave requests:", error);
-    return NextResponse.json(
-      { error: "Failed to search leave requests" },
-      { status: 500 },
-    );
+    return errorResponse(error, "Unable to search leave requests.");
   }
 }

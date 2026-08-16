@@ -33,7 +33,7 @@ export async function requireAttendanceUser(allowedRoles) {
     throw new AttendanceError("You are not allowed to perform this action.", 403);
   }
 
-  return { empId: user.empId, orgId: user.orgId, role: user.role };
+  return { userId: user.id, empId: user.empId, orgId: user.orgId, role: user.role };
 }
 
 export async function getAttendancePolicy(orgId) {
