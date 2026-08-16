@@ -48,16 +48,21 @@ export async function POST(request) {
         },
       },
       { new: true },
-    );
+    ).populate("clientSiteId", "clientName siteName");
     if (!visit) throw new AttendanceError("No active visit found.", 404);
+
+    const site = visit.clientSiteId;
+    const siteLabel = site?.clientName && site?.siteName
+      ? `${site.clientName} / ${site.siteName}`
+      : "client/site";
 
     await notifyAttendance({
       orgId: identity.orgId,
       empId: identity.empId,
       attendanceId: attendance._id,
       type: "VISIT_COMPLETED",
-      title: "Client/site visit completed",
-      message: `${identity.empId} completed a client/site visit${visit.remarks ? `: ${visit.remarks}` : "."}`,
+      title: `${siteLabel} visit completed`,
+      message: `${identity.empId} completed the ${siteLabel} visit${visit.remarks ? `: ${visit.remarks}` : "."}`,
       dedupeKey: `${visit._id}:completed`,
     });
 
