@@ -18,6 +18,7 @@ import {
 } from "../_lib/attendance";
 import { notifyAttendance } from "../_lib/notifications";
 import { deviceFrom } from "../../wfh/_lib/device";
+import { writeAudit } from "@/lib/audit";
 
 export async function POST(request) {
   let dbSession;
@@ -143,6 +144,8 @@ export async function POST(request) {
         dedupeKey: `${attendance._id}:field-started`,
       });
     }
+
+    await writeAudit({ identity, action: "ATTENDANCE_MARK_IN", entityType: "ATTENDANCE", entityId: attendance._id, details: { attendanceType, attendanceDate: attendance.attendanceDate } });
 
     return Response.json({ data: attendance }, { status: 201 });
   } catch (error) {

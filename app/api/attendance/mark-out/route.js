@@ -15,6 +15,7 @@ import {
 } from "../_lib/attendance";
 import { notifyAttendance } from "../_lib/notifications";
 import { assertBoundDevice, deviceFrom } from "../../wfh/_lib/device";
+import { writeAudit } from "@/lib/audit";
 
 export async function POST(request) {
   let dbSession;
@@ -99,6 +100,8 @@ export async function POST(request) {
       message: `${identity.empId} marked out. Distance: ${((closedAttendance.totalDistanceMeters || 0) / 1000).toFixed(2)} km.`,
       dedupeKey: `${closedAttendance._id}:attendance-completed`,
     });
+
+    await writeAudit({ identity, action: "ATTENDANCE_MARK_OUT", entityType: "ATTENDANCE", entityId: closedAttendance._id, details: { workedMinutes: closedAttendance.totalWorkedMinutes, distanceMeters: closedAttendance.totalDistanceMeters } });
 
     return Response.json({ message: "Attendance marked out successfully." });
   } catch (error) {

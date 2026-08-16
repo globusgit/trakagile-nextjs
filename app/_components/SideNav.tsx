@@ -12,6 +12,7 @@ import {
   BriefcaseBusiness,
   House,
   BarChart3,
+  ScrollText,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
@@ -51,7 +52,7 @@ export default function SideNav({ collapsed }: { collapsed: boolean }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const role = session?.user?.role;
   const visibleItems = role === "DIRECTOR" || role === "ADMIN"
-    ? [...teamItems, { label: "Settings", href: "/settings", icon: <Settings size={20} /> }]
+    ? [...teamItems, { label: "Audit Logs", href: "/audit-logs", icon: <ScrollText size={20} /> }, { label: "Settings", href: "/settings", icon: <Settings size={20} /> }]
     : role === "MANAGER"
       ? teamItems
       : employeeItems;
