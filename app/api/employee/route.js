@@ -3,9 +3,7 @@ import connectDB from "@/lib/mongoose";
 import Employee from "@/models/Employee";
 import User from "@/models/User";
 import bcrypt from "bcryptjs";
-import fs from "fs";
-import path from "path";
-import { EMPLOYEE_UPLOAD_DIR } from "@/lib/uploadConfig";
+import { uploadToGridFS } from "@/lib/gridfs";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../attendance/_lib/attendance";
 
 const allowedPhotoTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -81,20 +79,16 @@ export async function POST(req) {
 
     const file = formData.get("photo");
     let fileName = "";
+    let photoFileId;
     if (file && typeof file !== "string" && file.size > 0) {
       if (!allowedPhotoTypes.has(file.type) || file.size > 5 * 1024 * 1024) {
         throw new AttendanceError("Employee photo must be JPG, PNG or WebP and 5 MB or smaller.");
       }
-      if (!fs.existsSync(EMPLOYEE_UPLOAD_DIR)) {
-        fs.mkdirSync(EMPLOYEE_UPLOAD_DIR, { recursive: true });
-      }
       const originalName = sanitizeFileName(file.name || "upload.jpg");
       fileName = `${Date.now()}-${originalName}`;
-      const filePath = path.join(EMPLOYEE_UPLOAD_DIR, fileName);
-
       const bytes = await file.arrayBuffer();
       const buffer = Buffer.from(bytes);
-      fs.writeFileSync(filePath, buffer);
+      photoFileId = (await uploadToGridFS(buffer, { filename: fileName, contentType: file.type, metadata: { orgId, empId, kind: "EMPLOYEE_PHOTO" } })).id;
     }
 
     const managerName = String(formData.get("managerName") || "").trim();
@@ -117,6 +111,7 @@ export async function POST(req) {
       reportingTo: manager?._id,
       orgId,
       photo: fileName,
+      photoFileId,
     });
 
     if (emp) {

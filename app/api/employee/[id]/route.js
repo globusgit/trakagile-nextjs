@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import connectDB from "@/lib/mongoose";
 import Employee from "@/models/Employee";
-import fs from "fs";
-import path from "path";
-import { EMPLOYEE_UPLOAD_DIR } from "@/lib/uploadConfig";
+import { deleteFromGridFS, uploadToGridFS } from "@/lib/gridfs";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
 
 const allowedPhotoTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -43,7 +41,7 @@ export async function PUT(req, { params }) {
     const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR"]);
     const { id } = await params;
     const formData = await req.formData();
-    const currentEmployee = await Employee.findOne({ _id: id, orgId: identity.orgId }).select("orgId");
+    const currentEmployee = await Employee.findOne({ _id: id, orgId: identity.orgId }).select("orgId empId photoFileId");
     if (!currentEmployee) throw new AttendanceError("Employee not found.", 404);
     const managerName = String(formData.get("managerName") || "").trim();
     const manager = managerName && currentEmployee
@@ -72,16 +70,14 @@ export async function PUT(req, { params }) {
       if (!allowedPhotoTypes.has(file.type) || file.size > 5 * 1024 * 1024) {
         throw new AttendanceError("Employee photo must be JPG, PNG or WebP and 5 MB or smaller.");
       }
-      if (!fs.existsSync(EMPLOYEE_UPLOAD_DIR)) {
-        fs.mkdirSync(EMPLOYEE_UPLOAD_DIR, { recursive: true });
-      }
       const originalName = sanitizeFileName(file.name || "upload.jpg");
       const fileName = `${Date.now()}-${originalName}`;
-      const filePath = path.join(EMPLOYEE_UPLOAD_DIR, fileName);
       const bytes = await file.arrayBuffer();
       const buffer = Buffer.from(bytes);
-      fs.writeFileSync(filePath, buffer);
+      const uploaded = await uploadToGridFS(buffer, { filename: fileName, contentType: file.type, metadata: { orgId: identity.orgId, empId: currentEmployee.empId, kind: "EMPLOYEE_PHOTO" } });
       updateData.photo = fileName;
+      updateData.photoFileId = uploaded.id;
+      await deleteFromGridFS(currentEmployee.photoFileId);
     }
 
     const updated = await Employee.findOneAndUpdate({ _id: id, orgId: identity.orgId }, updateData, {

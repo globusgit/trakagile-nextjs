@@ -1,8 +1,7 @@
 import crypto from "crypto";
-import fs from "fs/promises";
 import path from "path";
 import { connectDB } from "@/lib/mongoose";
-import { DOCUMENT_UPLOAD_DIR } from "@/lib/uploadConfig";
+import { deleteFromGridFS, uploadToGridFS } from "@/lib/gridfs";
 import { writeAudit } from "@/lib/audit";
 import Employee from "@/models/Employee";
 import EmployeeDocument from "@/models/EmployeeDocument";
@@ -46,9 +45,11 @@ export async function POST(request) {
     if (file.size > 10 * 1024 * 1024) throw new AttendanceError("Document must be 10 MB or smaller.");
     const bytes = Buffer.from(await file.arrayBuffer()); const fileHash = crypto.createHash("sha256").update(bytes).digest("hex");
     if (await EmployeeDocument.exists({ orgId: identity.orgId, employeeId, fileHash })) throw new AttendanceError("This document was already uploaded.", 409);
-    await fs.mkdir(DOCUMENT_UPLOAD_DIR, { recursive: true }); const storedName = `${Date.now()}-${crypto.randomUUID()}-${cleanName(file.name || "document")}`;
-    await fs.writeFile(path.join(DOCUMENT_UPLOAD_DIR, storedName), bytes);
-    const document = await EmployeeDocument.create({ orgId: identity.orgId, employeeId, category, title, description: String(form.get("description") || "").trim(), storedName, originalName: cleanName(file.name), mimeType: file.type, size: file.size, fileHash, uploadedBy: identity.userId });
+    const storedName = `${Date.now()}-${crypto.randomUUID()}-${cleanName(file.name || "document")}`;
+    const uploaded = await uploadToGridFS(bytes, { filename: storedName, contentType: file.type, metadata: { orgId: identity.orgId, employeeId, kind: "EMPLOYEE_DOCUMENT" } });
+    let document;
+    try { document = await EmployeeDocument.create({ orgId: identity.orgId, employeeId, category, title, description: String(form.get("description") || "").trim(), gridFsFileId: uploaded.id, originalName: cleanName(file.name), mimeType: file.type, size: file.size, fileHash, uploadedBy: identity.userId }); }
+    catch (error) { await deleteFromGridFS(uploaded.id); throw error; }
     await writeAudit({ identity, action: "DOCUMENT_UPLOAD", entityType: "EMPLOYEE_DOCUMENT", entityId: document._id, details: { employeeId, category, title } });
     return Response.json({ document }, { status: 201 });
   } catch (error) { return errorResponse(error, "Unable to upload document."); }

@@ -12,6 +12,7 @@ const TripExpenseSchema = new mongoose.Schema({
   receiptPath: String,
   receiptName: String,
   receiptHash: String,
+  receiptFileId: { type: mongoose.Types.ObjectId },
   status: { type: String, enum: ["SUBMITTED", "APPROVED", "REJECTED"], default: "SUBMITTED" },
 }, { timestamps: true });
 TripExpenseSchema.index({ tripId: 1, createdAt: -1 });

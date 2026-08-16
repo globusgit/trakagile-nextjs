@@ -1,9 +1,8 @@
 import crypto from "crypto";
-import fs from "fs/promises";
 import mongoose from "mongoose";
 import path from "path";
 import { connectDB } from "@/lib/mongoose";
-import { TRIP_UPLOAD_DIR } from "@/lib/uploadConfig";
+import { deleteFromGridFS, uploadToGridFS } from "@/lib/gridfs";
 import FieldTrip from "@/models/FieldTrip";
 import TripExpense from "@/models/TripExpense";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../../../attendance/_lib/attendance";
@@ -28,21 +27,21 @@ export async function POST(request, { params }) {
     let receiptPath;
     let receiptName;
     let receiptHash;
+    let receiptFileId;
     if (receipt && typeof receipt !== "string" && receipt.size > 0) {
       if (!allowedTypes.has(receipt.type)) throw new AttendanceError("Receipt must be JPG, PNG or PDF.");
       if (receipt.size > 10 * 1024 * 1024) throw new AttendanceError("Receipt must be 10 MB or smaller.");
       const bytes = Buffer.from(await receipt.arrayBuffer());
       receiptHash = crypto.createHash("sha256").update(bytes).digest("hex");
       if (await TripExpense.exists({ tripId: trip._id, receiptHash })) throw new AttendanceError("This receipt was already submitted.", 409);
-      await fs.mkdir(TRIP_UPLOAD_DIR, { recursive: true });
       receiptName = `${Date.now()}-${cleanName(receipt.name || "receipt")}`;
-      await fs.writeFile(path.join(TRIP_UPLOAD_DIR, receiptName), bytes);
+      receiptFileId = (await uploadToGridFS(bytes, { filename: receiptName, contentType: receipt.type, metadata: { orgId: identity.orgId, employeeId: identity.empId, kind: "TRIP_RECEIPT" } })).id;
     }
     const expense = await TripExpense.create({
       tripId: trip._id, orgId: identity.orgId, employeeId: identity.empId,
       category, amount, vendor: form.get("vendor"), paymentMethod: form.get("paymentMethod"),
-      remarks: form.get("remarks"), receiptPath, receiptName, receiptHash,
-    });
+      remarks: form.get("remarks"), receiptPath, receiptName, receiptHash, receiptFileId,
+    }).catch(async (error) => { await deleteFromGridFS(receiptFileId); throw error; });
     if (receiptName) {
       expense.receiptPath = `/api/field-trips/receipts/${expense._id}`;
       await expense.save();

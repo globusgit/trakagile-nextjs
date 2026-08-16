@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import path from "path";
 import { connectDB } from "@/lib/mongoose";
 import { TRIP_UPLOAD_DIR } from "@/lib/uploadConfig";
+import { readFromGridFS } from "@/lib/gridfs";
 import Employee from "@/models/Employee";
 import FieldTrip from "@/models/FieldTrip";
 import TripExpense from "@/models/TripExpense";
@@ -15,7 +16,7 @@ export async function GET(_request, { params }) {
     const { id } = await params;
     if (!mongoose.isValidObjectId(id)) throw new AttendanceError("Invalid receipt.");
     const expense = await TripExpense.findOne({ _id: id, orgId: identity.orgId }).lean();
-    if (!expense?.receiptName) throw new AttendanceError("Receipt not found.", 404);
+    if (!expense?.receiptName && !expense?.receiptFileId) throw new AttendanceError("Receipt not found.", 404);
     const trip = await FieldTrip.findById(expense.tripId).select("employeeId").lean();
     let allowed = trip?.employeeId === identity.empId || ["ADMIN", "DIRECTOR"].includes(identity.role);
     if (!allowed && identity.role === "MANAGER" && trip) {
@@ -23,10 +24,11 @@ export async function GET(_request, { params }) {
       allowed = Boolean(await Employee.exists({ orgId: identity.orgId, empId: trip.employeeId, reportingTo: manager?._id }));
     }
     if (!allowed) throw new AttendanceError("You are not allowed to view this receipt.", 403);
-    const safeName = path.basename(expense.receiptName);
-    const buffer = await fs.readFile(path.join(TRIP_UPLOAD_DIR, safeName));
+    const stored = expense.receiptFileId ? await readFromGridFS(expense.receiptFileId) : null;
+    const safeName = path.basename(expense.receiptName || stored?.file?.filename || "receipt");
+    const buffer = stored?.buffer || await fs.readFile(path.join(TRIP_UPLOAD_DIR, safeName));
     const extension = path.extname(safeName).toLowerCase();
-    const contentType = extension === ".pdf" ? "application/pdf" : extension === ".png" ? "image/png" : "image/jpeg";
+    const contentType = stored?.file?.contentType || (extension === ".pdf" ? "application/pdf" : extension === ".png" ? "image/png" : "image/jpeg");
     return new Response(buffer, { headers: { "Content-Type": contentType, "Content-Disposition": `inline; filename="${safeName}"`, "Cache-Control": "private, no-store" } });
   } catch (error) { return errorResponse(error, "Unable to load receipt."); }
 }
