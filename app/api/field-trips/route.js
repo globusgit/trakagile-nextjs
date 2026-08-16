@@ -32,8 +32,10 @@ export async function POST(request) {
     const destination = String(body.destination || "").trim();
     const expectedStartAt = new Date(body.expectedStartAt);
     const expectedReturnAt = new Date(body.expectedReturnAt);
+    const advanceAmount = Number(body.advanceAmount);
     if (!purpose || !source || !destination) throw new AttendanceError("Purpose, source and destination are required.");
     if (Number.isNaN(expectedStartAt.getTime()) || Number.isNaN(expectedReturnAt.getTime()) || expectedReturnAt <= expectedStartAt) throw new AttendanceError("Enter a valid trip period.");
+    if (!Number.isFinite(advanceAmount) || advanceAmount < 0) throw new AttendanceError("Advance amount must be 0 or more.");
     const existing = await FieldTrip.exists({ orgId: identity.orgId, employeeId: identity.empId, status: { $nin: ["COMPLETED", "CANCELLED"] } });
     if (existing) throw new AttendanceError("Complete or cancel the current field trip first.", 409);
     const site = await VisitedSite.findOne({ _id: body.clientSiteId, orgId: identity.orgId, status: "ACTIVE" });
@@ -43,7 +45,7 @@ export async function POST(request) {
       orgId: identity.orgId, employeeId: identity.empId, attendanceId: attendance?._id,
       clientSiteId: site._id, purpose, source, destination,
       travelMode: body.travelMode, expectedStartAt, expectedReturnAt,
-      advanceAmount: Math.max(0, Number(body.advanceAmount) || 0),
+      advanceAmount,
     });
     return Response.json({ data: trip }, { status: 201 });
   } catch (error) { return errorResponse(error, "Unable to create field trip."); }
