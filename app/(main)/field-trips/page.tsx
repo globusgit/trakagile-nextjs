@@ -54,7 +54,22 @@ export default function FieldTripsPage() {
   const tripValid = Boolean(trip.clientSiteId && trip.purpose.trim() && trip.source.trim() && trip.destination.trim() && trip.travelMode && validTripPeriod && validAdvance);
   const tripDuration = useMemo(() => { const start = new Date(trip.expectedStartAt).getTime(); const end = new Date(trip.expectedReturnAt).getTime(); if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return "Select a valid start and return time"; const hours = Math.round((end - start) / 3600000); const days = Math.floor(hours / 24); return `${days ? `${days} day${days === 1 ? "" : "s"} ` : ""}${hours % 24} hour${hours % 24 === 1 ? "" : "s"}`; }, [trip.expectedStartAt, trip.expectedReturnAt]);
   const createTrip = async () => { setCreateAttempted(true); if (!tripValid) return toast.error("Complete all required trip details."); setBusy(true); try { const response = await fetch("/api/field-trips", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...trip, expectedStartAt: new Date(trip.expectedStartAt).toISOString(), expectedReturnAt: new Date(trip.expectedReturnAt).toISOString() }) }); const result = await response.json(); if (!response.ok) throw new Error(result.message); setCreateOpen(false); setCreateAttempted(false); await load(); toast.success("Field trip created."); } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to create trip."); } finally { setBusy(false); } };
-  const act = async (action: string, extra: Record<string, unknown> = {}) => { if (!active) return; setBusy(true); try { const location = await gps(); const response = await fetch(`/api/field-trips/${active._id}/action`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...location, ...extra }) }); const result = await response.json(); if (!response.ok) throw new Error(result.message); setStayOpen(false); await load(); toast.success("Trip status updated."); } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to update trip."); } finally { setBusy(false); } };
+  const act = async (action: string, extra: Record<string, unknown> = {}) => { if (!active) return; setBusy(true); try { const location = await gps();
+    if (action === "START_TRAVEL") {
+      const todayResponse = await fetch("/api/attendance/today", { cache: "no-store" });
+      const today = await todayResponse.json();
+      if (!todayResponse.ok) throw new Error(today.message || "Unable to verify attendance.");
+      if (today.attendance?.status !== "IN") {
+        const now = new Date();
+        const tripReturn = new Date(active.expectedReturnAt);
+        const sessionEnd = new Date(Math.min(tripReturn.getTime(), now.getTime() + 12 * 60 * 60 * 1000));
+        const markInResponse = await fetch("/api/attendance/mark-in", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...location, attendanceType: "FIELD_VISIT", clientSiteId: active.clientSiteId._id, purpose: active.purpose, expectedWorkEndAt: sessionEnd.toISOString(), overnightWork: sessionEnd.getDate() !== now.getDate() }) });
+        const markInResult = await markInResponse.json();
+        if (!markInResponse.ok) throw new Error(markInResult.message || "Unable to start field attendance.");
+        toast.success("Field attendance marked in automatically.");
+      }
+    }
+    const response = await fetch(`/api/field-trips/${active._id}/action`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...location, ...extra }) }); const result = await response.json(); if (!response.ok) throw new Error(result.message); setStayOpen(false); await load(); toast.success("Trip status updated."); } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to update trip."); } finally { setBusy(false); } };
   const addExpense = async () => { if (!active) return; setBusy(true); try { const form = new FormData(); Object.entries(expense).forEach(([key, value]) => form.append(key, value)); if (receiptFile) form.append("receipt", receiptFile); const response = await fetch(`/api/field-trips/${active._id}/expenses`, { method: "POST", body: form }); const result = await response.json(); if (!response.ok) throw new Error(result.message); setExpenseOpen(false); await load(); toast.success("Expense submitted."); } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to add expense."); } finally { setBusy(false); } };
 
   return <div className="space-y-6 pb-10"><PageHeader title="Field Trips" />

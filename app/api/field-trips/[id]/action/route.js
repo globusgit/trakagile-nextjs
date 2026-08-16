@@ -49,7 +49,10 @@ export async function POST(request, { params }) {
     session = await mongoose.startSession();
     await session.withTransaction(async () => {
       trip.set({ status: transition.to, currentLocation: location });
-      if (body.action === "START_TRAVEL") trip.startedAt = now;
+      if (body.action === "START_TRAVEL") {
+        trip.startedAt = now;
+        if (!trip.attendanceId) trip.attendanceId = attendance._id;
+      }
       if (body.action === "STAY_CHECK_IN") trip.hotel = { name: String(body.hotelName).trim(), address: String(body.hotelAddress || "").trim(), expectedCheckOutAt: new Date(body.expectedCheckOutAt), checkInAt: now, checkInLocation: location };
       if (body.action === "STAY_CHECK_OUT") { trip.hotel.checkOutAt = now; trip.hotel.checkOutLocation = location; }
       if (body.action === "COMPLETE_TRIP") trip.completedAt = now;
