@@ -11,6 +11,7 @@ import {
   MapPinned,
   BriefcaseBusiness,
   House,
+  BarChart3,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
@@ -33,6 +34,7 @@ const employeeItems = [
     href: "/holidays",
     icon: <CalendarCheck2Icon size={20} />,
   },
+  { label: "Reports", href: "/reports", icon: <BarChart3 size={20} /> },
 ];
 
 const teamItems = [
