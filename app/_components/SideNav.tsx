@@ -13,6 +13,7 @@ import {
   House,
   BarChart3,
   ScrollText,
+  Files,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
@@ -36,6 +37,7 @@ const employeeItems = [
     icon: <CalendarCheck2Icon size={20} />,
   },
   { label: "Reports", href: "/reports", icon: <BarChart3 size={20} /> },
+  { label: "Documents", href: "/documents", icon: <Files size={20} /> },
 ];
 
 const teamItems = [
