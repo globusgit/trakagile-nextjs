@@ -1,15 +1,9 @@
-"use client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import AppShell from "../_components/AppShell";
-import { useState } from "react";
+import { auth } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import MainLayoutClient from "./MainLayoutClient";
 
-export default function Layout({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient());
-  return (
-    <div className="h-screen w-screen overflow-hidden">
-      <QueryClientProvider client={queryClient}>
-        <AppShell>{children}</AppShell>
-      </QueryClientProvider>
-    </div>
-  );
+export default async function Layout({ children }: { children: React.ReactNode }) {
+  const session = await auth();
+  if (!session?.user?.id || !session.user.empId || !session.user.orgId) redirect("/");
+  return <MainLayoutClient>{children}</MainLayoutClient>;
 }
