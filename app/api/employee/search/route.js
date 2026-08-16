@@ -6,7 +6,7 @@ import { errorResponse, requireAttendanceUser } from "../../attendance/_lib/atte
 export async function GET(request) {
   try {
     await connectDB();
-    const identity = await requireAttendanceUser(["ADMIN", "MANAGER"]);
+    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR", "MANAGER"]);
     const { searchParams } = new URL(request.url);
     const orgId = identity.orgId;
     const q = searchParams.get("q");

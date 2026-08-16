@@ -42,7 +42,7 @@ export default function SideNav({ collapsed }: { collapsed: boolean }) {
   const sessionEmpId = session?.user?.empId;
   const [unreadCount, setUnreadCount] = useState(0);
   const role = session?.user?.role;
-  const visibleItems = role === "MANAGER" || role === "ADMIN"
+  const visibleItems = role === "MANAGER" || role === "DIRECTOR" || role === "ADMIN"
     ? [
         ...menuItems.slice(0, 2),
         { label: "Live Tracking", href: "/live-tracking", icon: <MapPinned size={20} /> },

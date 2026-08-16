@@ -8,7 +8,7 @@ import { notifyAttendance } from "../../../../attendance/_lib/notifications";
 
 export async function PATCH(request, { params }) {
   try {
-    await connectDB(); const identity = await requireAttendanceUser(["MANAGER", "ADMIN"]); const { id } = await params; const body = await request.json();
+    await connectDB(); const identity = await requireAttendanceUser(["MANAGER", "DIRECTOR", "ADMIN"]); const { id } = await params; const body = await request.json();
     if (!mongoose.isValidObjectId(id) || !["APPROVED", "REJECTED"].includes(body.status)) throw new AttendanceError("Invalid device review.");
     const change = await WfhDeviceChange.findOne({ _id: id, orgId: identity.orgId, status: "PENDING" }).select("+newDevice.deviceIdHash +newDevice.ipHash");
     if (!change) throw new AttendanceError("Pending device request not found.", 404);

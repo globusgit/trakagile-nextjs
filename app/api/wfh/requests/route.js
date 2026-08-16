@@ -11,8 +11,8 @@ export async function GET(request) {
     const team = new URL(request.url).searchParams.get("team") === "1";
     let filter = { orgId: identity.orgId, employeeId: identity.empId };
     if (team) {
-      if (!["MANAGER", "ADMIN"].includes(identity.role)) throw new AttendanceError("Manager access is required.", 403);
-      if (identity.role === "ADMIN") filter = { orgId: identity.orgId };
+      if (!["MANAGER", "DIRECTOR", "ADMIN"].includes(identity.role)) throw new AttendanceError("Manager access is required.", 403);
+      if (["ADMIN", "DIRECTOR"].includes(identity.role)) filter = { orgId: identity.orgId };
       else {
         const manager = await Employee.findOne({ orgId: identity.orgId, empId: identity.empId }).select("_id").lean();
         const reports = await Employee.find({ orgId: identity.orgId, reportingTo: manager?._id }).select("empId").lean();

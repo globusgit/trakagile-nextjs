@@ -27,6 +27,7 @@ import FieldTrip from "@/models/FieldTrip";
 import Holiday from "@/models/Holiday";
 import LeaveRequest from "@/models/LeaveRequest";
 import Notification from "@/models/Notification";
+import User from "@/models/User";
 import WorkFromHomeRequest from "@/models/WorkFromHomeRequest";
 
 export const dynamic = "force-dynamic";
@@ -102,19 +103,38 @@ export default async function Dashboard() {
 
   await connectDB();
   const today = indiaDayKey();
-  const isManager = ["ADMIN", "MANAGER"].includes(user.role || "");
-  const attendanceScope = isManager
+  const isDirector = ["ADMIN", "DIRECTOR"].includes(user.role || "");
+  const isManager = user.role === "MANAGER";
+  const hasTeamView = isDirector || isManager;
+  const managerEmployee = isManager
+    ? await Employee.findOne({ orgId: user.orgId, empId: user.empId }).select("_id").lean()
+    : null;
+  const teamEmployees = isManager
+    ? await Employee.find({ orgId: user.orgId, reportingTo: managerEmployee?._id, status: "Active" }).select("empId").lean()
+    : [];
+  const visibleEmployeeIds = isDirector
+    ? null
+    : isManager
+      ? teamEmployees.map((employee) => employee.empId)
+      : [user.empId];
+  const teamUsers = isManager
+    ? await User.find({ orgId: user.orgId, username: { $in: visibleEmployeeIds || [] } }).select("_id").lean()
+    : [];
+  const attendanceScope = hasTeamView
     ? { orgId: user.orgId, attendanceDate: today }
     : { orgId: user.orgId, attendanceDate: today, empId: user.empId };
-  const employeeScope = isManager
+  if (visibleEmployeeIds) Object.assign(attendanceScope, { empId: { $in: visibleEmployeeIds } });
+  const employeeScope = isDirector
     ? { orgId: user.orgId }
-    : { orgId: user.orgId, empId: user.empId };
-  const tripScope = isManager
+    : { orgId: user.orgId, empId: { $in: visibleEmployeeIds || [] } };
+  const tripScope = isDirector
     ? { orgId: user.orgId }
-    : { orgId: user.orgId, employeeId: user.empId };
-  const leaveScope = isManager
+    : { orgId: user.orgId, employeeId: { $in: visibleEmployeeIds || [] } };
+  const leaveScope = isDirector
     ? { orgId: user.orgId }
-    : { orgId: user.orgId, userId: user.id };
+    : isManager
+      ? { orgId: user.orgId, userId: { $in: teamUsers.map((teamUser) => teamUser._id) } }
+      : { orgId: user.orgId, userId: user.id };
 
   const [
     activeEmployees,
@@ -135,7 +155,7 @@ export default async function Dashboard() {
     Attendance.findOne({ ...attendanceScope, empId: user.empId }).lean(),
     EmployeeVisit.countDocuments({
       orgId: user.orgId,
-      ...(isManager ? {} : { employeeId: user.empId }),
+      ...(isDirector ? {} : { employeeId: { $in: visibleEmployeeIds || [] } }),
       status: "IN_PROGRESS",
     }),
     FieldTrip.countDocuments({ ...tripScope, status: { $in: activeTripStatuses } }),
@@ -176,17 +196,17 @@ export default async function Dashboard() {
           <p className="text-sm text-muted-foreground">{formatDate(new Date())}</p>
           <h1 className="mt-1 text-2xl font-semibold">Welcome, {user.name || user.empId}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {isManager ? "Here is your organization’s live work overview." : "Here is your work summary for today."}
+            {isDirector ? "Here is the organization-wide work overview." : isManager ? "Here is your reporting team’s work overview." : "Here is your work summary for today."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button render={<Link href="/attendance" />}><MapPin /> Open attendance</Button>
-          {isManager && <Button variant="outline" render={<Link href="/live-tracking" />}><Route /> Live tracking</Button>}
+          {hasTeamView && <Button variant="outline" render={<Link href="/live-tracking" />}><Route /> Live tracking</Button>}
         </div>
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {isManager ? (
+        {hasTeamView ? (
           <>
             <SummaryCard title="Active employees" value={activeEmployees} helper="Enabled employee profiles" icon={Users} />
             <SummaryCard title="Currently marked in" value={markedIn} helper={`${completedAttendance} completed today`} icon={UserRoundCheck} />

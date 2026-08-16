@@ -3,7 +3,7 @@ import { connectDB } from "@/lib/mongoose";
 import LeaveRequest from "@/models/LeaveRequest";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../attendance/_lib/attendance";
 
-const elevated = (role) => ["ADMIN", "MANAGER"].includes(role);
+const elevated = (role) => ["ADMIN", "DIRECTOR", "MANAGER"].includes(role);
 
 export async function GET(request) {
   try {

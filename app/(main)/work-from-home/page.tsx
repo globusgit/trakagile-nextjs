@@ -20,7 +20,7 @@ const today = () => new Date().toLocaleDateString("en-CA");
 function getGps() { return new Promise<Record<string, unknown>>((resolve, reject) => navigator.geolocation.getCurrentPosition((position) => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy, capturedAt: new Date(position.timestamp).toISOString() }), () => reject(new Error("Fresh GPS is required to register your WFH location.")), { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 })); }
 
 export default function WorkFromHomePage() {
-  const { data: session } = useSession(); const role = session?.user?.role; const isManager = role === "MANAGER" || role === "ADMIN";
+  const { data: session } = useSession(); const role = session?.user?.role; const isManager = role === "MANAGER" || role === "DIRECTOR" || role === "ADMIN";
   const [requests, setRequests] = useState<WfhRequest[]>([]); const [teamRequests, setTeamRequests] = useState<WfhRequest[]>([]); const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false);
   const [deviceChanges, setDeviceChanges] = useState<DeviceChange[]>([]);
   const [form, setForm] = useState(() => ({ fromDate: today(), toDate: today(), dayType: "FULL_DAY", reason: "", plannedTasks: "" }));

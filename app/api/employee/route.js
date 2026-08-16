@@ -13,7 +13,7 @@ const allowedPhotoTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 export async function GET(req) {
   try {
     await connectDB();
-    const identity = await requireAttendanceUser(["ADMIN", "MANAGER"]);
+    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR", "MANAGER"]);
     const { searchParams } = new URL(req.url);
     const page = parseInt(searchParams.get("page")) || 1;
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit")) || 20));
@@ -52,7 +52,7 @@ function sanitizeFileName(name) {
 export async function POST(req) {
   await connectDB();
   try {
-    const identity = await requireAttendanceUser(["ADMIN"]);
+    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR"]);
     const formData = await req.formData();
 
     const name = formData.get("name");
@@ -124,7 +124,7 @@ export async function POST(req) {
 
       let role = "USER";
       if (emp.isManager) role = "MANAGER";
-      if (emp.designation === "Director") role = "ADMIN";
+      if (emp.designation?.trim().toUpperCase() === "DIRECTOR") role = "DIRECTOR";
       if (emp.designation === "ACCOUNTANT") role = "ACCOUNTANT";
 
       await User.create({

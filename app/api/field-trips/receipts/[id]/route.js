@@ -17,7 +17,7 @@ export async function GET(_request, { params }) {
     const expense = await TripExpense.findOne({ _id: id, orgId: identity.orgId }).lean();
     if (!expense?.receiptName) throw new AttendanceError("Receipt not found.", 404);
     const trip = await FieldTrip.findById(expense.tripId).select("employeeId").lean();
-    let allowed = trip?.employeeId === identity.empId || identity.role === "ADMIN";
+    let allowed = trip?.employeeId === identity.empId || ["ADMIN", "DIRECTOR"].includes(identity.role);
     if (!allowed && identity.role === "MANAGER" && trip) {
       const manager = await Employee.findOne({ orgId: identity.orgId, empId: identity.empId }).select("_id").lean();
       allowed = Boolean(await Employee.exists({ orgId: identity.orgId, empId: trip.employeeId, reportingTo: manager?._id }));

@@ -22,7 +22,7 @@ export async function GET(req, { params }) {
     if (!employee) {
       return NextResponse.json({ message: "Employee not found" }, { status: 404 });
     }
-    if (!['ADMIN', 'MANAGER'].includes(identity.role) && employee.empId !== identity.empId) {
+    if (!['ADMIN', 'DIRECTOR', 'MANAGER'].includes(identity.role) && employee.empId !== identity.empId) {
       throw new AttendanceError("You are not allowed to view this employee.", 403);
     }
 
@@ -40,7 +40,7 @@ export async function GET(req, { params }) {
 export async function PUT(req, { params }) {
   await connectDB();
   try {
-    const identity = await requireAttendanceUser(["ADMIN"]);
+    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR"]);
     const { id } = await params;
     const formData = await req.formData();
     const currentEmployee = await Employee.findOne({ _id: id, orgId: identity.orgId }).select("orgId");

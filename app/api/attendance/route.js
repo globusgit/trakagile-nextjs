@@ -9,7 +9,7 @@ function escapeRegex(value) {
 export async function GET(request) {
   try {
     await connectDB();
-    const { orgId } = await requireAttendanceUser(["ADMIN", "MANAGER"]);
+    const { orgId } = await requireAttendanceUser(["ADMIN", "DIRECTOR", "MANAGER"]);
     const { searchParams } = new URL(request.url);
     const page = Math.max(1, Number(searchParams.get("page")) || 1);
     const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit")) || 10));

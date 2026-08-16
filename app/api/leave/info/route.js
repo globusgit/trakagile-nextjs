@@ -9,7 +9,7 @@ export async function GET(request) {
     const identity = await requireAttendanceUser();
     const { searchParams } = new URL(request.url);
     const requestedUserId = searchParams.get("userId");
-    const userId = ["ADMIN", "MANAGER"].includes(identity.role) && requestedUserId ? requestedUserId : identity.userId;
+    const userId = ["ADMIN", "DIRECTOR", "MANAGER"].includes(identity.role) && requestedUserId ? requestedUserId : identity.userId;
     const year = parseInt(searchParams.get("year")) || new Date().getFullYear();
     const defaults = { userId, year, orgId: identity.orgId, casual: 0, sick: 0, earned: 0, unpaid: 0, maternity: 0, paternity: 0, usedCasual: 0, usedSick: 0, usedEarned: 0, usedMaternity: 0, usedPaternity: 0 };
     if (!mongoose.isValidObjectId(userId)) return Response.json(defaults);

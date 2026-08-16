@@ -63,7 +63,7 @@ export default function EditLeaveRequest() {
   const router = useRouter();
   const params = useParams();
   const { data: session } = useSession();
-  const isAdmin = session?.user?.role === "ADMIN" || session?.user?.role === "MANAGER";
+  const isAdmin = session?.user?.role === "ADMIN" || session?.user?.role === "DIRECTOR" || session?.user?.role === "MANAGER";
 
   const [leaveType, setLeaveType] = useState("");
   const [startDate, setStartDate] = useState("");

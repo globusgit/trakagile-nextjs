@@ -35,7 +35,7 @@ export async function GET(request) {
     const requestedUserId = searchParams.get("userId");
     const query = { orgId: identity.orgId };
 
-    if (["ADMIN", "MANAGER"].includes(identity.role)) {
+    if (["ADMIN", "DIRECTOR", "MANAGER"].includes(identity.role)) {
       if (requestedUserId && mongoose.Types.ObjectId.isValid(requestedUserId)) {
         query.userId = requestedUserId;
       }

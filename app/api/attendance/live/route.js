@@ -9,11 +9,11 @@ import { workStatusFor } from "../_lib/work-status";
 export async function GET() {
   try {
     await connectDB();
-    const identity = await requireAttendanceUser(["MANAGER", "ADMIN"]);
+    const identity = await requireAttendanceUser(["MANAGER", "DIRECTOR", "ADMIN"]);
     const manager = identity.role === "MANAGER"
       ? await Employee.findOne({ orgId: identity.orgId, empId: identity.empId }).select("_id").lean()
       : null;
-    const employees = identity.role === "ADMIN"
+    const employees = ["ADMIN", "DIRECTOR"].includes(identity.role)
       ? await Employee.find({ orgId: identity.orgId, status: "Active" }).select("name empId reportingTo").lean()
       : await Employee.find({ orgId: identity.orgId, status: "Active" })
           .where("reportingTo")

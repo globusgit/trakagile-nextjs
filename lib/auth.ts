@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 
 import connectDB from "@/lib/mongoose";
 import User from "@/models/User";
+import Employee from "@/models/Employee";
 
 /* =========================================================
    NEXTAUTH CONFIGURATION
@@ -137,6 +138,16 @@ export const {
             `[AUTH] Login successful: ${empId}`
           );
 
+          const employee = await Employee.findOne({
+            orgId: user.orgId,
+            empId: user.username,
+          }).select("designation isManager").lean();
+          const resolvedRole = employee?.designation?.trim().toUpperCase() === "DIRECTOR"
+            ? "DIRECTOR"
+            : employee?.isManager && user.role === "USER"
+              ? "MANAGER"
+              : user.role;
+
           return {
             /*
              * MongoDB User Object ID
@@ -170,7 +181,7 @@ export const {
              * Role
              */
             role:
-              user.role,
+              resolvedRole,
 
             /*
              * Organization
