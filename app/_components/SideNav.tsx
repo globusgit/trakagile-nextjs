@@ -16,7 +16,7 @@ import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import styles from "./AppShell.module.css";
 
-const menuItems = [
+const employeeItems = [
   { label: "Dashboard", href: "/dashboard", icon: <Home size={20} /> },
   
   {
@@ -27,14 +27,20 @@ const menuItems = [
   { label: "Notifications", href: "/notifications", icon: <Bell size={20} /> },
   { label: "Field Trips", href: "/field-trips", icon: <BriefcaseBusiness size={20} /> },
   { label: "Work From Home", href: "/work-from-home", icon: <House size={20} /> },
-  { label: "Employees", href: "/employees", icon: <User size={20} /> },
   { label: "Leaves", href: "/leaves", icon: <ListCheckIcon size={20} /> },
   {
     label: "Holidays",
     href: "/holidays",
     icon: <CalendarCheck2Icon size={20} />,
   },
-  { label: "Settings", href: "/settings", icon: <Settings size={20} /> },
+];
+
+const teamItems = [
+  ...employeeItems.slice(0, 2),
+  { label: "Live Tracking", href: "/live-tracking", icon: <MapPinned size={20} /> },
+  ...employeeItems.slice(2, 5),
+  { label: "Employees", href: "/employees", icon: <User size={20} /> },
+  ...employeeItems.slice(5),
 ];
 
 export default function SideNav({ collapsed }: { collapsed: boolean }) {
@@ -42,13 +48,11 @@ export default function SideNav({ collapsed }: { collapsed: boolean }) {
   const sessionEmpId = session?.user?.empId;
   const [unreadCount, setUnreadCount] = useState(0);
   const role = session?.user?.role;
-  const visibleItems = role === "MANAGER" || role === "DIRECTOR" || role === "ADMIN"
-    ? [
-        ...menuItems.slice(0, 2),
-        { label: "Live Tracking", href: "/live-tracking", icon: <MapPinned size={20} /> },
-        ...menuItems.slice(2),
-      ]
-    : menuItems;
+  const visibleItems = role === "DIRECTOR" || role === "ADMIN"
+    ? [...teamItems, { label: "Settings", href: "/settings", icon: <Settings size={20} /> }]
+    : role === "MANAGER"
+      ? teamItems
+      : employeeItems;
   useEffect(() => {
     if (!sessionEmpId) return;
     const load = async () => {

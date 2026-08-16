@@ -200,8 +200,8 @@ export default async function Dashboard() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button render={<Link href="/attendance" />}><MapPin /> Open attendance</Button>
-          {hasTeamView && <Button variant="outline" render={<Link href="/live-tracking" />}><Route /> Live tracking</Button>}
+          <Button nativeButton={false} render={<Link href="/attendance" />}><MapPin /> Open attendance</Button>
+          {hasTeamView && <Button nativeButton={false} variant="outline" render={<Link href="/live-tracking" />}><Route /> Live tracking</Button>}
         </div>
       </section>
 
@@ -233,14 +233,14 @@ export default async function Dashboard() {
             <div className="rounded-xl border p-4"><div className="flex items-center gap-2 text-sm font-medium"><CalendarCheck className="size-4" /> Attendance</div><p className="mt-3 text-lg font-semibold">{attendance?.status === "IN" ? "Working now" : attendance ? "Day completed" : "Not started"}</p><p className="mt-1 text-xs text-muted-foreground">Mark in {formatTime(attendance?.markIn?.time)} · Mark out {formatTime(attendance?.markOut?.time)}</p></div>
             <div className="rounded-xl border p-4"><div className="flex items-center gap-2 text-sm font-medium"><Home className="size-4" /> Work mode</div><p className="mt-3 text-lg font-semibold">{attendance?.attendanceType?.replaceAll("_", " ") || "Not selected"}</p><p className="mt-1 text-xs text-muted-foreground">Pending WFH requests: {pendingWfh}</p></div>
             <div className="rounded-xl border p-4"><div className="flex items-center gap-2 text-sm font-medium"><CalendarDays className="size-4" /> Next holiday</div><p className="mt-3 text-lg font-semibold">{nextHoliday?.name || "No upcoming holiday"}</p><p className="mt-1 text-xs text-muted-foreground">{formatDate(nextHoliday?.date)}</p></div>
-            <div className="rounded-xl border p-4"><div className="flex items-center gap-2 text-sm font-medium"><Bell className="size-4" /> Notifications</div><p className="mt-3 text-lg font-semibold">{unreadNotifications} unread</p><Button variant="link" className="h-auto p-0 text-xs" render={<Link href="/notifications" />}>View notifications</Button></div>
+            <div className="rounded-xl border p-4"><div className="flex items-center gap-2 text-sm font-medium"><Bell className="size-4" /> Notifications</div><p className="mt-3 text-lg font-semibold">{unreadNotifications} unread</p><Button nativeButton={false} variant="link" className="h-auto p-0 text-xs" render={<Link href="/notifications" />}>View notifications</Button></div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex-row items-center justify-between space-y-0">
             <CardTitle className="text-base">Recent activity</CardTitle>
-            <Button variant="ghost" size="sm" render={<Link href="/notifications" />}>View all</Button>
+            <Button nativeButton={false} variant="ghost" size="sm" render={<Link href="/notifications" />}>View all</Button>
           </CardHeader>
           <CardContent className="space-y-3">
             {recentNotifications.length ? recentNotifications.map((notice) => (
