@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import PageHeader from "@/app/_components/PageHeader";
@@ -28,6 +28,14 @@ const LEAVE_TYPES = [
   { value: "paternity", label: "Paternity Leave" },
   { value: "other", label: "Other" },
 ];
+
+function leaveDuration(startDate: string, endDate: string) {
+  if (!startDate || !endDate) return { days: "" as const, dayType: null };
+  const start = new Date(startDate); const end = new Date(endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return { days: "" as const, dayType: null };
+  const days = Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1;
+  return { days, dayType: days === 1 ? "full" as const : null };
+}
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
@@ -90,7 +98,7 @@ export default function EditLeaveRequest() {
   const isApproved = status === "approved";
   const isCancellationPending = status === "cancellation_pending";
 
-  const loadLeave = async () => {
+  const loadLeave = useCallback(async () => {
     try {
       const res = await fetch(`/api/leave/${params.id}`);
       if (!res.ok) {
@@ -118,41 +126,18 @@ export default function EditLeaveRequest() {
     } finally {
       setPageLoading(false);
     }
-  };
-
-  useEffect(() => {
-    if (params.id) loadLeave();
   }, [params.id]);
 
   useEffect(() => {
-    if (!isEditable) return;
+    if (!params.id) return;
+    const timer = window.setTimeout(() => void loadLeave(), 0);
+    return () => window.clearTimeout(timer);
+  }, [params.id, loadLeave]);
 
-    if (!startDate || !endDate) {
-      setDays("");
-      setDayType(null);
-      return;
-    }
-
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-
-    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
-      setDays("");
-      setDayType(null);
-      return;
-    }
-
-    const diffTime = Math.abs(end.getTime() - start.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-
-    if (diffDays === 1) {
-      setDayType((prev) => prev ?? "full");
-      setDays((prev) => (prev === 0.5 ? 0.5 : 1));
-    } else {
-      setDayType(null);
-      setDays(diffDays);
-    }
-  }, [startDate, endDate, isEditable]);
+  const updateDates = (nextStart: string, nextEnd: string) => {
+    const duration = leaveDuration(nextStart, nextEnd);
+    setStartDate(nextStart); setEndDate(nextEnd); setDays(duration.days); setDayType(duration.dayType);
+  };
 
   const handleDayTypeChange = (type: "full" | "half") => {
     setDayType(type);
@@ -391,6 +376,7 @@ export default function EditLeaveRequest() {
                 <Select
                   value={leaveType}
                   onValueChange={(v) => {
+                    if (!v) return;
                     setLeaveType(v);
                     if (errors.leaveType) setErrors({ ...errors, leaveType: false });
                   }}
@@ -432,7 +418,7 @@ export default function EditLeaveRequest() {
                 value={startDate}
                 disabled={!isEditable}
                 onChange={(e) => {
-                  setStartDate(e.target.value);
+                  updateDates(e.target.value, endDate);
                   if (errors.startDate) setErrors({ ...errors, startDate: false });
                 }}
                 className={!isEditable ? "bg-gray-50" : errors.startDate ? "border-red-500" : ""}
@@ -451,7 +437,7 @@ export default function EditLeaveRequest() {
                 value={endDate}
                 disabled={!isEditable}
                 onChange={(e) => {
-                  setEndDate(e.target.value);
+                  updateDates(startDate, e.target.value);
                   if (errors.endDate) setErrors({ ...errors, endDate: false });
                 }}
                 className={!isEditable ? "bg-gray-50" : errors.endDate ? "border-red-500" : ""}
