@@ -3,7 +3,7 @@ import connectDB from "@/lib/mongoose";
 import Employee from "@/models/Employee";
 import User from "@/models/User";
 import bcrypt from "bcryptjs";
-import { uploadToGridFS } from "@/lib/gridfs";
+import { deleteFromGridFS, uploadToGridFS } from "@/lib/gridfs";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../attendance/_lib/attendance";
 import { visibleEmployeeIds } from "@/lib/access";
 
@@ -52,6 +52,8 @@ function sanitizeFileName(name) {
 
 export async function POST(req) {
   await connectDB();
+  let uploadedPhotoId;
+  let createdEmployeeId;
   try {
     const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR"]);
     const formData = await req.formData();
@@ -92,6 +94,7 @@ export async function POST(req) {
       const bytes = await file.arrayBuffer();
       const buffer = Buffer.from(bytes);
       photoFileId = (await uploadToGridFS(buffer, { filename: fileName, contentType: file.type, metadata: { orgId, empId, kind: "EMPLOYEE_PHOTO" } })).id;
+      uploadedPhotoId = photoFileId;
     }
 
     const managerName = String(formData.get("managerName") || "").trim();
@@ -116,6 +119,7 @@ export async function POST(req) {
       photo: fileName,
       photoFileId,
     });
+    createdEmployeeId = emp._id;
 
     if (emp) {
       const hashedPassword = await bcrypt.hash("emp@1", 10);
@@ -141,6 +145,8 @@ export async function POST(req) {
       { status: 201 },
     );
   } catch (err) {
+    if (createdEmployeeId) await Employee.deleteOne({ _id: createdEmployeeId }).catch(() => {});
+    if (uploadedPhotoId) await deleteFromGridFS(uploadedPhotoId).catch(() => {});
     if (err?.name === "AttendanceError") return errorResponse(err);
     console.error("Error in employee creation:", err);
 

@@ -39,6 +39,8 @@ export async function GET(req, { params }) {
 
 export async function PUT(req, { params }) {
   await connectDB();
+  let uploadedPhotoId;
+  let photoUpdateCommitted = false;
   try {
     const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR"]);
     const { id } = await params;
@@ -79,15 +81,22 @@ export async function PUT(req, { params }) {
       const uploaded = await uploadToGridFS(buffer, { filename: fileName, contentType: file.type, metadata: { orgId: identity.orgId, empId: currentEmployee.empId, kind: "EMPLOYEE_PHOTO" } });
       updateData.photo = fileName;
       updateData.photoFileId = uploaded.id;
-      await deleteFromGridFS(currentEmployee.photoFileId);
+      uploadedPhotoId = uploaded.id;
     }
 
     const updated = await Employee.findOneAndUpdate({ _id: id, orgId: identity.orgId }, updateData, {
       new: true,
     });
+    photoUpdateCommitted = Boolean(uploadedPhotoId);
+    if (photoUpdateCommitted && currentEmployee.photoFileId) {
+      await deleteFromGridFS(currentEmployee.photoFileId).catch((error) => {
+        console.error("Unable to remove replaced employee photo:", error);
+      });
+    }
 
     return NextResponse.json(updated, { status: 200 });
   } catch (err) {
+    if (uploadedPhotoId && !photoUpdateCommitted) await deleteFromGridFS(uploadedPhotoId).catch(() => {});
     if (err?.name === "AttendanceError") return errorResponse(err);
     console.error("Error updating employee:", err);
     return NextResponse.json(
