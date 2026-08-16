@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import PageHeader from "@/app/_components/PageHeader";
@@ -42,7 +42,6 @@ export default function EditEmployee() {
   });
 
   const [photo, setPhoto] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string>("");
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
@@ -89,15 +88,8 @@ export default function EditEmployee() {
     fetchDesignations();
   }, [orgId]);
 
-  useEffect(() => {
-    if (!photo) {
-      setPhotoPreview("");
-      return;
-    }
-    const url = URL.createObjectURL(photo);
-    setPhotoPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [photo]);
+  const photoPreview = useMemo(() => photo ? URL.createObjectURL(photo) : "", [photo]);
+  useEffect(() => () => { if (photoPreview) URL.revokeObjectURL(photoPreview); }, [photoPreview]);
 
   const currentPhotoSrc = photoPreview
     ? photoPreview
@@ -189,7 +181,7 @@ export default function EditEmployee() {
 
             <div className="space-y-2">
               <Label>Designation</Label>
-              <Select value={form.designation} onValueChange={(v) => setForm({ ...form, designation: v })}>
+              <Select value={form.designation} onValueChange={(v) => { if (v) setForm({ ...form, designation: v }); }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {designations.map((d) => (
@@ -211,7 +203,7 @@ export default function EditEmployee() {
 
             <div className="space-y-2">
               <Label>Status</Label>
-              <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+              <Select value={form.status} onValueChange={(v) => { if (v) setForm({ ...form, status: v }); }}>
                 <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Active">Active</SelectItem>
