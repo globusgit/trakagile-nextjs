@@ -5,6 +5,7 @@ import User from "@/models/User";
 import bcrypt from "bcryptjs";
 import { uploadToGridFS } from "@/lib/gridfs";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../attendance/_lib/attendance";
+import { visibleEmployeeIds } from "@/lib/access";
 
 const allowedPhotoTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
@@ -17,10 +18,12 @@ export async function GET(req) {
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit")) || 20));
     const skip = (page - 1) * limit;
     const orgId = identity.orgId;
+    const allowedIds = await visibleEmployeeIds(identity);
+    const query = { orgId, ...(allowedIds ? { empId: { $in: allowedIds } } : {}) };
 
     const [employees, total] = await Promise.all([
-      Employee.find({ orgId }).skip(skip).limit(limit),
-      Employee.countDocuments({ orgId }),
+      Employee.find(query).skip(skip).limit(limit),
+      Employee.countDocuments(query),
     ]);
 
     return NextResponse.json(

@@ -1,9 +1,8 @@
 import mongoose from "mongoose";
 import { connectDB } from "@/lib/mongoose";
 import LeaveRequest from "@/models/LeaveRequest";
+import { isOrganizationRole, userIdsForEmployeeIds, visibleEmployeeIds } from "@/lib/access";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../attendance/_lib/attendance";
-
-const elevated = (role) => ["ADMIN", "DIRECTOR", "MANAGER"].includes(role);
 
 export async function GET(request) {
   try {
@@ -13,7 +12,10 @@ export async function GET(request) {
     const page = Math.max(1, parseInt(searchParams.get("page")) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit")) || 10));
     const query = { orgId: identity.orgId };
-    if (!elevated(identity.role)) query.userId = identity.userId;
+    if (!isOrganizationRole(identity.role)) {
+      const employeeIds = await visibleEmployeeIds(identity, true);
+      query.userId = { $in: await userIdsForEmployeeIds(identity.orgId, employeeIds) };
+    }
     const [leaves, total] = await Promise.all([
       LeaveRequest.find(query).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
       LeaveRequest.countDocuments(query),

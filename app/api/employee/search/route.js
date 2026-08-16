@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import connectDB from "@/lib/mongoose";
 import Employee from "@/models/Employee";
 import { errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
+import { visibleEmployeeIds } from "@/lib/access";
 
 export async function GET(request) {
   try {
@@ -14,7 +15,8 @@ export async function GET(request) {
     const limit = parseInt(searchParams.get("limit")) || 10;
     const skip = (page - 1) * limit;
 
-    const query = { orgId };
+    const allowedIds = await visibleEmployeeIds(identity);
+    const query = { orgId, ...(allowedIds ? { empId: { $in: allowedIds } } : {}) };
 
     if (q && q.trim() !== "") {
       const regex = new RegExp(q.trim(), "i");

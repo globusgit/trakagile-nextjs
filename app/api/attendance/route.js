@@ -1,6 +1,7 @@
 import { connectDB } from "@/lib/mongoose";
 import Attendance from "@/models/Attendance";
 import { errorResponse, requireAttendanceUser } from "./_lib/attendance";
+import { visibleEmployeeIds } from "@/lib/access";
 
 function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -9,13 +10,14 @@ function escapeRegex(value) {
 export async function GET(request) {
   try {
     await connectDB();
-    const { orgId } = await requireAttendanceUser(["ADMIN", "DIRECTOR", "MANAGER"]);
+    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR", "MANAGER"]);
     const { searchParams } = new URL(request.url);
     const page = Math.max(1, Number(searchParams.get("page")) || 1);
     const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit")) || 10));
     const search = searchParams.get("search")?.trim() || "";
     const date = searchParams.get("date")?.trim();
-    const match = { orgId };
+    const allowedIds = await visibleEmployeeIds(identity);
+    const match = { orgId: identity.orgId, ...(allowedIds ? { empId: { $in: allowedIds } } : {}) };
     if (date) match.attendanceDate = date;
 
     const employeeMatch = search

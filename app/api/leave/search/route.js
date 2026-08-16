@@ -3,6 +3,7 @@ import { connectDB } from "@/lib/mongoose";
 import LeaveRequest from "@/models/LeaveRequest";
 import User from "@/models/User";
 import Employee from "@/models/Employee";
+import { isOrganizationRole, userIdsForEmployeeIds, visibleEmployeeIds } from "@/lib/access";
 import { errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
 
 async function attachEmployeeNames(leaves, orgId) {
@@ -35,12 +36,16 @@ export async function GET(request) {
     const requestedUserId = searchParams.get("userId");
     const query = { orgId: identity.orgId };
 
-    if (["ADMIN", "DIRECTOR", "MANAGER"].includes(identity.role)) {
+    if (isOrganizationRole(identity.role)) {
       if (requestedUserId && mongoose.Types.ObjectId.isValid(requestedUserId)) {
         query.userId = requestedUserId;
       }
     } else {
-      query.userId = identity.userId;
+      const employeeIds = await visibleEmployeeIds(identity, true);
+      const userIds = await userIdsForEmployeeIds(identity.orgId, employeeIds);
+      query.userId = requestedUserId && userIds.some((id) => String(id) === requestedUserId)
+        ? requestedUserId
+        : { $in: userIds };
     }
 
     const search = searchParams.get("search")?.trim();

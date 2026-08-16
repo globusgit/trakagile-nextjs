@@ -1,16 +1,25 @@
 import mongoose from "mongoose";
 import { connectDB } from "@/lib/mongoose";
 import LeaveRequest from "@/models/LeaveRequest";
+import User from "@/models/User";
+import { isOrganizationRole, visibleEmployeeIds } from "@/lib/access";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
 
-const elevated = (role) => ["ADMIN", "DIRECTOR", "MANAGER"].includes(role);
 const owns = (leave, identity) => String(leave.userId) === String(identity.userId);
 
 async function scopedLeave(id, identity) {
   if (!mongoose.isValidObjectId(id)) throw new AttendanceError("Invalid leave request.");
   const leave = await LeaveRequest.findOne({ _id: id, orgId: identity.orgId });
   if (!leave) throw new AttendanceError("Leave request not found.", 404);
-  if (!elevated(identity.role) && !owns(leave, identity)) throw new AttendanceError("You are not allowed to access this leave request.", 403);
+  if (!isOrganizationRole(identity.role) && !owns(leave, identity)) {
+    const employeeIds = await visibleEmployeeIds(identity);
+    const permitted = await User.exists({
+      _id: leave.userId,
+      orgId: identity.orgId,
+      username: { $in: employeeIds },
+    });
+    if (!permitted) throw new AttendanceError("You are not allowed to access this leave request.", 403);
+  }
   return leave;
 }
 
@@ -34,8 +43,11 @@ export async function PUT(request, { params }) {
     const leave = await scopedLeave(id, identity);
     const action = body.action;
 
-    if (["approve_cancellation", "reject_cancellation"].includes(action) && !elevated(identity.role)) {
+    if (["approve_cancellation", "reject_cancellation"].includes(action) && !["ADMIN", "DIRECTOR", "MANAGER"].includes(identity.role)) {
       throw new AttendanceError("Manager or administrator approval is required.", 403);
+    }
+    if (["approve_cancellation", "reject_cancellation"].includes(action) && owns(leave, identity)) {
+      throw new AttendanceError("You cannot decide your own cancellation request.", 403);
     }
     if (["cancel_pending", "request_cancellation"].includes(action) && !owns(leave, identity)) {
       throw new AttendanceError("Only the employee can request or cancel this leave.", 403);

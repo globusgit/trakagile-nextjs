@@ -3,6 +3,7 @@ import connectDB from "@/lib/mongoose";
 import Employee from "@/models/Employee";
 import { deleteFromGridFS, uploadToGridFS } from "@/lib/gridfs";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
+import { visibleEmployeeIds } from "@/lib/access";
 
 const allowedPhotoTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
@@ -20,7 +21,8 @@ export async function GET(req, { params }) {
     if (!employee) {
       return NextResponse.json({ message: "Employee not found" }, { status: 404 });
     }
-    if (!['ADMIN', 'DIRECTOR', 'MANAGER'].includes(identity.role) && employee.empId !== identity.empId) {
+    const allowedIds = await visibleEmployeeIds(identity, true);
+    if (allowedIds && !allowedIds.includes(employee.empId)) {
       throw new AttendanceError("You are not allowed to view this employee.", 403);
     }
 
