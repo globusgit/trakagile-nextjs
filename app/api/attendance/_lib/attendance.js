@@ -185,8 +185,6 @@ export async function getActiveAttendance(orgId, empId, session, includeDevice =
 }
 
 export function errorResponse(error, fallback = "Attendance request failed.") {
-  console.error(fallback, error);
-
   if (error instanceof AttendanceError) {
     return Response.json({ message: error.message }, { status: error.status });
   }
@@ -198,5 +196,6 @@ export function errorResponse(error, fallback = "Attendance request failed.") {
     );
   }
 
+  console.error(fallback, error);
   return Response.json({ message: fallback }, { status: 500 });
 }
