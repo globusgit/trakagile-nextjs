@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 
 import { useSession } from "next-auth/react";
 import { Pencil } from "lucide-react";
@@ -221,13 +221,7 @@ export default function LeavesPage() {
   };
 
   const handleExport = async () => {
-    const rows = leavesData.map((item) => ({
-      date: item.startDate,
-      type: item.leaveType,
-      status: item.status,
-    }));
-
-    //console.log("Export these rows:", rows);
+    console.log("Export not wired up yet.");
   };
 
   return (
@@ -238,8 +232,11 @@ export default function LeavesPage() {
         <ListingToolbar
           searchValue={search}
           onSearchChange={setSearch}
-          pageSize={page}
-          onPageSizeChange={setPage}
+          pageSize={limit}
+          onPageSizeChange={(value) => {
+            setLimit(value);
+            setPage(1);
+          }}
           onExport={handleExport}
           showAddButton
           addHref="/leaves/create"

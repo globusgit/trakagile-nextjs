@@ -45,7 +45,7 @@ export async function POST(req) {
         { status: 400 },
       );
     }
-    const systemList = await SystemList.create(body);
+    await SystemList.create(body);
     return NextResponse.json(
       { message: "System List created successfully!" },
       { status: 200 },

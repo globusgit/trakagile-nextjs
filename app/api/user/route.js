@@ -30,8 +30,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const body = await request.json();
-    const { name, email } = body;
+    await request.json();
     return NextResponse.json(
       { message: "User created successfully" },
 

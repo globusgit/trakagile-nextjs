@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { useSession } from "next-auth/react";
 import PageHeader from "@/app/_components/PageHeader";
 
@@ -120,9 +121,12 @@ export default function CreateEmployee() {
           )}
 
           <div className="flex items-center gap-6">
-            <img
+            <Image
               src={photoPreview || "/default-avatar.jpg"}
               alt="Employee"
+              width={112}
+              height={112}
+              unoptimized
               className="h-28 w-28 rounded-full object-cover border"
             />
             <div className="space-y-2">

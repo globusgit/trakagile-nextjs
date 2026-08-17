@@ -1,6 +1,6 @@
 "use client";
 // HolidayList.tsx (summary - see full component in document)
-import React, { useState, useMemo } from "react";
+import React, { useState } from "react";
 import { useSession } from "next-auth/react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import ListingToolbar from "@/app/_components/ListingToolbar";
@@ -68,7 +68,7 @@ export default function HolidayList() {
   const canManageHolidays = HOLIDAY_MANAGE_ROLES.includes(
     session?.user?.role ?? "",
   );
-  const { data, error, isLoading, refetch } = useQuery({
+  const { data, error, isLoading } = useQuery({
     queryKey: ["holidays", orgId, year, page, size, query],
     queryFn: () => fetchHolidays({ orgId, year, page, size, q: query }),
     placeholderData: keepPreviousData,
@@ -102,8 +102,11 @@ export default function HolidayList() {
             setQuery(val);
             setPage(1); // reset to page 1 when search changes
           }}
-        pageSize={page}
-        onPageSizeChange={setPage}
+        pageSize={size}
+        onPageSizeChange={(value) => {
+          setSize(value);
+          setPage(1);
+        }}
         onExport={handleExport}
         showAddButton={canManageHolidays}
         addHref="/holidays/create"

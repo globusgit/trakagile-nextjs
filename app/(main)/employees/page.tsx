@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { useSession } from "next-auth/react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Pencil } from "lucide-react";
@@ -150,7 +151,7 @@ export default function EmployeeList() {
                   </TableCell>
 
                   <TableCell>
-                    <img
+                    <Image
                       src={
                         emp.photo
                           ? `/api/files/employees/${encodeURIComponent(emp.photo)}`
@@ -161,6 +162,9 @@ export default function EmployeeList() {
                         e.currentTarget.src = "/default-avatar.jpg";
                       }}
                       alt={emp.name}
+                      width={40}
+                      height={40}
+                      unoptimized
                       className="w-10 h-10 rounded-full object-cover border"
                     />
                   </TableCell>

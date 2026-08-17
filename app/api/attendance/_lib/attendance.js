@@ -1,4 +1,6 @@
 import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
+import { verifyMobileToken } from "@/lib/mobileAuth";
 import Attendance from "@/models/Attendance";
 import AttendancePolicy from "@/models/AttendancePolicy";
 import Employee from "@/models/Employee";
@@ -23,7 +25,14 @@ export class AttendanceError extends Error {
 
 export async function requireAttendanceUser(allowedRoles) {
   const session = await auth();
-  const user = session?.user;
+  let user = session?.user;
+
+  if (!user) {
+    const authorization = (await headers()).get("authorization") || "";
+    if (authorization.startsWith("Bearer ")) {
+      user = verifyMobileToken(authorization.slice(7));
+    }
+  }
 
   if (!user?.empId || !user?.orgId) {
     throw new AttendanceError("Authentication is required.", 401);

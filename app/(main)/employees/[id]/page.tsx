@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Image from "next/image";
 import { useSession } from "next-auth/react";
 import PageHeader from "@/app/_components/PageHeader";
 
@@ -152,9 +153,12 @@ export default function EditEmployee() {
 
         <CardContent className="space-y-8">
           <div className="flex items-center gap-6">
-            <img
+            <Image
               src={currentPhotoSrc}
               alt={form.name}
+              width={112}
+              height={112}
+              unoptimized
               onError={(e) => {
                 e.currentTarget.onerror = null;
                 e.currentTarget.src = "/default-avatar.jpg";
