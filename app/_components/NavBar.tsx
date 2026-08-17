@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { Menu, ChevronDown, LogOut } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -77,7 +78,14 @@ export default function NavBar({ onToggleSidebar }: NavBarProps) {
           className={styles.profileButton}
           onClick={() => setIsOpen((prev) => !prev)}
         >
-          <img src={photoSrc} alt={profile?.name ?? "Profile"} className={styles.avatar} />
+          <Image
+            src={photoSrc}
+            alt={profile?.name ?? "Profile"}
+            width={36}
+            height={36}
+            unoptimized
+            className={styles.avatar}
+          />
           <span className={styles.profileName}>{profile?.name ?? "..."}</span>
           <ChevronDown size={16} color="white" />
         </button>
@@ -85,7 +93,14 @@ export default function NavBar({ onToggleSidebar }: NavBarProps) {
         {isOpen && (
           <div className={styles.dropdown}>
             <div className={styles.dropdownHeader}>
-              <img src={photoSrc} alt={profile?.name ?? "Profile"} className={styles.dropdownAvatar} />
+              <Image
+                src={photoSrc}
+                alt={profile?.name ?? "Profile"}
+                width={48}
+                height={48}
+                unoptimized
+                className={styles.dropdownAvatar}
+              />
               <div>
                 <p className={styles.dropdownName}>{profile?.name ?? "Employee"}</p>
                 <p className={styles.dropdownEmpId}>ID: {profile?.empId ?? "—"}</p>

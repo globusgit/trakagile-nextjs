@@ -7,7 +7,6 @@ import {
   Home,
   User,
   Settings,
-  Mail,
   ListCheckIcon,
   CalendarCheck2Icon,
 } from "lucide-react";
