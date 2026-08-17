@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import PageHeader from "@/app/_components/PageHeader";
 import { useSession } from "next-auth/react";
@@ -29,6 +29,14 @@ const LEAVE_TYPES = [
   { value: "other", label: "Other" },
 ];
 
+function leaveDuration(startDate: string, endDate: string) {
+  if (!startDate || !endDate) return { days: "" as const, dayType: null };
+  const start = new Date(startDate); const end = new Date(endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return { days: "" as const, dayType: null };
+  const days = Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1;
+  return { days, dayType: days === 1 ? "full" as const : null };
+}
+
 export default function LeaveRequestPage() {
   const router = useRouter();
   const { data: session } = useSession();
@@ -48,33 +56,10 @@ export default function LeaveRequestPage() {
   const [serverError, setServerError] = useState("");
   const [submitStatus, setSubmitStatus] = useState<"idle" | "success">("idle");
 
-  useEffect(() => {
-    if (!startDate || !endDate) {
-      setDays("");
-      setDayType(null);
-      return;
-    }
-
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-
-    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
-      setDays("");
-      setDayType(null);
-      return;
-    }
-
-    const diffTime = Math.abs(end.getTime() - start.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-
-    if (diffDays === 1) {
-      setDayType("full");
-      setDays(1);
-    } else {
-      setDayType(null);
-      setDays(diffDays);
-    }
-  }, [startDate, endDate]);
+  const updateDates = (nextStart: string, nextEnd: string) => {
+    const duration = leaveDuration(nextStart, nextEnd);
+    setStartDate(nextStart); setEndDate(nextEnd); setDays(duration.days); setDayType(duration.dayType);
+  };
 
   const handleDayTypeChange = (type: "full" | "half") => {
     setDayType(type);
@@ -167,6 +152,7 @@ export default function LeaveRequestPage() {
               <Select
                 value={leaveType}
                 onValueChange={(v) => {
+                  if (!v) return;
                   setLeaveType(v);
                   if (errors.leaveType) setErrors({ ...errors, leaveType: false });
                 }}
@@ -203,7 +189,7 @@ export default function LeaveRequestPage() {
                 type="date"
                 value={startDate}
                 onChange={(e) => {
-                  setStartDate(e.target.value);
+                  updateDates(e.target.value, endDate);
                   if (errors.startDate) setErrors({ ...errors, startDate: false });
                 }}
                 className={errors.startDate ? "border-red-500" : ""}
@@ -219,7 +205,7 @@ export default function LeaveRequestPage() {
                 type="date"
                 value={endDate}
                 onChange={(e) => {
-                  setEndDate(e.target.value);
+                  updateDates(startDate, e.target.value);
                   if (errors.endDate) setErrors({ ...errors, endDate: false });
                 }}
                 className={errors.endDate ? "border-red-500" : ""}

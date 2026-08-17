@@ -8,6 +8,7 @@ const EmployeeSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true },
     phone: { type: String },
     photo: { type: String },
+    photoFileId: { type: mongoose.Types.ObjectId },
     designation: { type: String },
     status: {
       type: String,

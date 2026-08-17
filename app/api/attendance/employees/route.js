@@ -1,10 +1,19 @@
 import { connectDB } from "@/lib/mongoose";
 import Employee from "@/models/Employee";
+import { errorResponse, requireAttendanceUser } from "../_lib/attendance";
+import { visibleEmployeeIds } from "@/lib/access";
 
-export async function GET(request) {
-  await connectDB();
-  const orgId = new URL(request.url).searchParams.get("orgId");
-  if (!orgId) return Response.json({ message: "Organization is required." }, { status: 400 });
-  const employees = await Employee.find({ orgId, status: "Active" }).select("name empId").sort({ name: 1 }).lean();
-  return Response.json({ data: employees });
+export async function GET() {
+  try {
+    await connectDB();
+    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR", "MANAGER"]);
+    const allowedIds = await visibleEmployeeIds(identity);
+    const employees = await Employee.find({ orgId: identity.orgId, status: "Active", ...(allowedIds ? { empId: { $in: allowedIds } } : {}) })
+      .select("name empId")
+      .sort({ name: 1 })
+      .lean();
+    return Response.json({ data: employees });
+  } catch (error) {
+    return errorResponse(error, "Unable to load employees.");
+  }
 }

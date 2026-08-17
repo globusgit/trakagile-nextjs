@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import PageHeader from "@/app/_components/PageHeader";
@@ -40,7 +40,6 @@ export default function CreateEmployee() {
 
   const [errors, setErrors] = useState<Record<string, boolean>>({});
   const [photo, setPhoto] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string>("");
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [loading, setLoading] = useState(false);
   const [serverError, setServerError] = useState("");
@@ -60,15 +59,8 @@ export default function CreateEmployee() {
     fetchDesignations();
   }, [orgId]);
 
-  useEffect(() => {
-    if (!photo) {
-      setPhotoPreview("");
-      return;
-    }
-    const url = URL.createObjectURL(photo);
-    setPhotoPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [photo]);
+  const photoPreview = useMemo(() => photo ? URL.createObjectURL(photo) : "", [photo]);
+  useEffect(() => () => { if (photoPreview) URL.revokeObjectURL(photoPreview); }, [photoPreview]);
 
   const validate = () => {
     const newErrors: Record<string, boolean> = {
@@ -88,7 +80,7 @@ export default function CreateEmployee() {
 
     setLoading(true);
     const fd = new FormData();
-    Object.entries(form).forEach(([key, value]) => fd.append(key, value as any));
+    Object.entries(form).forEach(([key, value]) => fd.append(key, String(value)));
     fd.append("orgId", orgId);
     if (photo) fd.append("photo", photo);
 
@@ -173,7 +165,7 @@ export default function CreateEmployee() {
               <Label>Designation <span className="text-red-500">*</span></Label>
               <Select
                 value={form.designation}
-                onValueChange={(v) => {
+                onValueChange={(v) => { if (!v) return;
                   setForm({ ...form, designation: v });
                   if (errors.designation) setErrors({ ...errors, designation: false });
                 }}

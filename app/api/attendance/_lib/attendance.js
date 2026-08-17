@@ -1,22 +1,158 @@
+import { auth } from "@/lib/auth";
 import Attendance from "@/models/Attendance";
+import AttendancePolicy from "@/models/AttendancePolicy";
 import Employee from "@/models/Employee";
+
+export const DEFAULT_ATTENDANCE_POLICY = {
+  timeZone: "Asia/Kolkata",
+  shiftStartMinutes: 570,
+  shiftEndMinutes: 1080,
+  reminderBeforeMinutes: 15,
+  reminderAfterMinutes: [15, 30],
+  autoCloseMinutes: 1200,
+  overtimeGraceMinutes: 30,
+};
+
+export class AttendanceError extends Error {
+  constructor(message, status = 400) {
+    super(message);
+    this.name = "AttendanceError";
+    this.status = status;
+  }
+}
+
+export async function requireAttendanceUser(allowedRoles) {
+  const session = await auth();
+  const user = session?.user;
+
+  if (!user?.empId || !user?.orgId) {
+    throw new AttendanceError("Authentication is required.", 401);
+  }
+
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    throw new AttendanceError("You are not allowed to perform this action.", 403);
+  }
+
+  return { userId: user.id, empId: user.empId, orgId: user.orgId, role: user.role };
+}
+
+export async function getAttendancePolicy(orgId) {
+  const policy = await AttendancePolicy.findOne({ orgId }).lean();
+  return { ...DEFAULT_ATTENDANCE_POLICY, ...(policy || {}), orgId };
+}
+
+export function minutesInTimeZone(date, timeZone) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value || 0);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value || 0);
+  return hour * 60 + minute;
+}
+
+export function dateAtZonedMinutes(dateKey, minutes, timeZone) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const desiredHour = Math.floor(minutes / 60);
+  const desiredMinute = minutes % 60;
+  let result = new Date(Date.UTC(year, month - 1, day, desiredHour, desiredMinute));
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(result);
+    const value = (type) => Number(parts.find((part) => part.type === type)?.value);
+    const observed = Date.UTC(
+      value("year"),
+      value("month") - 1,
+      value("day"),
+      value("hour"),
+      value("minute"),
+    );
+    const desired = Date.UTC(year, month - 1, day, desiredHour, desiredMinute);
+    result = new Date(result.getTime() + desired - observed);
+  }
+
+  return result;
+}
 
 export function locationFrom(body, now = new Date()) {
   const latitude = Number(body.latitude);
   const longitude = Number(body.longitude);
   const accuracy = body.accuracy == null ? undefined : Number(body.accuracy);
+
   if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
-    throw new Error("Latitude must be between -90 and 90.");
+    throw new AttendanceError("Latitude must be between -90 and 90.");
   }
   if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
-    throw new Error("Longitude must be between -180 and 180.");
+    throw new AttendanceError("Longitude must be between -180 and 180.");
   }
   if (accuracy != null && (!Number.isFinite(accuracy) || accuracy < 0)) {
-    throw new Error("Accuracy must be a positive number.");
+    throw new AttendanceError("Accuracy must be a positive number.");
   }
+
   const capturedAt = body.capturedAt ? new Date(body.capturedAt) : now;
-  if (Number.isNaN(capturedAt.getTime())) throw new Error("Invalid captured time.");
+  if (Number.isNaN(capturedAt.getTime())) {
+    throw new AttendanceError("Invalid captured time.");
+  }
+
+  const clockDifference = Math.abs(now.getTime() - capturedAt.getTime());
+  if (clockDifference > 5 * 60 * 1000) {
+    throw new AttendanceError("Location timestamp must be within five minutes of server time.");
+  }
+
   return { latitude, longitude, accuracy, capturedAt, receivedAt: now };
+}
+
+export function movementFrom(body) {
+  const speed = body.speed == null ? null : Number(body.speed);
+  const heading = body.heading == null ? null : Number(body.heading);
+
+  if (speed != null && (!Number.isFinite(speed) || speed < 0)) {
+    throw new AttendanceError("Speed must be a positive number.");
+  }
+  if (heading != null && (!Number.isFinite(heading) || heading < 0 || heading > 360)) {
+    throw new AttendanceError("Heading must be between 0 and 360.");
+  }
+
+  return { speed, heading };
+}
+
+export function distanceBetween(from, to) {
+  if (!from || !to) return 0;
+
+  const earthRadiusMeters = 6_371_000;
+  const toRadians = (degrees) => (degrees * Math.PI) / 180;
+  const latitudeDelta = toRadians(to.latitude - from.latitude);
+  const longitudeDelta = toRadians(to.longitude - from.longitude);
+  const firstLatitude = toRadians(from.latitude);
+  const secondLatitude = toRadians(to.latitude);
+  const haversine =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(firstLatitude) *
+      Math.cos(secondLatitude) *
+      Math.sin(longitudeDelta / 2) ** 2;
+
+  return 2 * earthRadiusMeters * Math.asin(Math.sqrt(haversine));
+}
+
+export function reliableDistance(from, to) {
+  const distance = distanceBetween(from, to);
+  const accuracyThreshold = Math.max(
+    10,
+    Number(from?.accuracy) || 0,
+    Number(to?.accuracy) || 0,
+  );
+
+  return distance >= accuracyThreshold ? Math.round(distance) : 0;
 }
 
 export function dayKey(date = new Date()) {
@@ -28,19 +164,38 @@ export function dayKey(date = new Date()) {
   }).format(date);
 }
 
-export async function getEmployee(orgId, empId) {
-  if (!orgId || !empId) throw new Error("Organization and employee are required.");
-  const employee = await Employee.findOne({ orgId, empId, status: "Active" });
-  if (!employee) throw new Error("Active employee not found.");
+export async function getEmployee(orgId, empId, session) {
+  const query = Employee.findOne({ orgId, empId, status: "Active" });
+  if (session) query.session(session);
+  const employee = await query;
+  if (!employee) {
+    throw new AttendanceError(
+      "Your employee profile is inactive or unavailable. Contact an administrator.",
+      403,
+    );
+  }
   return employee;
 }
 
-export async function getActiveAttendance(orgId, empId) {
-  return Attendance.findOne({ orgId, empId, attendanceDate: dayKey(), status: "IN" });
+export async function getActiveAttendance(orgId, empId, session, includeDevice = false) {
+  const query = Attendance.findOne({ orgId, empId, status: "IN" }).sort({ "markIn.time": -1 });
+  if (includeDevice) query.select("+wfhDevice.deviceIdHash +wfhDevice.ipHash");
+  if (session) query.session(session);
+  return query;
 }
 
 export function errorResponse(error, fallback = "Attendance request failed.") {
-  const message = error instanceof Error ? error.message : fallback;
-  const clientError = /required|invalid|between|not found|already|active|complete/i.test(message);
-  return Response.json({ message }, { status: clientError ? 400 : 500 });
+  if (error instanceof AttendanceError) {
+    return Response.json({ message: error.message }, { status: error.status });
+  }
+
+  if (error?.code === 11000) {
+    return Response.json(
+      { message: "This attendance action was already completed." },
+      { status: 409 },
+    );
+  }
+
+  console.error(fallback, error);
+  return Response.json({ message: fallback }, { status: 500 });
 }

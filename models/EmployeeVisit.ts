@@ -29,6 +29,14 @@ const EmployeeVisitSchema = new mongoose.Schema(
 
 EmployeeVisitSchema.index({ orgId: 1, employeeId: 1, status: 1 });
 EmployeeVisitSchema.index({ attendanceId: 1, startTime: 1 });
+EmployeeVisitSchema.index(
+  { attendanceId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { status: "IN_PROGRESS" },
+    name: "one_active_visit_per_attendance",
+  },
+);
 
 export default mongoose.models.EmployeeVisit ||
   mongoose.model("EmployeeVisit", EmployeeVisitSchema);
