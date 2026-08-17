@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import connectDB from "@/lib/mongoose";
 import Holiday from "@/models/Holiday";
+import { errorResponse, requireAttendanceUser } from "../attendance/_lib/attendance";
+
+// Roles allowed to create/manage holidays.
+const HOLIDAY_MANAGE_ROLES = ["ADMIN", "DIRECTOR", "MANAGER"];
 
 export async function GET(request) {
   try {
@@ -45,8 +49,10 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     await connectDB();
+    const identity = await requireAttendanceUser(HOLIDAY_MANAGE_ROLES);
+
     const body = await request.json();
-    const { name, date, year, note, orgId, isRecurring, isOptional } = body;
+    const { name, date, year, note, isRecurring, isOptional } = body;
 
     const holiday = new Holiday({
       name,
@@ -55,11 +61,13 @@ export async function POST(request) {
       isOptional: isOptional === true || isOptional === "true",
       year: year ? year : new Date().getFullYear(),
       note,
-      orgId,
+      // Always use the logged-in user's own org — never trust orgId from the client body.
+      orgId: identity.orgId,
     });
     await holiday.save();
     return NextResponse.json("Holiday added successfully!", { status: 201 });
   } catch (error) {
+    if (error?.name === "AttendanceError") return errorResponse(error);
     console.error("Error creating holiday:", error);
     return NextResponse.json(
       { error: "Failed to create holiday" },

@@ -50,6 +50,11 @@ async function fetchHolidays({
   if (!res.ok) throw new Error("Failed to fetch");
   return res.json();
 }
+
+// Roles allowed to create/manage holidays — keep in sync with
+// HOLIDAY_MANAGE_ROLES in app/api/holiday/route.js
+const HOLIDAY_MANAGE_ROLES = ["ADMIN", "DIRECTOR", "MANAGER"];
+
 export default function HolidayList() {
   const currentYear = new Date().getFullYear();
   const [search, setSearch] = useState("");
@@ -60,6 +65,9 @@ export default function HolidayList() {
   //const orgId = "ORG1";
   const { data: session } = useSession();
   const orgId = session?.user?.orgId ?? "";
+  const canManageHolidays = HOLIDAY_MANAGE_ROLES.includes(
+    session?.user?.role ?? "",
+  );
   const { data, error, isLoading, refetch } = useQuery({
     queryKey: ["holidays", orgId, year, page, size, query],
     queryFn: () => fetchHolidays({ orgId, year, page, size, q: query }),
@@ -97,7 +105,7 @@ export default function HolidayList() {
         pageSize={page}
         onPageSizeChange={setPage}
         onExport={handleExport}
-        showAddButton
+        showAddButton={canManageHolidays}
         addHref="/holidays/create"
         addLabel="Holiday"
         searchPlaceholder="Search attendance..."
@@ -189,4 +197,3 @@ export default function HolidayList() {
     </div>
   );
 }
-

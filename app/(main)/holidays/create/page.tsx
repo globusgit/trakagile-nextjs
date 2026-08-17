@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import PageHeader from "@/app/_components/PageHeader";
@@ -12,13 +12,29 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 
+// Roles allowed to create/manage holidays — keep in sync with
+// HOLIDAY_MANAGE_ROLES in app/api/holiday/route.js
+const HOLIDAY_MANAGE_ROLES = ["ADMIN", "DIRECTOR", "MANAGER"];
+
 export default function CreateHoliday() {
   const router = useRouter();
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const orgId = session?.user?.orgId ?? "";
 
   // TODO: replace with real orgId once auth/session is wired up
   //const orgId = "ORG1";
+
+  const canManageHolidays = HOLIDAY_MANAGE_ROLES.includes(
+    session?.user?.role ?? "",
+  );
+
+  // Kick out anyone who isn't allowed to create holidays (e.g. someone who
+  // typed the URL directly instead of clicking the now-hidden button).
+  useEffect(() => {
+    if (status === "authenticated" && !canManageHolidays) {
+      router.replace("/holidays");
+    }
+  }, [status, canManageHolidays, router]);
 
   const [form, setForm] = useState({
     name: "",
@@ -58,7 +74,7 @@ export default function CreateHoliday() {
 
       if (!res.ok) {
         setServerError(
-          typeof data === "string" ? data : data.error || "Failed to create holiday."
+          typeof data === "string" ? data : data.error || data.message || "Failed to create holiday."
         );
         return;
       }
@@ -72,6 +88,15 @@ export default function CreateHoliday() {
       setLoading(false);
     }
   };
+
+  // Avoid flashing the form before we know the role, or while redirecting.
+  if (status === "loading" || (status === "authenticated" && !canManageHolidays)) {
+    return (
+      <div className="space-y-4 px-0 md:px-4 lg:px-8">
+        <PageHeader title="Create Holiday" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 px-0 md:px-4 lg:px-8">
