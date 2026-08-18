@@ -24,7 +24,7 @@ const leavesInfoSchema = new mongoose.Schema(
 );
 
 // Compound index for unique user-year
-leavesInfoSchema.index({ userId: 1, year: 1 }, { unique: true });
+leavesInfoSchema.index({ orgId: 1, userId: 1, year: 1 }, { unique: true });
 
 export default mongoose.models.LeavesInfo ||
   mongoose.model("LeavesInfo", leavesInfoSchema);

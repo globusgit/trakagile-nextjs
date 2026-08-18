@@ -14,7 +14,7 @@ export async function PATCH(request, { params }) {
     if (!change) throw new AttendanceError("Pending device request not found.", 404);
     if (identity.role === "MANAGER") { const manager = await Employee.findOne({ orgId: identity.orgId, empId: identity.empId }).select("_id").lean(); if (!await Employee.exists({ orgId: identity.orgId, empId: change.employeeId, reportingTo: manager?._id })) throw new AttendanceError("This employee does not report to you.", 403); }
     if (body.status === "APPROVED") {
-      const attendance = await Attendance.findOne({ _id: change.attendanceId, status: "IN", attendanceType: "WORK_FROM_HOME" });
+      const attendance = await Attendance.findOne({ _id: change.attendanceId, orgId: identity.orgId, status: "IN", attendanceType: "WORK_FROM_HOME" });
       if (!attendance) throw new AttendanceError("Active WFH attendance is unavailable.", 409);
       attendance.wfhDevice = { ...change.newDevice.toObject(), boundAt: new Date(), lastSeenAt: new Date() };
       await attendance.save();

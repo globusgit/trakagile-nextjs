@@ -15,8 +15,8 @@ export async function GET() {
       .populate("clientSiteId", "clientName siteName address location radiusMeters")
       .sort({ createdAt: -1 }).limit(20).lean();
     const active = trips.find((trip) => !["COMPLETED", "CANCELLED"].includes(trip.status));
-    const events = active ? await TripEvent.find({ tripId: active._id }).sort({ createdAt: -1 }).lean() : [];
-    const expenses = active ? await TripExpense.find({ tripId: active._id }).sort({ createdAt: -1 }).lean() : [];
+    const events = active ? await TripEvent.find({ orgId, tripId: active._id }).sort({ createdAt: -1 }).lean() : [];
+    const expenses = active ? await TripExpense.find({ orgId, tripId: active._id }).sort({ createdAt: -1 }).lean() : [];
     return Response.json({ trips, active: active || null, events, expenses });
   } catch (error) { return errorResponse(error, "Unable to load field trips."); }
 }

@@ -4,8 +4,8 @@ import mongoose from "mongoose";
 const EmployeeSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
-    empId: { type: String, required: true, unique: true },
-    email: { type: String, required: true, unique: true },
+    empId: { type: String, required: true, trim: true },
+    email: { type: String, required: true, trim: true, lowercase: true },
     phone: { type: String },
     photo: { type: String },
     photoFileId: { type: mongoose.Types.ObjectId },

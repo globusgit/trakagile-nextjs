@@ -1,20 +1,22 @@
-export async function GET(request) {
+import mongoose from "mongoose";
+import { NextResponse } from "next/server";
+
+import connectDB from "@/lib/mongoose";
+import { AttendanceError, errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
+import User from "@/models/User";
+
+export async function GET(_request, { params }) {
   try {
     await connectDB();
-    const { searchParams } = new URL(request.url);
-    const orgId = searchParams.get("orgId");
-    const userId = parseInt(searchParams.get("id"));
-
-    const user = await User.findOne({ orgId, userId });
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
+    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR"]);
+    const { id } = await params;
+    if (!mongoose.isValidObjectId(id)) return NextResponse.json({ error: "User not found" }, { status: 404 });
+    const user = await User.findOne({ _id: id, orgId: identity.orgId }).select("-password").lean();
+    if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
     return NextResponse.json({ user });
   } catch (error) {
+    if (error instanceof AttendanceError) return errorResponse(error);
     console.error("Error fetching user:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch user" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Failed to fetch user" }, { status: 500 });
   }
 }

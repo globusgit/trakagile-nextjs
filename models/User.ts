@@ -5,7 +5,7 @@ const UserSchema = new mongoose.Schema(
     username: {
       type: String,
       require: true,
-      unique: true,
+      trim: true,
     },
     password: {
       type: String,
@@ -33,5 +33,7 @@ const UserSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
+
+UserSchema.index({ orgId: 1, username: 1 }, { unique: true });
 
 export default mongoose.models.User || mongoose.model("User", UserSchema);

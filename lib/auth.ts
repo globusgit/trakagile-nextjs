@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import connectDB from "@/lib/mongoose";
 import User from "@/models/User";
 import Employee from "@/models/Employee";
+import { organizationIdForCode } from "@/lib/organization";
 
 /* =========================================================
    NEXTAUTH CONFIGURATION
@@ -36,6 +37,10 @@ export const {
           label: "Password",
           type: "password",
         },
+        organizationCode: {
+          label: "Organization Code",
+          type: "text",
+        },
       },
 
       /* ===================================================
@@ -55,6 +60,7 @@ export const {
             credentials?.password as
               | string
               | undefined;
+          const organizationCode = credentials?.organizationCode as string | undefined;
 
           /* -----------------------------------------------
              BASIC VALIDATION
@@ -75,11 +81,14 @@ export const {
              FIND USER
           ----------------------------------------------- */
 
-          const user =
-            await User.findOne({
-              username:
-                empId.trim(),
-            }).lean();
+          const orgId = await organizationIdForCode(organizationCode);
+          if (organizationCode && !orgId) return null;
+          const candidates = await User.find({
+            username: empId.trim(),
+            ...(orgId ? { orgId } : {}),
+          }).limit(2).lean();
+          if (candidates.length !== 1) return null;
+          const user = candidates[0];
 
           if (!user) {
             console.warn(

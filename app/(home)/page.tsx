@@ -21,8 +21,19 @@ export default function HomePage() {
     setError("");
     setLoading(true);
 
+    const queryCode = new URLSearchParams(window.location.search).get("org");
+    const hostname = window.location.hostname;
+    const isLocalHost = hostname === "localhost" || /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
+    const subdomainCode = !isLocalHost && hostname.split(".").length >= 3
+      ? hostname.split(".")[0]
+      : "";
+    const organizationCode = (
+      queryCode || subdomainCode || process.env.NEXT_PUBLIC_ORGANIZATION_CODE || ""
+    ).trim().toUpperCase();
+
     const res = await signIn("credentials", {
       empId,
+      organizationCode,
       password,
       redirect: false,
     });

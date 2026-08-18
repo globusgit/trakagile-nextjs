@@ -92,10 +92,12 @@ class _LoginPageState extends State<LoginPage> {
         'API_BASE_URL',
         defaultValue: 'http://10.0.2.2:3000',
       );
+      const organizationCode = String.fromEnvironment('ORGANIZATION_CODE');
       final response = await http.post(
         Uri.parse('$baseUrl/api/mobile/auth/login'),
         headers: {'content-type': 'application/json'},
         body: jsonEncode({
+          'organizationCode': organizationCode,
           'empId': _empId.text.trim(),
           'password': _password.text,
         }),
@@ -109,7 +111,17 @@ class _LoginPageState extends State<LoginPage> {
         body['token'] as String,
       );
     } catch (error) {
-      setState(() => _error = error.toString().replaceFirst('Exception: ', ''));
+      final message = error.toString().replaceFirst('Exception: ', '');
+      final connectionFailed =
+          message.contains('SocketException') ||
+          message.contains('ClientException') ||
+          message.toLowerCase().contains('timed out') ||
+          message.toLowerCase().contains('connection refused');
+      setState(
+        () => _error = connectionFailed
+            ? 'Unable to connect to TrakAgile. Check that the phone is online and try again.'
+            : message,
+      );
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -317,6 +329,18 @@ class _ModuleScreenState extends State<ModuleScreen> {
       }
       if (decoded is! Map<String, dynamic>) {
         throw Exception('Unexpected server response.');
+      }
+      if (widget.module.title == 'Leaves') {
+        final leaveInfoResponse = await http.get(
+          Uri.parse('$baseUrl/api/leave/info?year=${DateTime.now().year}'),
+          headers: {'authorization': 'Bearer $token'},
+        );
+        if (leaveInfoResponse.statusCode == 200) {
+          final leaveInfoBody = jsonDecode(leaveInfoResponse.body);
+          if (leaveInfoBody is Map<String, dynamic>) {
+            decoded['leaveInfo'] = leaveInfoBody;
+          }
+        }
       }
       List<dynamic>? clientSites;
       if (widget.module.title == 'Attendance' ||
@@ -1789,6 +1813,79 @@ class _ModuleScreenState extends State<ModuleScreen> {
         (match) => match.group(0)!.toUpperCase(),
       );
 
+  num _leaveNumber(Map<String, dynamic> info, String key) {
+    final value = info[key];
+    return value is num ? value : num.tryParse('$value') ?? 0;
+  }
+
+  Widget _leaveDashboard(BuildContext context) {
+    final info = _data?['leaveInfo'] is Map
+        ? Map<String, dynamic>.from(_data!['leaveInfo'] as Map)
+        : <String, dynamic>{};
+    final casual = _leaveNumber(info, 'casual');
+    final sick = _leaveNumber(info, 'sick');
+    final earned = _leaveNumber(info, 'earned');
+    final maternity = _leaveNumber(info, 'maternity');
+    final paternity = _leaveNumber(info, 'paternity');
+    final usedCasual = _leaveNumber(info, 'usedCasual');
+    final usedSick = _leaveNumber(info, 'usedSick');
+    final usedEarned = _leaveNumber(info, 'usedEarned');
+    final usedMaternity = _leaveNumber(info, 'usedMaternity');
+    final usedPaternity = _leaveNumber(info, 'usedPaternity');
+    final stats = <(String, num, num)>[
+      ('Available', casual + sick + earned, usedCasual + usedSick + usedEarned),
+      ('Earned', earned, usedEarned),
+      ('Casual', casual, usedCasual),
+      ('Sick', sick, usedSick),
+      (
+        'Maternity / Paternity',
+        maternity + paternity,
+        usedMaternity + usedPaternity,
+      ),
+    ];
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 1.35,
+      ),
+      itemCount: stats.length,
+      itemBuilder: (context, index) {
+        final stat = stats[index];
+        final balance = stat.$2 - stat.$3;
+        return Card(
+          elevation: 0,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  stat.$1,
+                  maxLines: 2,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const Spacer(),
+                Text('Allocated: ${stat.$2}'),
+                Text(
+                  'Balance: $balance',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text('Availed: ${stat.$3}'),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator());
@@ -1845,6 +1942,10 @@ class _ModuleScreenState extends State<ModuleScreen> {
             ),
           ),
           const SizedBox(height: 8),
+          if (widget.module.title == 'Leaves') ...[
+            _leaveDashboard(context),
+            const SizedBox(height: 12),
+          ],
           if (widget.module.title == 'Leaves')
             FilledButton.icon(
               onPressed: _showLeaveRequest,
@@ -2006,11 +2107,16 @@ class _HomePageState extends State<HomePage> {
       ),
     ];
     final role = '${widget.user['role']}'.toUpperCase();
+    final isTeamRole =
+        role == 'MANAGER' || role == 'ADMIN' || role == 'DIRECTOR';
+    final isAdminRole = role == 'ADMIN' || role == 'DIRECTOR';
     return [
-      ...employeeModules,
-      if (role == 'MANAGER' || role == 'ADMIN' || role == 'DIRECTOR')
-        ...teamModules,
-      if (role == 'ADMIN' || role == 'DIRECTOR') ...adminModules,
+      ...employeeModules.take(1),
+      if (isTeamRole) teamModules.first,
+      ...employeeModules.skip(1).take(3),
+      if (isTeamRole) teamModules.last,
+      ...employeeModules.skip(4),
+      if (isAdminRole) ...adminModules,
     ];
   }
 
@@ -2052,15 +2158,35 @@ class _HomePageState extends State<HomePage> {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        Text(
-          'Hello, $name',
-          style: Theme.of(context).textTheme.headlineSmall
-              ?.copyWith(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          '${widget.user['empId']} · ${widget.user['role']}',
-          style: Theme.of(context).textTheme.bodyMedium,
+        Card(
+          elevation: 0,
+          color: Theme.of(context).colorScheme.primaryContainer,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${widget.user['role']} workspace',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Hello, $name',
+                  style: Theme.of(context).textTheme.headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${widget.user['empId']} | Choose a module to continue your work.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ),
         ),
         const SizedBox(height: 22),
         GridView.count(
@@ -2082,9 +2208,20 @@ class _HomePageState extends State<HomePage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(
-                          module.icon,
-                          color: Theme.of(context).colorScheme.primary,
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .primaryContainer,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(10),
+                            child: Icon(
+                              module.icon,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
                         ),
                         const Spacer(),
                         Text(

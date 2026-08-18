@@ -13,7 +13,7 @@ export async function GET() {
       $or: [{ status: "IN" }, { attendanceDate: dayKey() }],
     }).sort({ status: 1, "markIn.time": -1 }).select("_id").lean();
     if (!attendance) return Response.json({ locations: [] });
-    const locations = await TrackingLocation.find({ attendanceId: attendance._id })
+    const locations = await TrackingLocation.find({ orgId, attendanceId: attendance._id })
       .sort({ capturedAt: 1 })
       .limit(1000)
       .select("latitude longitude accuracy speed heading capturedAt receivedAt locationName")
