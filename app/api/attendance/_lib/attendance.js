@@ -93,7 +93,7 @@ export function dateAtZonedMinutes(dateKey, minutes, timeZone) {
   return result;
 }
 
-export function locationFrom(body, now = new Date()) {
+export function locationFrom(body, now = new Date(), options = {}) {
   const latitude = Number(body.latitude);
   const longitude = Number(body.longitude);
   const accuracy = body.accuracy == null ? undefined : Number(body.accuracy);
@@ -114,8 +114,9 @@ export function locationFrom(body, now = new Date()) {
   }
 
   const clockDifference = Math.abs(now.getTime() - capturedAt.getTime());
-  if (clockDifference > 5 * 60 * 1000) {
-    throw new AttendanceError("Location timestamp must be within five minutes of server time.");
+  const maxClockDifferenceMs = options.maxClockDifferenceMs || 5 * 60 * 1000;
+  if (clockDifference > maxClockDifferenceMs) {
+    throw new AttendanceError("Location timestamp is outside the accepted tracking window.");
   }
 
   return { latitude, longitude, accuracy, capturedAt, receivedAt: now };

@@ -3,6 +3,8 @@ import { connectDB } from "@/lib/mongoose";
 import LeaveRequest from "@/models/LeaveRequest";
 import { isOrganizationRole, userIdsForEmployeeIds, visibleEmployeeIds } from "@/lib/access";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../attendance/_lib/attendance";
+import { notifyAttendance } from "../attendance/_lib/notifications";
+import { assertNoLeaveOverlap, calculateLeaveDays } from "./_lib/leave";
 
 export async function GET(request) {
   try {
@@ -31,10 +33,20 @@ export async function POST(request) {
     await connectDB();
     const identity = await requireAttendanceUser();
     const body = await request.json();
-    const startDate = new Date(body.startDate); const endDate = new Date(body.endDate); const days = Number(body.days);
+    const startDate = new Date(body.startDate); const endDate = new Date(body.endDate);
     if (!mongoose.isValidObjectId(identity.userId)) throw new AttendanceError("Your user profile is invalid.", 403);
-    if (!body.leaveType || Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || endDate < startDate || !Number.isFinite(days) || days <= 0) throw new AttendanceError("Enter valid leave details.");
+    if (!body.leaveType || !String(body.reason || "").trim()) throw new AttendanceError("Leave type and reason are required.");
+    const days = await calculateLeaveDays(identity.orgId, startDate, endDate, body.days);
+    await assertNoLeaveOverlap({ orgId: identity.orgId, userId: identity.userId, startDate, endDate });
     const leave = await LeaveRequest.create({ userId: identity.userId, leaveType: body.leaveType, startDate, endDate, days, reason: String(body.reason || "").trim(), orgId: identity.orgId, status: "pending" });
+    await notifyAttendance({
+      orgId: identity.orgId,
+      empId: identity.empId,
+      type: "LEAVE_REQUEST",
+      title: "Leave request submitted",
+      message: `${identity.empId} requested ${days} day(s) of ${body.leaveType} leave.`,
+      dedupeKey: `${leave._id}:leave-requested`,
+    });
     return Response.json({ message: "Leave request submitted successfully.", data: leave }, { status: 201 });
   } catch (error) {
     return errorResponse(error, "Unable to submit leave request.");

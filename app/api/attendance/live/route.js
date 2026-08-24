@@ -14,11 +14,11 @@ export async function GET() {
       ? await Employee.findOne({ orgId: identity.orgId, empId: identity.empId }).select("_id").lean()
       : null;
     const employees = ["ADMIN", "DIRECTOR"].includes(identity.role)
-      ? await Employee.find({ orgId: identity.orgId, status: "Active" }).select("name empId reportingTo").lean()
+      ? await Employee.find({ orgId: identity.orgId, status: "Active" }).select("name empId photo reportingTo").lean()
       : await Employee.find({ orgId: identity.orgId, status: "Active" })
           .where("reportingTo")
           .equals(manager?._id)
-          .select("name empId reportingTo")
+          .select("name empId photo reportingTo")
           .lean();
 
     if (!employees.length) return Response.json({ employees: [] });

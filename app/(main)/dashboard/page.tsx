@@ -17,6 +17,7 @@ import {
 import PageHeader from "@/app/_components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { auth } from "@/lib/auth";
+import AdminDashboard from "./AdminDashboard";
 
 const employeeModules = [
   { title: "Attendance", description: "Mark in and track your workday", href: "/attendance", icon: CalendarCheck2 },
@@ -46,6 +47,7 @@ export default async function Dashboard() {
 
   const isTeamRole = ["MANAGER", "ADMIN", "DIRECTOR"].includes(user.role || "");
   const isAdminRole = ["ADMIN", "DIRECTOR"].includes(user.role || "");
+  if (isAdminRole) return <AdminDashboard name={user.name || user.empId} role={user.role || "ADMIN"} />;
   const modules = [
     ...employeeModules.slice(0, 1),
     ...(isTeamRole ? teamModules.slice(0, 1) : []),
@@ -58,12 +60,13 @@ export default async function Dashboard() {
   return (
     <div className="space-y-6 pb-10">
       <PageHeader title="Dashboard" />
-      <section className="rounded-2xl border bg-linear-to-r from-sky-50 to-background p-6">
+      <section className="relative overflow-hidden rounded-2xl border border-sky-100 bg-linear-to-r from-white via-sky-50 to-cyan-100 p-7 shadow-sm">
+        <div className="absolute -right-12 -top-20 size-52 rounded-full bg-sky-300/20" />
         <p className="text-sm font-medium text-sky-700">{user.role || "USER"}</p>
-        <h1 className="mt-1 text-3xl font-semibold tracking-tight">
+        <h1 className="relative mt-1 text-3xl font-semibold tracking-tight text-slate-900">
           Hello, {user.name || user.empId}
         </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="relative mt-2 text-sm text-muted-foreground">
           {user.empId} · Choose a module to continue your work.
         </p>
       </section>
@@ -72,9 +75,9 @@ export default async function Dashboard() {
           const Icon = module.icon;
           return (
             <Link key={module.href} href={module.href} className="group">
-              <Card className="h-full transition-all group-hover:-translate-y-0.5 group-hover:border-sky-300 group-hover:shadow-md">
+              <Card className="h-full border-slate-200 bg-white transition-all group-hover:-translate-y-1 group-hover:border-sky-300 group-hover:shadow-lg">
                 <CardContent className="flex min-h-40 flex-col justify-between p-5">
-                  <div className="w-fit rounded-xl bg-sky-100 p-3 text-sky-800">
+                  <div className="w-fit rounded-xl bg-linear-to-br from-cyan-100 to-sky-100 p-3 text-cyan-900 shadow-sm">
                     <Icon className="size-6" />
                   </div>
                   <div>

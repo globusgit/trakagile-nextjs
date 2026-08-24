@@ -11,14 +11,30 @@ export async function GET() {
       orgId,
       empId,
       $or: [{ status: "IN" }, { attendanceDate: dayKey() }],
-    }).sort({ status: 1, "markIn.time": -1 }).select("_id").lean();
-    if (!attendance) return Response.json({ locations: [] });
+    }).sort({ status: 1, "markIn.time": -1 })
+      .select("_id status markIn markOut totalDistanceMeters")
+      .lean();
+    if (!attendance) return Response.json({ locations: [], route: null });
     const locations = await TrackingLocation.find({ orgId, attendanceId: attendance._id })
       .sort({ capturedAt: 1 })
       .limit(1000)
-      .select("latitude longitude accuracy speed heading capturedAt receivedAt locationName")
+      .select("latitude longitude accuracy speed heading capturedAt receivedAt locationName locationNameRefreshed")
       .lean();
-    return Response.json({ locations });
+    return Response.json({
+      locations,
+      route: {
+        status: attendance.status,
+        distanceMeters: attendance.totalDistanceMeters || 0,
+        start: attendance.markIn ? {
+          ...attendance.markIn.location,
+          recordedAt: attendance.markIn.time,
+        } : null,
+        end: attendance.markOut?.location ? {
+          ...attendance.markOut.location,
+          recordedAt: attendance.markOut.time,
+        } : null,
+      },
+    });
   } catch (error) {
     return errorResponse(error, "Unable to load today's location history.");
   }

@@ -27,6 +27,7 @@ const leaveRequestSchema = new mongoose.Schema(
     },
     approvedBy: { type: mongoose.Types.ObjectId, ref: "User" },
     approvedAt: { type: Date },
+    balanceApplied: { type: Boolean, default: false },
     rejectionReason: { type: String },
     cancellationReason: { type: String }, // why the employee wants to cancel
     cancellationRequestedAt: { type: Date },

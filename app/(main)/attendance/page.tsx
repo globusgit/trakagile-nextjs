@@ -43,7 +43,14 @@ import {
 } from "react";
 
 import { useSession } from "next-auth/react";
+import dynamic from "next/dynamic";
 import { toast } from "sonner";
+import type { RouteMeta } from "./AttendanceRouteMap";
+
+const AttendanceRouteMap = dynamic(() => import("./AttendanceRouteMap"), {
+  ssr: false,
+  loading: () => <div className="h-[430px] animate-pulse rounded-xl bg-slate-100" />,
+});
 
 /* =========================================================
    TYPES
@@ -99,6 +106,7 @@ type TrackingPoint = AttendanceLocation & {
   speed?: number;
   heading?: number;
   locationName?: string;
+  locationNameRefreshed?: boolean;
 };
 
 type Attendance = {
@@ -491,7 +499,9 @@ function LocationMap({
   );
 }
 
-function TodayRouteMap({ points }: { points: TrackingPoint[] }) {
+function TodayRouteMap({ points, route }: { points: TrackingPoint[]; route: RouteMeta }) {
+  return <AttendanceRouteMap points={points} route={route} />;
+  /* Previous iframe overlay retained temporarily for an easy source comparison.
   const reliable = points.filter((point) => point.accuracy == null || point.accuracy <= 200);
   if (reliable.length === 0) return null;
   const latitudes = reliable.map((point) => point.latitude);
@@ -517,6 +527,7 @@ function TodayRouteMap({ points }: { points: TrackingPoint[] }) {
     <div className="grid gap-3 text-sm sm:grid-cols-3"><div><p className="text-xs text-muted-foreground">First position</p><p className="font-medium">{time(reliable[0].capturedAt || reliable[0].receivedAt)}</p></div><div><p className="text-xs text-muted-foreground">Latest position</p><p className="font-medium">{time(reliable.at(-1)?.capturedAt || reliable.at(-1)?.receivedAt)}</p></div><div><p className="text-xs text-muted-foreground">Recorded distance</p><p className="font-medium">Route shown from saved GPS points</p></div></div>
     <details className="rounded-lg border"><summary className="cursor-pointer p-3 text-sm font-medium">View location timeline</summary><div className="max-h-80 divide-y overflow-y-auto border-t">{timeline.map((point, index) => <div key={point._id || `${point.capturedAt}-${index}`} className="grid gap-1 p-3 text-sm sm:grid-cols-[90px_1fr_auto]"><span className="font-medium">{time(point.capturedAt || point.receivedAt)}</span><span className="truncate text-muted-foreground">{point.locationName || `${point.latitude.toFixed(6)}, ${point.longitude.toFixed(6)}`}</span><a className="text-xs font-medium text-primary hover:underline" href={mapUrls(point).full} target="_blank" rel="noreferrer">Open map</a></div>)}</div>{reliable.length > 100 && <p className="border-t p-3 text-xs text-muted-foreground">Showing the latest 100 of {reliable.length} points.</p>}</details>
   </CardContent></Card>;
+  */
 }
 
 /* =========================================================
@@ -633,6 +644,7 @@ export default function AttendancePage() {
   const [policy, setPolicy] = useState<AttendancePolicy | null>(null);
   const [workStatus, setWorkStatus] = useState<WorkStatus | null>(null);
   const [todayLocations, setTodayLocations] = useState<TrackingPoint[]>([]);
+  const [todayRoute, setTodayRoute] = useState<RouteMeta | null>(null);
   const [wfhEnabled, setWfhEnabled] = useState(false);
   const [wfhDeviceAllowed, setWfhDeviceAllowed] = useState(true);
   const [wfhBoundDevice, setWfhBoundDevice] = useState<{ deviceType?: string; platform?: string; browser?: string; boundAt?: string } | null>(null);
@@ -806,6 +818,7 @@ export default function AttendancePage() {
         setPolicy(policyResult.data || null);
         setWfhEnabled(Boolean(wfhResult.enabled));
         setTodayLocations(Array.isArray(locationsResult.locations) ? locationsResult.locations : []);
+        setTodayRoute(locationsResult.route || null);
         if (today.attendance?.status === "IN" && today.attendance?.attendanceType === "WORK_FROM_HOME") {
           setWfhDeviceAllowed(false);
           const deviceStatus = await api("/api/wfh/device/status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(wfhDevicePayload()) });
@@ -2068,8 +2081,8 @@ export default function AttendancePage() {
           MARK IN / MARK OUT MAPS
       =============================================== */}
 
-      {attendance && todayLocations.length > 0 && (
-        <TodayRouteMap points={todayLocations} />
+      {attendance && todayRoute && (
+        <TodayRouteMap points={todayLocations} route={todayRoute} />
       )}
 
       {attendance?.markIn.location && (

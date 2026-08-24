@@ -12,7 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { useState } from "react";
 
 import { useSession } from "next-auth/react";
@@ -129,6 +129,7 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function LeavesPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { data: session } = useSession();
   const userId = session?.user?.id ?? "";
   const orgId = session?.user?.orgId ?? "";
@@ -136,6 +137,13 @@ export default function LeavesPage() {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const currentYear = new Date().getFullYear();
+  const canAllocate = ["ADMIN", "DIRECTOR"].includes(session?.user?.role ?? "");
+  const [allocationUserId, setAllocationUserId] = useState("");
+  const [allocation, setAllocation] = useState<Record<string, number>>({
+    casual: 0, sick: 0, earned: 0, unpaid: 0, maternity: 0, paternity: 0,
+  });
+  const [allocationMessage, setAllocationMessage] = useState("");
+  const [savingAllocation, setSavingAllocation] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["leaves", orgId, userId, page, limit, search],
@@ -160,6 +168,49 @@ export default function LeavesPage() {
       fetchLeaveInfo({ orgId, userId, year: currentYear }),
     enabled: !!orgId && !!userId,
   });
+
+  const { data: allocationData } = useQuery({
+    queryKey: ["leave-balances", currentYear],
+    queryFn: async () => {
+      const response = await fetch(`/api/leave/balances?year=${currentYear}`);
+      if (!response.ok) throw new Error("Failed to load leave allocations");
+      return response.json();
+    },
+    enabled: canAllocate,
+  });
+  const allocationEmployees = allocationData?.employees ?? [];
+
+  const selectAllocationEmployee = (selectedUserId: string) => {
+    const employee = allocationEmployees.find((item: { userId: string }) => item.userId === selectedUserId);
+    const balance = employee?.balance ?? {};
+    setAllocationUserId(selectedUserId);
+    setAllocationMessage("");
+    setAllocation(Object.fromEntries(
+      ["casual", "sick", "earned", "unpaid", "maternity", "paternity"].map((key) => [key, Number(balance[key] ?? 0)]),
+    ));
+  };
+
+  const saveAllocation = async () => {
+    if (!allocationUserId) return;
+    setSavingAllocation(true);
+    setAllocationMessage("");
+    try {
+      const response = await fetch("/api/leave/info", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: allocationUserId, year: currentYear, ...allocation }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.message || "Unable to save allocations");
+      setAllocationMessage("Leave allocation saved.");
+      await queryClient.invalidateQueries({ queryKey: ["leave-balances", currentYear] });
+      await queryClient.invalidateQueries({ queryKey: ["leave-info"] });
+    } catch (saveError) {
+      setAllocationMessage(saveError instanceof Error ? saveError.message : "Unable to save allocations");
+    } finally {
+      setSavingAllocation(false);
+    }
+  };
 
   const casualAllocated = leaveInfo?.casual ?? 0;
   const casualAvailed = leaveInfo?.usedCasual ?? 0;
@@ -221,7 +272,15 @@ export default function LeavesPage() {
   };
 
   const handleExport = async () => {
-    console.log("Export not wired up yet.");
+    const response = await fetch("/api/leave/export");
+    if (!response.ok) throw new Error("Failed to export leave requests");
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `leave-report-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -258,6 +317,46 @@ export default function LeavesPage() {
             ))
           : cardStats.map((stat) => <LeaveCard key={stat.label} stat={stat} />)}
       </div>
+
+      {canAllocate && (
+        <Card className="mt-5">
+          <CardContent className="p-4 space-y-4">
+            <div>
+              <p className="font-semibold">Employee Leave Allocation · {currentYear}</p>
+              <p className="text-xs text-muted-foreground">Allocations are separate for each employee in this organization.</p>
+            </div>
+            <select
+              className="h-10 w-full max-w-md rounded-md border bg-white px-3 text-sm"
+              value={allocationUserId}
+              onChange={(event) => selectAllocationEmployee(event.target.value)}
+            >
+              <option value="">Select employee</option>
+              {allocationEmployees.map((employee: { userId: string; empId: string; name: string }) => (
+                <option key={employee.userId} value={employee.userId}>{employee.name} · {employee.empId}</option>
+              ))}
+            </select>
+            {allocationUserId && (
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                {Object.keys(allocation).map((key) => (
+                  <label key={key} className="text-xs font-medium capitalize">
+                    {key}
+                    <input
+                      type="number" min="0" max="366" step="0.5"
+                      className="mt-1 h-9 w-full rounded-md border px-2"
+                      value={allocation[key]}
+                      onChange={(event) => setAllocation((current) => ({ ...current, [key]: Number(event.target.value) }))}
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
+            {allocationMessage && <p className="text-sm">{allocationMessage}</p>}
+            <Button onClick={() => void saveAllocation()} disabled={!allocationUserId || savingAllocation}>
+              {savingAllocation ? "Saving..." : "Save Allocation"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Leave requests table */}
       <div className="mt-6 bg-white rounded-xl shadow border overflow-hidden">

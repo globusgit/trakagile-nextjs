@@ -57,14 +57,14 @@ export default function ListingToolbar({
   }
 
   return (
-    <div className="mb-4 flex flex-col gap-3 rounded-lg border bg-white p-4 md:flex-row md:items-center md:justify-between">
+    <div className="mb-4 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
       <div className="w-full md:max-w-sm">
         <input
           type="text"
           value={searchValue}
           onChange={(e) => onSearchChange(e.target.value)}
           placeholder={searchPlaceholder}
-          className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:border-blue-500"
+          className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none transition focus:border-sky-600 focus:bg-white focus:ring-3 focus:ring-sky-100"
         />
       </div>
 
@@ -111,7 +111,7 @@ export default function ListingToolbar({
         {showAddButton && addHref && (
           <Link
             href={addHref}
-            className="rounded-md bg-cyan-900 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-700"
+            className="rounded-lg bg-cyan-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-cyan-700"
           >
             {addLabel}
           </Link>
