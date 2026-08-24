@@ -4,6 +4,8 @@ import LeaveRequest from "@/models/LeaveRequest";
 import User from "@/models/User";
 import { isOrganizationRole, visibleEmployeeIds } from "@/lib/access";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
+import { notifyAttendance } from "../../attendance/_lib/notifications";
+import { applyLeaveBalance, assertNoLeaveOverlap, calculateLeaveDays, isLeaveReviewer } from "../_lib/leave";
 
 const owns = (leave, identity) => String(leave.userId) === String(identity.userId);
 
@@ -43,17 +45,33 @@ export async function PUT(request, { params }) {
     const leave = await scopedLeave(id, identity);
     const action = body.action;
 
-    if (["approve_cancellation", "reject_cancellation"].includes(action) && !["ADMIN", "DIRECTOR", "MANAGER"].includes(identity.role)) {
+    if (["approve", "reject", "approve_cancellation", "reject_cancellation"].includes(action) && !isLeaveReviewer(identity.role)) {
       throw new AttendanceError("Manager or administrator approval is required.", 403);
     }
-    if (["approve_cancellation", "reject_cancellation"].includes(action) && owns(leave, identity)) {
-      throw new AttendanceError("You cannot decide your own cancellation request.", 403);
+    if (["approve", "reject", "approve_cancellation", "reject_cancellation"].includes(action) && owns(leave, identity)) {
+      throw new AttendanceError("You cannot review your own leave request.", 403);
     }
     if (["cancel_pending", "request_cancellation"].includes(action) && !owns(leave, identity)) {
       throw new AttendanceError("Only the employee can request or cancel this leave.", 403);
     }
 
-    if (action === "cancel_pending") {
+    if (action === "approve") {
+      if (leave.status !== "pending") throw new AttendanceError("Only pending leave requests can be approved.", 409);
+      await applyLeaveBalance(leave, 1);
+      leave.status = "approved";
+      leave.balanceApplied = true;
+      leave.approvedBy = identity.userId;
+      leave.approvedAt = new Date();
+      leave.rejectionReason = undefined;
+    } else if (action === "reject") {
+      if (leave.status !== "pending") throw new AttendanceError("Only pending leave requests can be rejected.", 409);
+      const rejectionReason = String(body.rejectionReason || "").trim();
+      if (!rejectionReason) throw new AttendanceError("Rejection reason is required.");
+      leave.status = "rejected";
+      leave.approvedBy = identity.userId;
+      leave.approvedAt = new Date();
+      leave.rejectionReason = rejectionReason;
+    } else if (action === "cancel_pending") {
       if (leave.status !== "pending") throw new AttendanceError("Only pending leave requests can be cancelled.", 409);
       leave.status = "cancelled"; leave.cancellationReason = String(body.cancellationReason || "").trim(); leave.cancellationRequestedAt = new Date();
     } else if (action === "request_cancellation") {
@@ -61,6 +79,10 @@ export async function PUT(request, { params }) {
       leave.status = "cancellation_pending"; leave.cancellationReason = String(body.cancellationReason || "").trim(); leave.cancellationRequestedAt = new Date();
     } else if (action === "approve_cancellation") {
       if (leave.status !== "cancellation_pending") throw new AttendanceError("This request has no pending cancellation.", 409);
+      if (leave.balanceApplied) {
+        await applyLeaveBalance(leave, -1);
+        leave.balanceApplied = false;
+      }
       leave.status = "cancelled";
     } else if (action === "reject_cancellation") {
       if (leave.status !== "cancellation_pending") throw new AttendanceError("This request has no pending cancellation.", 409);
@@ -68,11 +90,26 @@ export async function PUT(request, { params }) {
     } else {
       if (!owns(leave, identity)) throw new AttendanceError("Only the employee can edit this leave request.", 403);
       if (leave.status !== "pending") throw new AttendanceError(`This request is already ${leave.status} and cannot be edited.`, 409);
-      const startDate = new Date(body.startDate); const endDate = new Date(body.endDate); const days = Number(body.days);
-      if (!body.leaveType || Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || endDate < startDate || !Number.isFinite(days) || days <= 0) throw new AttendanceError("Enter valid leave details.");
+      const startDate = new Date(body.startDate); const endDate = new Date(body.endDate);
+      if (!body.leaveType || !String(body.reason || "").trim()) throw new AttendanceError("Leave type and reason are required.");
+      const days = await calculateLeaveDays(identity.orgId, startDate, endDate, body.days);
+      await assertNoLeaveOverlap({ orgId: identity.orgId, userId: leave.userId, startDate, endDate, excludeId: leave._id });
       leave.set({ leaveType: body.leaveType, startDate, endDate, days, reason: String(body.reason || "").trim() });
     }
     await leave.save();
+    const employee = await User.findOne({ _id: leave.userId, orgId: identity.orgId }).select("username").lean();
+    if (employee?.username) {
+      const reviewed = ["approve", "reject"].includes(action);
+      const cancellation = ["request_cancellation", "approve_cancellation", "reject_cancellation", "cancel_pending"].includes(action);
+      await notifyAttendance({
+        orgId: identity.orgId,
+        empId: employee.username,
+        type: reviewed ? "LEAVE_REVIEWED" : cancellation ? "LEAVE_CANCELLATION" : "LEAVE_REQUEST",
+        title: reviewed ? `Leave ${leave.status}` : cancellation ? "Leave cancellation updated" : "Leave request updated",
+        message: `${leave.leaveType} leave for ${leave.days} day(s) is ${leave.status}.`,
+        dedupeKey: `${leave._id}:${action || "edited"}:${leave.updatedAt?.getTime?.() || Date.now()}`,
+      }).catch((notificationError) => console.error("[LEAVE] Notification failed:", notificationError));
+    }
     return Response.json({ message: "Leave request updated successfully.", data: leave });
   } catch (error) {
     return errorResponse(error, "Unable to update leave request.");

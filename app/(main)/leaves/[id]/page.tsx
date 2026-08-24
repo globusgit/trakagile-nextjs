@@ -73,6 +73,7 @@ export default function EditLeaveRequest() {
   const [dayType, setDayType] = useState<"full" | "half" | null>(null);
 
   const [status, setStatus] = useState("pending");
+  const [leaveUserId, setLeaveUserId] = useState("");
   const [approvedBy, setApprovedBy] = useState("");
   const [approvedAt, setApprovedAt] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
@@ -93,6 +94,8 @@ export default function EditLeaveRequest() {
 
   const [showRejectCancelForm, setShowRejectCancelForm] = useState(false);
   const [rejectCancelReasonInput, setRejectCancelReasonInput] = useState("");
+  const [showRejectForm, setShowRejectForm] = useState(false);
+  const [rejectReasonInput, setRejectReasonInput] = useState("");
 
   const isEditable = status === "pending";
   const isApproved = status === "approved";
@@ -109,6 +112,7 @@ export default function EditLeaveRequest() {
       const data = await res.json();
 
       setLeaveType(data.leaveType || "");
+      setLeaveUserId(String(data.userId || ""));
       setStartDate(data.startDate ? data.startDate.slice(0, 10) : "");
       setEndDate(data.endDate ? data.endDate.slice(0, 10) : "");
       setReason(data.reason || "");
@@ -219,6 +223,33 @@ export default function EditLeaveRequest() {
     } catch (err) {
       console.error(err);
       setServerError("Something went wrong while cancelling the leave request.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const reviewLeave = async (action: "approve" | "reject") => {
+    setServerError("");
+    setSuccessMessage("");
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/leave/${params.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, rejectionReason: rejectReasonInput }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setServerError(data.message || `Failed to ${action} leave request.`);
+        return;
+      }
+      setSuccessMessage(`Leave request ${action === "approve" ? "approved" : "rejected"}.`);
+      setShowRejectForm(false);
+      setRejectReasonInput("");
+      await loadLeave();
+    } catch (err) {
+      console.error(err);
+      setServerError(`Something went wrong while ${action === "approve" ? "approving" : "rejecting"} leave.`);
     } finally {
       setLoading(false);
     }
@@ -584,6 +615,48 @@ export default function EditLeaveRequest() {
                       className="bg-red-600 hover:bg-red-700"
                     >
                       {loading ? "Submitting..." : "Submit Cancellation Request"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {isEditable && isAdmin && leaveUserId !== session?.user?.id && (
+            <div className="border-t border-gray-100 pt-6 space-y-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Review Leave Request
+              </p>
+              {!showRejectForm ? (
+                <div className="flex gap-3">
+                  <Button
+                    onClick={() => void reviewLeave("approve")}
+                    disabled={loading}
+                    className="bg-green-700 hover:bg-green-600"
+                  >
+                    Approve Leave
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowRejectForm(true)}>
+                    Reject Leave
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3 rounded-lg border border-red-200 bg-red-50 p-4">
+                  <Label>Rejection reason</Label>
+                  <Textarea
+                    value={rejectReasonInput}
+                    onChange={(event) => setRejectReasonInput(event.target.value)}
+                    rows={3}
+                    className="bg-white"
+                  />
+                  <div className="flex gap-3">
+                    <Button variant="outline" onClick={() => setShowRejectForm(false)}>Back</Button>
+                    <Button
+                      onClick={() => void reviewLeave("reject")}
+                      disabled={loading || !rejectReasonInput.trim()}
+                      className="bg-red-700 hover:bg-red-600"
+                    >
+                      Confirm Rejection
                     </Button>
                   </div>
                 </div>

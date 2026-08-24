@@ -20,11 +20,26 @@ export async function POST(request) {
     const identity = await requireAttendanceUser();
     const body = await request.json();
     const now = new Date();
-    const location = locationFrom(body, now);
+    const location = locationFrom(body, now, {
+      maxClockDifferenceMs: body.offlineQueued ? 24 * 60 * 60 * 1000 : 5 * 60 * 1000,
+    });
     const movement = movementFrom(body);
     const attendance = await getActiveAttendance(identity.orgId, identity.empId);
     if (!attendance) throw new AttendanceError("No active attendance found.", 404);
     const distanceMeters = reliableDistance(attendance.lastKnownLocation, location);
+    if (location.accuracy != null && location.accuracy > 100) {
+      return Response.json({ accepted: false, reason: "LOW_ACCURACY", message: "GPS point ignored because accuracy exceeded 100 metres." });
+    }
+    if (attendance.lastKnownLocation) {
+      const previousTime = new Date(attendance.lastKnownLocation.capturedAt || attendance.lastLocationReceivedAt || now);
+      const elapsedSeconds = Math.max(1, (location.capturedAt.getTime() - previousTime.getTime()) / 1000);
+      if (elapsedSeconds <= 0 || distanceMeters / elapsedSeconds > 55) {
+        return Response.json({ accepted: false, reason: "UNREALISTIC_JUMP", message: "GPS point ignored because the movement was not physically plausible." });
+      }
+      if (distanceMeters < 10 && elapsedSeconds < 180) {
+        return Response.json({ accepted: false, reason: "DUPLICATE", message: "Duplicate location point ignored." });
+      }
+    }
     const previousLocation = await TrackingLocation.findOne({
       attendanceId: attendance._id,
       locationNameRefreshed: true,
@@ -98,6 +113,7 @@ export async function POST(request) {
 
     return Response.json({
       message: "Location updated.",
+      accepted: true,
       location,
       receivedAt: now,
       distanceAddedMeters: distanceMeters,

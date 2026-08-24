@@ -89,7 +89,7 @@ export default function SideNav({ collapsed }: { collapsed: boolean }) {
               key={item.href}
               href={item.href}
               className={`${styles.navItem} ${
-                active ? "rounded-md bg-cyan-100 font-semibold !text-black" : ""
+                active ? "bg-cyan-100 font-semibold !text-cyan-950 shadow-[inset_3px_0_0_#22d3ee]" : ""
               }`}
             >
               <span className={styles.icon}>{item.icon}</span>

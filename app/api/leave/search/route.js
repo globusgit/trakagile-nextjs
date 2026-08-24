@@ -7,10 +7,10 @@ import { isOrganizationRole, userIdsForEmployeeIds, visibleEmployeeIds } from "@
 import { errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
 
 async function attachEmployeeNames(leaves, orgId) {
-  const userIds = [...new Set(leaves.map((leave) => leave.userId?.toString()).filter(Boolean))];
+  const userIds = [...new Set(leaves.flatMap((leave) => [leave.userId, leave.approvedBy]).map((id) => id?.toString()).filter(Boolean))];
   if (userIds.length === 0) return leaves;
 
-  const users = await User.find({ _id: { $in: userIds } }).lean();
+  const users = await User.find({ _id: { $in: userIds }, orgId }).lean();
   const usernameByUserId = Object.fromEntries(
     users.map((user) => [user._id.toString(), user.username]),
   );
@@ -22,7 +22,12 @@ async function attachEmployeeNames(leaves, orgId) {
 
   return leaves.map((leave) => {
     const employeeId = usernameByUserId[leave.userId?.toString()];
-    return { ...leave, employeeName: nameByEmployeeId[employeeId] || null };
+    const reviewerId = usernameByUserId[leave.approvedBy?.toString()];
+    return {
+      ...leave,
+      employeeName: nameByEmployeeId[employeeId] || employeeId || null,
+      approvedBy: nameByEmployeeId[reviewerId] || reviewerId || null,
+    };
   });
 }
 

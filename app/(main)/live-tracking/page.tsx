@@ -6,16 +6,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Search, UserRound } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import Image from "next/image";
 import { toast } from "sonner";
 
 type LiveEmployee = {
-  employee?: { name?: string; empId: string };
+  employee?: { name?: string; empId: string; photo?: string };
   attendance: { totalDistanceMeters?: number };
   location?: { latitude: number; longitude: number; accuracy?: number; speed?: number; locationName?: string; receivedAt: string };
   workStatus: { state: string; confidence: string; label: string; reason: string };
 };
 
 export default function LiveTrackingPage() {
+  const searchParams = useSearchParams();
+  const requestedEmpId = searchParams.get("empId") || "";
   const [employees, setEmployees] = useState<LiveEmployee[]>([]);
   const [query, setQuery] = useState("");
   const [selectedEmpId, setSelectedEmpId] = useState("");
@@ -38,7 +42,8 @@ export default function LiveTrackingPage() {
     if (!value) return employees;
     return employees.filter((item) => item.employee?.name?.toLowerCase().includes(value) || item.employee?.empId.toLowerCase().includes(value));
   }, [employees, query]);
-  const selected = employees.find((item) => item.employee?.empId === selectedEmpId);
+  const activeEmpId = selectedEmpId || requestedEmpId;
+  const selected = employees.find((item) => item.employee?.empId === activeEmpId);
 
   return <div className="space-y-6 pb-10">
     <PageHeader title="Live Employee Tracking" />
@@ -50,8 +55,8 @@ export default function LiveTrackingPage() {
           <p className="text-xs text-muted-foreground">{filtered.length} active employee(s)</p>
           <div className="max-h-[520px] space-y-2 overflow-y-auto">{filtered.map((item) => {
             const stale = item.workStatus.state !== "VERIFIED";
-            return <button type="button" key={item.employee?.empId} onClick={() => setSelectedEmpId(item.employee?.empId || "")} className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left hover:bg-muted ${selectedEmpId === item.employee?.empId ? "border-primary bg-muted" : ""}`}>
-              <UserRound className="size-5 shrink-0" /><span className="min-w-0 flex-1"><span className="block truncate font-medium">{item.employee?.name || "Employee"}</span><span className="block text-xs text-muted-foreground">{item.employee?.empId}</span></span><Badge variant={stale ? "destructive" : "default"}>{item.workStatus.label}</Badge>
+            return <button type="button" key={item.employee?.empId} onClick={() => setSelectedEmpId(item.employee?.empId || "")} className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left hover:bg-muted ${activeEmpId === item.employee?.empId ? "border-primary bg-muted" : ""}`}>
+              <Image src={item.employee?.photo ? `/api/files/employees/${encodeURIComponent(item.employee.photo)}` : "/default-avatar.jpg"} alt={item.employee?.name || "Employee"} width={36} height={36} unoptimized className="size-9 shrink-0 rounded-full object-cover" /><span className="min-w-0 flex-1"><span className="block truncate font-medium">{item.employee?.name || "Employee"}</span><span className="block text-xs text-muted-foreground">{item.employee?.empId}</span></span><Badge variant={stale ? "destructive" : "default"}>{item.workStatus.label}</Badge>
             </button>;
           })}{filtered.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">No matching employee.</p>}</div>
         </CardContent></Card>
