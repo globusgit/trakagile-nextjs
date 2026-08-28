@@ -95,7 +95,7 @@ export default function ListingToolbar({
           ))}
         </select>
 
-        {rightSlot}
+        
 
         {onExport && (
           <button
@@ -107,6 +107,8 @@ export default function ListingToolbar({
             {exportLabel}
           </button>
         )}
+
+        {rightSlot}
 
         {showAddButton && addHref && (
           <Link

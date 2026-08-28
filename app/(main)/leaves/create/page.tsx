@@ -104,7 +104,7 @@ export default function LeaveRequestPage() {
 
       if (!res.ok) {
         setServerError(
-          typeof data === "string" ? data : data.error || "Failed to submit leave request."
+          typeof data === "string" ? data : data.message || "Failed to submit leave request."
         );
         return;
       }

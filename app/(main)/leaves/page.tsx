@@ -17,6 +17,8 @@ import React, { useState } from "react";
 
 import { useSession } from "next-auth/react";
 import { Pencil } from "lucide-react";
+// add near the top with the other imports
+import Link from "next/link";
 
 export async function fetchLeaves({
   orgId,
@@ -138,6 +140,9 @@ export default function LeavesPage() {
   const [limit, setLimit] = useState(10);
   const currentYear = new Date().getFullYear();
   const canAllocate = ["ADMIN", "DIRECTOR"].includes(session?.user?.role ?? "");
+  const isDirector = session?.user?.role === "DIRECTOR";
+  // inside LeavesPage(), alongside the existing `canAllocate` line
+  const isAdminRole = ["ADMIN", "DIRECTOR"].includes(session?.user?.role ?? "");
   const [allocationUserId, setAllocationUserId] = useState("");
   const [allocation, setAllocation] = useState<Record<string, number>>({
     casual: 0, sick: 0, earned: 0, unpaid: 0, maternity: 0, paternity: 0,
@@ -150,13 +155,13 @@ export default function LeavesPage() {
     queryFn: () =>
       fetchLeaves({
         orgId,
-        userId,
+        userId, 
         page,
         limit,
         search,
       }),
     placeholderData: keepPreviousData,
-    enabled: !!orgId && !!userId,
+    enabled: !!orgId && !!userId && !isDirector,
   });
 
   const leavesData: LeaveRequestRow[] = data?.leaves ?? [];
@@ -288,6 +293,7 @@ export default function LeavesPage() {
       <PageHeader title="Leaves" />
 
       <div className="pt-3">
+        
         <ListingToolbar
           searchValue={search}
           onSearchChange={setSearch}
@@ -297,10 +303,20 @@ export default function LeavesPage() {
             setPage(1);
           }}
           onExport={handleExport}
-          showAddButton
+          showAddButton={!isDirector}
           addHref="/leaves/create"
-          addLabel="Leave Request"
+          addLabel="Leave"
           searchPlaceholder="Search leaves..."
+          rightSlot={
+          isAdminRole ? (
+            <Link
+              href="/leaves/requests"
+              className="rounded-lg bg-cyan-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-cyan-700"
+            >
+              Requested Leaves
+            </Link>
+          ) : undefined
+        }
         />
       </div>
 
@@ -358,105 +374,111 @@ export default function LeavesPage() {
         </Card>
       )}
 
-      {/* Leave requests table */}
-      <div className="mt-6 bg-white rounded-xl shadow border overflow-hidden">
-        <Table>
-          <TableHeader className="sticky top-0 bg-cyan-200 z-10 shadow-sm">
-            <TableRow>
-              <TableHead className="w-[70px] font-bold">Edit</TableHead>
-              <TableHead className="font-bold">Emp Name</TableHead>
-              <TableHead className="font-bold">Leave Type</TableHead>
-              <TableHead className="font-bold">Total Days</TableHead>
-              <TableHead className="font-bold">Status</TableHead>
-              <TableHead className="font-bold">Approved/Rejected By</TableHead>
-              <TableHead className="font-bold">Approved Date</TableHead>
-              <TableHead className="font-bold">Rejection Reason</TableHead>
-            </TableRow>
-          </TableHeader>
+      {/* Leave requests table — hidden for Director */}
 
-          <TableBody>
-            {isLoading && (
+      {!isDirector && (
+        <>
+          <div className="mt-6 bg-white rounded-xl shadow border overflow-hidden">
+          <Table>
+            <TableHeader className="sticky top-0 bg-cyan-200 z-10 shadow-sm">
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-6 text-gray-500">
-                  Loading...
-                </TableCell>
+                <TableHead className="w-[70px] font-bold">Edit</TableHead>
+                <TableHead className="font-bold">Emp Name</TableHead>
+                <TableHead className="font-bold">Leave Type</TableHead>
+                <TableHead className="font-bold">Total Days</TableHead>
+                <TableHead className="font-bold">Status</TableHead>
+                <TableHead className="font-bold">Approved/Rejected By</TableHead>
+                <TableHead className="font-bold">Approved/Rejected Date</TableHead>
+                <TableHead className="font-bold">Rejection Reason</TableHead>
               </TableRow>
-            )}
+            </TableHeader>
 
-            {!!error && (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center py-6 text-red-500">
-                  Failed to load leave requests.
-                </TableCell>
-              </TableRow>
-            )}
-
-            {!isLoading && !error && leavesData.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center py-6 text-gray-500">
-                  No leave requests found
-                </TableCell>
-              </TableRow>
-            )}
-
-            {!isLoading &&
-              !error &&
-              leavesData.map((leave) => (
-                <TableRow key={leave._id} className="hover:bg-gray-50">
-                  <TableCell>
-                    <button
-                      onClick={() => router.push(`/leaves/${leave._id}`)}
-                      className="text-orange-500 hover:text-orange-700"
-                      aria-label="Edit leave request"
-                    >
-                      <Pencil size={16} />
-                    </button>
-                  </TableCell>
-
-                  <TableCell className="font-medium">
-                    {leave.employeeName || leave.userId}
-                  </TableCell>
-                  <TableCell className="capitalize">{leave.leaveType}</TableCell>
-                  <TableCell>{leave.days}</TableCell>
-                  <TableCell>
-                    <StatusBadge status={leave.status} />
-                  </TableCell>
-                  <TableCell>{leave.approvedBy || "-"}</TableCell>
-                  <TableCell>{formatDate(leave.approvedAt)}</TableCell>
-                  <TableCell className="max-w-[220px] truncate">
-                    {leave.status === "rejected" ? leave.rejectionReason || "-" : "-"}
+            <TableBody>
+              {isLoading && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-6 text-gray-500">
+                    Loading...
                   </TableCell>
                 </TableRow>
-              ))}
-          </TableBody>
-        </Table>
-      </div>
+              )}
 
-      {/* Pagination */}
-      <div className="flex flex-col md:flex-row items-center justify-between gap-4 mt-4">
-        <div className="text-sm text-muted-foreground">
-          Total Records: {totalRecords}
+              {!!error && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-6 text-red-500">
+                    Failed to load leave requests.
+                  </TableCell>
+                </TableRow>
+              )}
+
+              {!isLoading && !error && leavesData.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-6 text-gray-500">
+                    No leave requests found
+                  </TableCell>
+                </TableRow>
+              )}
+
+              {!isLoading &&
+                !error &&
+                leavesData.map((leave) => (
+                  <TableRow key={leave._id} className="hover:bg-gray-50">
+                    <TableCell>
+                      <button
+                        onClick={() => router.push(`/leaves/${leave._id}`)}
+                        className="text-orange-500 hover:text-orange-700"
+                        aria-label="Edit leave request"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    </TableCell>
+
+                    <TableCell className="font-medium">
+                      {leave.employeeName || leave.userId}
+                    </TableCell>
+                    <TableCell className="capitalize">{leave.leaveType}</TableCell>
+                    <TableCell>{leave.days}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={leave.status} />
+                    </TableCell>
+                    <TableCell>{leave.approvedBy || "-"}</TableCell>
+                    <TableCell>{formatDate(leave.approvedAt)}</TableCell>
+                    <TableCell className="max-w-[220px] truncate">
+                      {leave.status === "rejected" ? leave.rejectionReason || "-" : "-"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+            </TableBody>
+          </Table>
         </div>
-        <div className="flex justify-end items-center gap-3">
-          <Button
-            variant="outline"
-            disabled={page === 1}
-            onClick={() => setPage((p) => p - 1)}
-          >
-            Prev
-          </Button>
 
-          <span className="text-sm font-medium">Page {page}</span>
+        {/* Pagination */}
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4 mt-4">
+          <div className="text-sm text-muted-foreground">
+            Total Records: {totalRecords}
+          </div>
+          <div className="flex justify-end items-center gap-3">
+            <Button
+              variant="outline"
+              disabled={page === 1}
+              onClick={() => setPage((p) => p - 1)}
+            >
+              Prev
+            </Button>
 
-          <Button
-            variant="outline"
-            disabled={page * limit >= totalRecords}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            Next
-          </Button>
+            <span className="text-sm font-medium">Page {page}</span>
+
+            <Button
+              variant="outline"
+              disabled={page * limit >= totalRecords}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+            </Button>
+          </div>
         </div>
-      </div>
+        </>
+      )}
+
     </div>
   );
 }

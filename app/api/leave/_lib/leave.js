@@ -12,6 +12,13 @@ const usedFieldByType = {
 };
 
 const dateKey = (date) => date.toISOString().slice(0, 10);
+// Saturday is a working day except the 2nd Saturday of the month.
+// The 1st Saturday always falls on the 1st–7th, so the 2nd Saturday
+// always falls on the 8th–14th.
+const isNonWorkingSaturday = (date) => {
+  const day = date.getUTCDate();
+  return day >= 8 && day <= 14;
+};
 
 export async function calculateLeaveDays(orgId, startDate, endDate, requestedDays) {
   const start = new Date(startDate);
@@ -32,7 +39,10 @@ export async function calculateLeaveDays(orgId, startDate, endDate, requestedDay
   let days = 0;
   for (let cursor = new Date(startUtc); cursor <= endUtc; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
     const weekDay = cursor.getUTCDay();
-    if (weekDay !== 0 && weekDay !== 6 && !holidayKeys.has(dateKey(cursor))) days += 1;
+    const isSunday = weekDay === 0;
+    const isOffSaturday = weekDay === 6 && isNonWorkingSaturday(cursor);
+    const isHoliday = holidayKeys.has(dateKey(cursor));
+    if (!isSunday && !isOffSaturday && !isHoliday) days += 1;
   }
   const isSingleDay = startUtc.getTime() === endUtc.getTime();
   if (isSingleDay && Number(requestedDays) === 0.5 && days === 1) return 0.5;

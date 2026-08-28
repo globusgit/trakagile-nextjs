@@ -64,13 +64,12 @@ export async function PUT(request, { params }) {
       leave.approvedAt = new Date();
       leave.rejectionReason = undefined;
     } else if (action === "reject") {
-      if (leave.status !== "pending") throw new AttendanceError("Only pending leave requests can be rejected.", 409);
-      const rejectionReason = String(body.rejectionReason || "").trim();
-      if (!rejectionReason) throw new AttendanceError("Rejection reason is required.");
-      leave.status = "rejected";
-      leave.approvedBy = identity.userId;
-      leave.approvedAt = new Date();
-      leave.rejectionReason = rejectionReason;
+        if (leave.status !== "pending") throw new AttendanceError("Only pending leave requests can be rejected.", 409);
+        const rejectionReason = String(body.rejectionReason || "").trim();
+        leave.status = "rejected";
+        leave.approvedBy = identity.userId;
+        leave.approvedAt = new Date();
+        leave.rejectionReason = rejectionReason || undefined;
     } else if (action === "cancel_pending") {
       if (leave.status !== "pending") throw new AttendanceError("Only pending leave requests can be cancelled.", 409);
       leave.status = "cancelled"; leave.cancellationReason = String(body.cancellationReason || "").trim(); leave.cancellationRequestedAt = new Date();

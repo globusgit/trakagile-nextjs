@@ -543,7 +543,7 @@ export default function EditLeaveRequest() {
 
               {status === "rejected" && (
                 <div className="md:col-span-2 space-y-2">
-                  <Label>Rejection Reason</Label>
+                  <Label>Rejection Reason (optional)</Label>
                   <Textarea
                     value={rejectionReason || "-"}
                     disabled
@@ -653,7 +653,7 @@ export default function EditLeaveRequest() {
                     <Button variant="outline" onClick={() => setShowRejectForm(false)}>Back</Button>
                     <Button
                       onClick={() => void reviewLeave("reject")}
-                      disabled={loading || !rejectReasonInput.trim()}
+                      disabled={loading}
                       className="bg-red-700 hover:bg-red-600"
                     >
                       Confirm Rejection
