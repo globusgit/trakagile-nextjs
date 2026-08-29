@@ -5,6 +5,9 @@ import { useSession } from "next-auth/react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import ListingToolbar from "@/app/_components/ListingToolbar";
 import PageHeader from "@/app/_components/PageHeader";
+// add to imports
+import Link from "next/link";
+import { Pencil } from "lucide-react";
 
 import {
   Table,
@@ -52,7 +55,7 @@ async function fetchHolidays({
 }
 
 // Roles allowed to create/manage holidays — keep in sync with
-// HOLIDAY_MANAGE_ROLES in app/api/holiday/route.js
+// HOLIDAY_MANAGE_ROLES in app/api/holiday/route.js and app/api/holiday/[id]/route.js
 const HOLIDAY_MANAGE_ROLES = ["ADMIN", "DIRECTOR", "MANAGER"];
 
 export default function HolidayList() {
@@ -91,6 +94,8 @@ export default function HolidayList() {
     });
   };
 
+  const columnCount = canManageHolidays ? 5 : 4;
+
   return (
     <div>
       <PageHeader title="Holidays" />
@@ -127,13 +132,16 @@ export default function HolidayList() {
               <TableHead className="font-bold">Recurring</TableHead>
               <TableHead className="font-bold">Year</TableHead>
               {/*<TableHead className="font-bold">Note</TableHead> */}
+              {canManageHolidays && (
+                <TableHead className="font-bold">Actions</TableHead>
+              )}
             </TableRow>
           </TableHeader>
 
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-6 text-gray-500">
+                <TableCell colSpan={columnCount} className="text-center py-6 text-gray-500">
                   Loading...
                 </TableCell>
               </TableRow>
@@ -141,7 +149,7 @@ export default function HolidayList() {
 
             {!!error && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-6 text-red-500">
+                <TableCell colSpan={columnCount} className="text-center py-6 text-red-500">
                   Failed to load holidays.
                 </TableCell>
               </TableRow>
@@ -149,7 +157,7 @@ export default function HolidayList() {
 
             {!isLoading && !error && holidays.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-6 text-gray-500">
+                <TableCell colSpan={columnCount} className="text-center py-6 text-gray-500">
                   No holidays found
                 </TableCell>
               </TableRow>
@@ -166,6 +174,18 @@ export default function HolidayList() {
                   {/*<TableCell className="max-w-[280px] truncate">
                     {h.note || "-"}
                   </TableCell> */}
+                  {canManageHolidays && (
+                    <TableCell>
+                      <Link
+                        href={`/holidays/${h._id}`}
+                        className="inline-flex items-center gap-1 text-cyan-700 hover:text-cyan-900"
+                        aria-label={`Edit ${h.name}`}
+                      >
+                        <Pencil size={16} />
+                        <span className="text-sm">Edit</span>
+                      </Link>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
           </TableBody>
