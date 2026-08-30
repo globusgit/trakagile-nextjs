@@ -441,7 +441,6 @@ class _ModuleScreenState extends State<ModuleScreen> {
   }
 
   String get _endpoint {
-    final orgId = Uri.encodeQueryComponent('${widget.user['orgId']}');
     final year = DateTime.now().year;
     final nextYear = year + 1;
     return switch (widget.module.title) {
@@ -1175,8 +1174,14 @@ class _ModuleScreenState extends State<ModuleScreen> {
     );
     final file = picked?.files.single;
     if (file?.path == null || !mounted) return;
+    if (file!.size > 10 * 1024 * 1024) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Document must be 10 MB or smaller.')),
+      );
+      return;
+    }
     final title = TextEditingController(
-      text: file!.name.replaceFirst(RegExp(r'\.[^.]+$'), ''),
+      text: file.name.replaceFirst(RegExp(r'\.[^.]+$'), ''),
     );
     var category = 'OTHER';
     final confirmed = await showDialog<bool>(
@@ -1255,7 +1260,13 @@ class _ModuleScreenState extends State<ModuleScreen> {
               ),
             );
       final response = await request.send();
-      final body = jsonDecode(await response.stream.bytesToString());
+      final responseText = await response.stream.bytesToString();
+      dynamic body;
+      try {
+        body = jsonDecode(responseText);
+      } catch (_) {
+        body = null;
+      }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw Exception(
           body is Map
