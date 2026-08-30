@@ -49,7 +49,7 @@ export default function CreateEmployee() {
     if (!orgId) return;
     const fetchDesignations = async () => {
       try {
-        const res = await fetch(`/api/system-list?listName=Designation&orgId=${orgId}`);
+        const res = await fetch(`/api/system-list?listName=Designation`);
         const data = await res.json();
         setDesignations(Array.isArray(data?.data?.[0]) ? data.data[0] : []);
       } catch (err) {

@@ -30,23 +30,20 @@ interface Holiday {
   note?: string;
 }
 async function fetchHolidays({
-  orgId,
   year,
   page,
   size,
   q,
 }: {
-  orgId: string;
   year: number;
   page: number;
   size: number;
   q?: string;
 }) {
   const params = new URLSearchParams({
-    orgId,
     year: String(year),
     page: String(page),
-    size: String(size),
+    limit: String(size),
   });
   if (q) params.set("q", q);
   const res = await fetch(`/api/holiday/search?${params.toString()}`);
@@ -73,7 +70,7 @@ export default function HolidayList() {
   );
   const { data, error, isLoading } = useQuery({
     queryKey: ["holidays", orgId, year, page, size, query],
-    queryFn: () => fetchHolidays({ orgId, year, page, size, q: query }),
+    queryFn: () => fetchHolidays({ year, page, size, q: query }),
     placeholderData: keepPreviousData,
   });
 

@@ -1,39 +1,37 @@
 import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongoose";
 import SystemList from "@/models/SystemList";
+import { errorResponse, requireAttendanceUser } from "../attendance/_lib/attendance";
 
 export async function GET(req) {
   try {
     await connectDB();
+    const identity = await requireAttendanceUser();
     const { searchParams } = new URL(req.url);
     const listName = searchParams.get("listName");
-    const orgId = searchParams.get("orgId") || "ORG1";
-    console.log("List Name: ", listName);
-    console.log("Org Id: ", orgId);
-
-    const systemLists = await Promise.all([
-      SystemList.find({ listName: listName, orgId: orgId }),
-    ]);
+    const systemLists = await SystemList.find({ listName, orgId: identity.orgId });
     return NextResponse.json(
       {
-        data: systemLists,
+        data: [systemLists],
       },
       { status: 200 },
     );
   } catch (err) {
-    console.log("Server Error: ", err);
-    return NextResponse.json({ error: "Server Error" }, { status: 500 });
+    return errorResponse(err, "Unable to load system list.");
   }
 }
 
 export async function POST(req) {
   try {
     await connectDB();
+    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR"]);
     const body = await req.json();
-    const orgId = body.orgId;
-    const listName = body.listName;
-    const listItem = body.listItem;
-    console.log("Body: ", body);
+    const orgId = identity.orgId;
+    const listName = String(body.listName || "").trim();
+    const listItem = String(body.listItem || "").trim();
+    if (!listName || !listItem) {
+      return NextResponse.json({ message: "List name and item are required." }, { status: 400 });
+    }
     const list = await SystemList.findOne({
       listName: listName,
       listItem: listItem,
@@ -45,13 +43,12 @@ export async function POST(req) {
         { status: 400 },
       );
     }
-    await SystemList.create(body);
+    await SystemList.create({ listName, listItem, orgId, status: body.status });
     return NextResponse.json(
       { message: "System List created successfully!" },
       { status: 200 },
     );
   } catch (err) {
-    console.log("Server Error: ", err);
-    return NextResponse.json({ error: "Server Error" }, { status: 500 });
+    return errorResponse(err, "Unable to create system list item.");
   }
 }

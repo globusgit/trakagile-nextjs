@@ -3,6 +3,7 @@ import connectDB from "@/lib/mongoose";
 import Employee from "@/models/Employee";
 import { errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
 import { visibleEmployeeIds } from "@/lib/access";
+import { escapeRegex, pagination } from "@/lib/query.mjs";
 
 export async function GET(request) {
   try {
@@ -11,15 +12,14 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const orgId = identity.orgId;
     const q = searchParams.get("q");
-    const page = parseInt(searchParams.get("page")) || 1;
-    const limit = parseInt(searchParams.get("limit")) || 10;
+    const { page, limit } = pagination(searchParams);
     const skip = (page - 1) * limit;
 
     const allowedIds = await visibleEmployeeIds(identity);
     const query = { orgId, ...(allowedIds ? { empId: { $in: allowedIds } } : {}) };
 
     if (q && q.trim() !== "") {
-      const regex = new RegExp(q.trim(), "i");
+      const regex = new RegExp(escapeRegex(q.trim()), "i");
       query.$or = [
         { name: regex },
         { empId: regex },

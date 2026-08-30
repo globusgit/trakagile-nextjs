@@ -9,14 +9,14 @@ const HOLIDAY_MANAGE_ROLES = ["ADMIN", "DIRECTOR", "MANAGER"];
 export async function GET(request) {
   try {
     await connectDB();
+    const identity = await requireAttendanceUser();
     const { searchParams } = new URL(request.url);
-    const orgId = searchParams.get("orgId");
     const year = parseInt(searchParams.get("year"));
-    const page = parseInt(searchParams.get("page")) || 1;
-    const limit = parseInt(searchParams.get("limit")) || 10;
+    const page = Math.max(1, parseInt(searchParams.get("page")) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit")) || 10));
     const skip = (page - 1) * limit;
 
-    const query = { orgId };
+    const query = { orgId: identity.orgId };
     if (!isNaN(year)) {
       query.year = year;
     }
@@ -38,6 +38,7 @@ export async function GET(request) {
       },
     );
   } catch (error) {
+    if (error?.name === "AttendanceError") return errorResponse(error);
     console.error("Error fetching holidays:", error);
     return NextResponse.json(
       { error: "Failed to fetch holidays" },
