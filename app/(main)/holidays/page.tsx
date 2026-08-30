@@ -78,7 +78,20 @@ export default function HolidayList() {
   const total: number = data?.total ?? 0;
 
   const handleExport = async () => {
-    console.log("Export these rows:");
+    const params = new URLSearchParams({ year: String(year) });
+    if (query) params.set("q", query);
+    const response = await fetch(`/api/holiday/export?${params.toString()}`);
+    if (!response.ok) throw new Error("Failed to export holidays");
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `holidays-${year}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   };
 
   const formatDate = (dateStr: string) => {
@@ -113,7 +126,7 @@ export default function HolidayList() {
         showAddButton={canManageHolidays}
         addHref="/holidays/create"
         addLabel="Holiday"
-        searchPlaceholder="Search attendance..."
+        searchPlaceholder="Search holidays..."
         selectedYear={year}
         onYearChange={setYear}
       />

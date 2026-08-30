@@ -1648,7 +1648,6 @@ class _ModuleScreenState extends State<ModuleScreen> {
         'date': date.toIso8601String(),
         'year': date.year,
         'note': note.text.trim(),
-        'orgId': widget.user['orgId'],
         'isRecurring': recurring,
         'isOptional': false,
       });
