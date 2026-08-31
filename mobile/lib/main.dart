@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _apiBaseUrl = String.fromEnvironment(
@@ -413,6 +414,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
   Map<String, dynamic>? _data;
   String _attendanceType = 'OFFICE';
   List<dynamic> _clientSites = const [];
+  List<dynamic> _groupEmployees = const [];
   String? _selectedClientSiteId;
   final _fieldPurpose = TextEditingController();
   DateTime _expectedWorkEndAt = DateTime.now().add(const Duration(hours: 8));
@@ -456,6 +458,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
       'Tasks' => '/api/tasks?page=1&limit=100',
       'Live Tracking' => '/api/attendance/live',
       'Employees' => '/api/attendance/employees',
+      'Group Attendance' => '/api/attendance/group',
       'Audit Logs' => '/api/audit-logs',
       'Settings' => '/api/holiday/search?year=$nextYear&page=1&limit=100',
       _ => '',
@@ -512,7 +515,8 @@ class _ModuleScreenState extends State<ModuleScreen> {
       }
       List<dynamic>? clientSites;
       if (widget.module.title == 'Attendance' ||
-          widget.module.title == 'Field Trips') {
+          widget.module.title == 'Field Trips' ||
+          widget.module.title == 'Group Attendance') {
         final clientsResponse = await http.get(
           Uri.parse('$baseUrl/api/attendance/clients'),
           headers: {'authorization': 'Bearer $token'},
@@ -524,10 +528,25 @@ class _ModuleScreenState extends State<ModuleScreen> {
           }
         }
       }
+      List<dynamic>? groupEmployees;
+      if (widget.module.title == 'Group Attendance' &&
+          '${widget.user['role']}'.toUpperCase() == 'MANAGER') {
+        final teamResponse = await http.get(
+          Uri.parse('$baseUrl/api/attendance/group?mode=team'),
+          headers: {'authorization': 'Bearer $token'},
+        );
+        if (teamResponse.statusCode == 200) {
+          final teamBody = jsonDecode(teamResponse.body);
+          if (teamBody is Map && teamBody['employees'] is List) {
+            groupEmployees = teamBody['employees'] as List;
+          }
+        }
+      }
       if (mounted) {
         setState(() {
           _data = decoded;
           if (clientSites != null) _clientSites = clientSites;
+          if (groupEmployees != null) _groupEmployees = groupEmployees;
         });
       }
     } catch (error) {
@@ -676,6 +695,221 @@ class _ModuleScreenState extends State<ModuleScreen> {
       throw Exception(message ?? 'Request failed (${response.statusCode}).');
     }
     return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+  }
+
+  Future<void> _showGroupAttendance() async {
+    var contextType = 'SITE_VISIT';
+    String? siteId;
+    final selected = <String>{};
+    final purpose = TextEditingController();
+    XFile? selfie;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Group attendance'),
+          content: SizedBox(
+            width: 520,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: contextType,
+                    decoration: const InputDecoration(labelText: 'Type'),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'SITE_VISIT',
+                        child: Text('Site visit'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'FIELD_TRIP',
+                        child: Text('Field trip'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'TRAINING',
+                        child: Text('Training'),
+                      ),
+                      DropdownMenuItem(value: 'EVENT', child: Text('Event')),
+                      DropdownMenuItem(
+                        value: 'TEAM_SHIFT',
+                        child: Text('Team shift'),
+                      ),
+                    ],
+                    onChanged: (value) => setDialogState(
+                      () => contextType = value ?? contextType,
+                    ),
+                  ),
+                  if (contextType == 'SITE_VISIT' ||
+                      contextType == 'FIELD_TRIP')
+                    DropdownButtonFormField<String>(
+                      initialValue: siteId,
+                      decoration: const InputDecoration(
+                        labelText: 'Client / site',
+                      ),
+                      items: _clientSites
+                          .whereType<Map>()
+                          .map(
+                            (site) => DropdownMenuItem<String>(
+                              value: '${site['_id']}',
+                              child: Text(
+                                '${site['clientName']} - ${site['siteName']}',
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) =>
+                          setDialogState(() => siteId = value),
+                    ),
+                  const SizedBox(height: 12),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Assigned employees',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  for (final employee in _groupEmployees.whereType<Map>())
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: selected.contains('${employee['empId']}'),
+                      title: Text('${employee['name']}'),
+                      subtitle: Text(
+                        '${employee['empId']} · ${employee['designation'] ?? 'Employee'}',
+                      ),
+                      onChanged: (checked) => setDialogState(() {
+                        if (checked == true) {
+                          selected.add('${employee['empId']}');
+                        } else {
+                          selected.remove('${employee['empId']}');
+                        }
+                      }),
+                    ),
+                  TextField(
+                    controller: purpose,
+                    maxLines: 2,
+                    decoration: const InputDecoration(labelText: 'Purpose'),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final captured = await ImagePicker().pickImage(
+                        source: ImageSource.camera,
+                        imageQuality: 82,
+                        maxWidth: 1920,
+                      );
+                      if (captured != null) {
+                        setDialogState(() => selfie = captured);
+                      }
+                    },
+                    icon: const Icon(Icons.camera_alt_outlined),
+                    label: Text(
+                      selfie == null
+                          ? 'Capture group selfie'
+                          : 'Selfie captured',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed:
+                  selected.isNotEmpty &&
+                      purpose.text.trim().isNotEmpty &&
+                      selfie != null &&
+                      (!['SITE_VISIT', 'FIELD_TRIP'].contains(contextType) ||
+                          siteId != null)
+                  ? () => Navigator.pop(dialogContext, true)
+                  : null,
+              child: const Text('Confirm'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || selfie == null) {
+      purpose.dispose();
+      return;
+    }
+    setState(() => _submitting = true);
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        throw Exception('Turn on Location/GPS and try again.');
+      }
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        throw Exception('Location permission is required.');
+      }
+      final gps = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 20),
+        ),
+      );
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      if (token == null) {
+        throw Exception('Your session has expired. Sign in again.');
+      }
+      final request =
+          http.MultipartRequest(
+              'POST',
+              Uri.parse('$_apiBaseUrl/api/attendance/group'),
+            )
+            ..headers['authorization'] = 'Bearer $token'
+            ..fields.addAll({
+              'employeeIds': selected.join(','),
+              'contextType': contextType,
+              'purpose': purpose.text.trim(),
+              'clientSiteId': siteId ?? '',
+              'latitude': '${gps.latitude}',
+              'longitude': '${gps.longitude}',
+              'accuracy': '${gps.accuracy}',
+              'capturedAt': gps.timestamp.toIso8601String(),
+            })
+            ..files.add(
+              await http.MultipartFile.fromPath('selfie', selfie!.path),
+            );
+      final response = await http.Response.fromStream(await request.send());
+      final body = jsonDecode(response.body);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(
+          body is Map
+              ? body['message'] ?? 'Unable to submit group attendance.'
+              : 'Unable to submit group attendance.',
+        );
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Group attendance marked successfully.'),
+          ),
+        );
+      }
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', '')),
+          ),
+        );
+      }
+    } finally {
+      purpose.dispose();
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 
   String _dateKey(DateTime date) =>
@@ -2127,6 +2361,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
       'employees',
       'logs',
       'data',
+      'records',
     ];
     for (final key in keys) {
       final value = _data![key];
@@ -2506,6 +2741,13 @@ class _ModuleScreenState extends State<ModuleScreen> {
               icon: const Icon(Icons.upload_file),
               label: const Text('Upload Document'),
             ),
+          if (widget.module.title == 'Group Attendance' &&
+              '${widget.user['role']}'.toUpperCase() == 'MANAGER')
+            FilledButton.icon(
+              onPressed: _submitting ? null : _showGroupAttendance,
+              icon: const Icon(Icons.groups_outlined),
+              label: const Text('Mark Group Attendance'),
+            ),
           if (widget.module.title == 'Settings' && _isAdminRole)
             FilledButton.icon(
               onPressed: _showHolidayForm,
@@ -2672,6 +2914,11 @@ class _HomePageState extends State<HomePage> {
       ),
       AppModule(Icons.people_outline, 'Employees', 'View and manage employees'),
     ];
+    const groupAttendanceModule = AppModule(
+      Icons.groups_outlined,
+      'Group Attendance',
+      'Manager team selfie and HR audit',
+    );
     const adminModules = [
       AppModule(Icons.history_outlined, 'Audit Logs', 'Review system activity'),
       AppModule(
@@ -2684,9 +2931,16 @@ class _HomePageState extends State<HomePage> {
     final isTeamRole =
         role == 'MANAGER' || role == 'ADMIN' || role == 'DIRECTOR';
     final isAdminRole = role == 'ADMIN' || role == 'DIRECTOR';
+    final canAccessGroup = [
+      'MANAGER',
+      'HR',
+      'ADMIN',
+      'DIRECTOR',
+    ].contains(role);
     return [
       ...employeeModules.take(2),
       if (isTeamRole) teamModules.first,
+      if (canAccessGroup) groupAttendanceModule,
       ...employeeModules.skip(2).take(3),
       if (isTeamRole) teamModules.last,
       ...employeeModules.skip(5),

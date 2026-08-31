@@ -10,6 +10,7 @@ import {
   BriefcaseBusiness,
   CalendarCheck2,
   Files,
+  UsersRound,
   Home,
   House,
   ListCheckIcon,
@@ -39,6 +40,8 @@ const teamOnlyItems = [
   { label: "Employees", href: "/employees", icon: <User size={20} /> },
 ];
 
+const groupAttendanceItem = { label: "Group Attendance", href: "/group-attendance", icon: <UsersRound size={20} /> };
+
 const adminOnlyItems = [
   { label: "Audit Logs", href: "/audit-logs", icon: <ScrollText size={20} /> },
   { label: "Settings", href: "/settings", icon: <Settings size={20} /> },
@@ -51,9 +54,11 @@ export default function SideNav({ collapsed }: { collapsed: boolean }) {
   const role = session?.user?.role;
   const isTeamRole = ["MANAGER", "ADMIN", "DIRECTOR"].includes(role || "");
   const isAdminRole = ["ADMIN", "DIRECTOR"].includes(role || "");
+  const canAccessGroupAttendance = ["MANAGER", "HR", "ADMIN", "DIRECTOR"].includes(role || "");
   const visibleItems = [
     ...employeeItems.slice(0, 3),
     ...(isTeamRole ? teamOnlyItems.slice(0, 1) : []),
+    ...(canAccessGroupAttendance ? [groupAttendanceItem] : []),
     ...employeeItems.slice(3, 6),
     ...(isTeamRole ? teamOnlyItems.slice(1) : []),
     ...employeeItems.slice(6),

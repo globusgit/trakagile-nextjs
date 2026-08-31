@@ -43,6 +43,8 @@ const AttendanceSchema = new mongoose.Schema(
       enum: ["OFFICE", "FIELD_VISIT", "WORK_FROM_HOME"],
       default: "OFFICE",
     },
+    attendanceSource: { type: String, enum: ["INDIVIDUAL", "GROUP"], default: "INDIVIDUAL" },
+    groupAttendanceId: { type: mongoose.Types.ObjectId, ref: "GroupAttendance" },
     isEarlyStart: { type: Boolean, default: false },
     expectedWorkEndAt: Date,
     overnightWork: { type: Boolean, default: false },
