@@ -450,15 +450,14 @@ class _ModuleScreenState extends State<ModuleScreen> {
       'Work From Home' =>
         _isTeamRole ? '/api/wfh/requests?team=1' : '/api/wfh/requests',
       'Leaves' => '/api/leave/search?page=1&limit=50',
-      'Holidays' =>
-        '/api/holiday/search?year=$year&page=1&limit=50',
+      'Holidays' => '/api/holiday/search?year=$year&page=1&limit=50',
       'Reports' => '/api/reports/attendance',
       'Documents' => '/api/documents',
+      'Tasks' => '/api/tasks?page=1&limit=100',
       'Live Tracking' => '/api/attendance/live',
       'Employees' => '/api/attendance/employees',
       'Audit Logs' => '/api/audit-logs',
-      'Settings' =>
-        '/api/holiday/search?year=$nextYear&page=1&limit=100',
+      'Settings' => '/api/holiday/search?year=$nextYear&page=1&limit=100',
       _ => '',
     };
   }
@@ -2096,6 +2095,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
       'holidays',
       'rows',
       'documents',
+      'tasks',
       'employees',
       'logs',
       'data',
@@ -2115,6 +2115,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
       return '${nestedEmployee['name'] ?? nestedEmployee['empId'] ?? 'Employee'}';
     }
     for (final key in [
+      'taskId',
       'title',
       'name',
       'employeeName',
@@ -2176,6 +2177,128 @@ class _ModuleScreenState extends State<ModuleScreen> {
     return lines.isEmpty
         ? 'Tap refresh to load the latest information.'
         : lines.join('\n');
+  }
+
+  Future<void> _updateTask(Map task, String action, [String? status]) async {
+    final id = '${task['_id'] ?? ''}';
+    if (id.isEmpty) return;
+    Navigator.of(context).pop();
+    setState(() => _submitting = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      if (token == null) {
+        throw Exception('Your session has expired. Sign in again.');
+      }
+      const baseUrl = String.fromEnvironment(
+        'API_BASE_URL',
+        defaultValue: 'http://10.0.2.2:3000',
+      );
+      final payload = <String, dynamic>{'action': action};
+      if (status != null) payload['status'] = status;
+      final response = await http.put(
+        Uri.parse('$baseUrl/api/tasks/$id'),
+        headers: {
+          'authorization': 'Bearer $token',
+          'content-type': 'application/json',
+        },
+        body: jsonEncode(payload),
+      );
+      final body = jsonDecode(response.body);
+      if (response.statusCode != 200) {
+        throw Exception(
+          body is Map
+              ? body['message'] ?? 'Unable to update task.'
+              : 'Unable to update task.',
+        );
+      }
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', '')),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  void _showTaskActions(Map task) {
+    final status = '${task['status'] ?? ''}';
+    final assignedIds = task['assignedToEmpIds'];
+    final assignedToMe =
+        assignedIds is List &&
+        assignedIds
+            .map((value) => '$value')
+            .contains('${widget.user['empId']}');
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '${task['taskId'] ?? 'Task'}',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 6),
+              Text('${task['description'] ?? ''}'),
+              const SizedBox(height: 8),
+              Text(
+                'Status: $status',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+              const SizedBox(height: 16),
+              if (assignedToMe && status == 'Assigned')
+                FilledButton.icon(
+                  onPressed: _submitting
+                      ? null
+                      : () => _updateTask(task, 'start_working'),
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('Start Working'),
+                ),
+              if (assignedToMe &&
+                  const ['In Progress', 'Suspended'].contains(status)) ...[
+                FilledButton.icon(
+                  onPressed: _submitting
+                      ? null
+                      : () => _updateTask(task, 'update_status', 'Done'),
+                  icon: const Icon(Icons.task_alt),
+                  label: const Text('Mark Done'),
+                ),
+                OutlinedButton(
+                  onPressed: _submitting
+                      ? null
+                      : () => _updateTask(
+                          task,
+                          'update_status',
+                          status == 'Suspended' ? 'In Progress' : 'Suspended',
+                        ),
+                  child: Text(
+                    status == 'Suspended' ? 'Resume Task' : 'Suspend Task',
+                  ),
+                ),
+                OutlinedButton(
+                  onPressed: _submitting
+                      ? null
+                      : () => _updateTask(task, 'update_status', 'Rejected'),
+                  child: const Text('Reject Task'),
+                ),
+              ],
+              if (!assignedToMe || const ['Done', 'Rejected'].contains(status))
+                const Text('This task is view-only for your account.'),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   String _label(String value) => value
@@ -2419,11 +2542,12 @@ class _ModuleScreenState extends State<ModuleScreen> {
                             ].contains('${entry.$2['status']}'.toLowerCase())
                       ? const Icon(Icons.cancel_outlined)
                       : null,
-                  onTap:
-                      widget.module.title == 'Work From Home' &&
-                          _isTeamRole &&
-                          entry.$2 is Map &&
-                          entry.$2['status'] == 'PENDING'
+                  onTap: widget.module.title == 'Tasks' && entry.$2 is Map
+                      ? () => _showTaskActions(entry.$2 as Map)
+                      : widget.module.title == 'Work From Home' &&
+                            _isTeamRole &&
+                            entry.$2 is Map &&
+                            entry.$2['status'] == 'PENDING'
                       ? () => _reviewWfh(entry.$2 as Map)
                       : widget.module.title == 'Leaves' &&
                             _isTeamRole &&
@@ -2478,6 +2602,11 @@ class _HomePageState extends State<HomePage> {
     const employeeModules = [
       AppModule(Icons.fingerprint, 'Attendance', 'Mark in and track workday'),
       AppModule(
+        Icons.task_alt_outlined,
+        'Tasks',
+        'Assignments and work progress',
+      ),
+      AppModule(
         Icons.notifications_outlined,
         'Notifications',
         'Your latest updates',
@@ -2526,11 +2655,11 @@ class _HomePageState extends State<HomePage> {
         role == 'MANAGER' || role == 'ADMIN' || role == 'DIRECTOR';
     final isAdminRole = role == 'ADMIN' || role == 'DIRECTOR';
     return [
-      ...employeeModules.take(1),
+      ...employeeModules.take(2),
       if (isTeamRole) teamModules.first,
-      ...employeeModules.skip(1).take(3),
+      ...employeeModules.skip(2).take(3),
       if (isTeamRole) teamModules.last,
-      ...employeeModules.skip(4),
+      ...employeeModules.skip(5),
       if (isAdminRole) ...adminModules,
     ];
   }

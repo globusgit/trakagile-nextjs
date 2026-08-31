@@ -8,6 +8,7 @@ import {
   Files,
   House,
   ListCheckIcon,
+  ListTodo,
   MapPinned,
   ScrollText,
   Settings,
@@ -21,6 +22,7 @@ import AdminDashboard from "./AdminDashboard";
 
 const employeeModules = [
   { title: "Attendance", description: "Mark in and track your workday", href: "/attendance", icon: CalendarCheck2 },
+  { title: "Tasks", description: "Review assignments and update progress", href: "/tasks", icon: ListTodo },
   { title: "Notifications", description: "Review your latest updates", href: "/notifications", icon: Bell },
   { title: "Field Trips", description: "Trips, locations and expenses", href: "/field-trips", icon: BriefcaseBusiness },
   { title: "Work From Home", description: "Requests and approvals", href: "/work-from-home", icon: House },
@@ -49,11 +51,11 @@ export default async function Dashboard() {
   const isAdminRole = ["ADMIN", "DIRECTOR"].includes(user.role || "");
   if (isAdminRole) return <AdminDashboard name={user.name || user.empId} role={user.role || "ADMIN"} />;
   const modules = [
-    ...employeeModules.slice(0, 1),
+    ...employeeModules.slice(0, 2),
     ...(isTeamRole ? teamModules.slice(0, 1) : []),
-    ...employeeModules.slice(1, 4),
+    ...employeeModules.slice(2, 5),
     ...(isTeamRole ? teamModules.slice(1) : []),
-    ...employeeModules.slice(4),
+    ...employeeModules.slice(5),
     ...(isAdminRole ? adminModules : []),
   ];
 

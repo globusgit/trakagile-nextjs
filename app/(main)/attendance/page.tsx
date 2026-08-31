@@ -184,6 +184,15 @@ type AttendancePolicy = {
 function getPosition(): Promise<GeolocationPosition> {
   return new Promise(
     (resolve, reject) => {
+      if (!window.isSecureContext && window.location.hostname !== "localhost") {
+        reject(
+          new Error(
+            "Browser location requires HTTPS on a public address. Use the TrakAgile mobile app for attendance until the HTTPS domain is available."
+          )
+        );
+        return;
+      }
+
       if (!navigator.geolocation) {
         reject(
           new Error(
@@ -200,7 +209,7 @@ function getPosition(): Promise<GeolocationPosition> {
           if (error.code === error.PERMISSION_DENIED) {
             reject(
               new Error(
-                "Location permission is blocked. Allow Location for localhost in browser settings and try again."
+                `Location permission is blocked. Allow Location for ${window.location.hostname} in browser settings and try again.`
               )
             );
             return;
@@ -554,6 +563,10 @@ export default function AttendancePage() {
 
   const orgId =
     user?.orgId || "";
+
+  const canViewTeamTracking = ["MANAGER", "ADMIN", "DIRECTOR"].includes(
+    (user?.role || "").toUpperCase()
+  );
 
   /* -------------------------
      STATE
@@ -2081,11 +2094,11 @@ export default function AttendancePage() {
           MARK IN / MARK OUT MAPS
       =============================================== */}
 
-      {attendance && todayRoute && (
+      {canViewTeamTracking && attendance && todayRoute && (
         <TodayRouteMap points={todayLocations} route={todayRoute} />
       )}
 
-      {attendance?.markIn.location && (
+      {canViewTeamTracking && attendance?.markIn.location && (
         <details
           open={attendance.status === "IN"}
           className="group rounded-xl border bg-card p-4"

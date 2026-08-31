@@ -4,8 +4,8 @@ import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { MapPin, Maximize2, Minimize2, RefreshCw, UserCheck, UserRoundX, UsersRound } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ListTodo, MapPin, Maximize2, Minimize2, RefreshCw, UserCheck, UserRoundX, UsersRound } from "lucide-react";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { EmployeeLocation } from "./EmployeeLocationMap";
 
@@ -89,7 +89,7 @@ export default function AdminDashboard({ name, role }: { name: string; role: str
   );
 
   return <div className="space-y-5 pb-10">
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm font-semibold text-sky-700">{role} OVERVIEW</p><h1 className="mt-1 text-3xl font-semibold tracking-tight">Welcome, {name}</h1><p className="mt-1 text-sm text-muted-foreground">Organization attendance and last-known employee locations.</p></div></div>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm font-semibold text-sky-700">{role} OVERVIEW</p><h1 className="mt-1 text-3xl font-semibold tracking-tight">Welcome, {name}</h1><p className="mt-1 text-sm text-muted-foreground">Organization attendance, team locations and task progress.</p></div><Link href="/tasks" className={buttonVariants()}><ListTodo />Open Tasks</Link></div>
     {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(({ label, value, icon: Icon, color }) => <Card key={label}><CardContent className="flex items-center justify-between p-5"><div><p className="text-sm text-muted-foreground">{label}</p><p className="mt-2 text-3xl font-bold">{loading && !data ? "—" : value}</p></div><span className={`grid size-12 place-items-center rounded-xl ${color}`}><Icon className="size-6" /></span></CardContent></Card>)}</div>
     {mapWorkspace}
