@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { toast } from "sonner";
 import PageHeader from "@/app/_components/PageHeader";
 import EmployeeMultiSelect from "@/app/_components/EmployeeMultiSelect";
 import ReferenceFieldGroup, { EMPTY_REFERENCE, ReferenceValue } from "@/app/_components/ReferenceFieldGroup";
@@ -11,12 +12,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Plus } from "lucide-react";
 
 // Roles allowed to create tasks — keep in sync with TASK_MANAGE_ROLES
 // in app/api/tasks/_lib/tasks.js
 const TASK_MANAGE_ROLES = ["ADMIN", "DIRECTOR", "MANAGER", "HR"];
 
 type Employee = { _id: string; empId: string; name: string };
+type TaskTypeEntry = { name: string; subTypes: string[] };
 
 function cleanReference(value: ReferenceValue) {
   return value.number.trim() ? value : undefined;
@@ -34,8 +37,10 @@ export default function CreateTaskPage() {
   }, [status, canManage, router]);
 
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [taskTypes, setTaskTypes] = useState<TaskTypeEntry[]>([]);
   const [description, setDescription] = useState("");
   const [taskType, setTaskType] = useState("");
+  const [subTaskType, setSubTaskType] = useState("");
   const [assignedToEmpIds, setAssignedToEmpIds] = useState<string[]>([]);
   const [projectNo, setProjectNo] = useState<ReferenceValue>(EMPTY_REFERENCE);
   const [workOrderNo, setWorkOrderNo] = useState<ReferenceValue>(EMPTY_REFERENCE);
@@ -44,20 +49,87 @@ export default function CreateTaskPage() {
   const [loading, setLoading] = useState(false);
   const [serverError, setServerError] = useState("");
 
+  const [showNewType, setShowNewType] = useState(false);
+  const [newType, setNewType] = useState("");
+  const [showNewSubType, setShowNewSubType] = useState(false);
+  const [newSubType, setNewSubType] = useState("");
+  const [savingType, setSavingType] = useState(false);
+
   useEffect(() => {
     if (!canManage) return;
     (async () => {
       try {
-        const response = await fetch("/api/employee/search?limit=200", { cache: "no-store" });
-        if (response.ok) {
-          const result = await response.json();
-          setEmployees(result.employees || []);
-        }
+        const [employeeRes, taskTypeRes] = await Promise.all([
+          fetch("/api/employee/search?limit=200", { cache: "no-store" }),
+          fetch("/api/task-types", { cache: "no-store" }),
+        ]);
+        if (employeeRes.ok) setEmployees((await employeeRes.json()).employees || []);
+        if (taskTypeRes.ok) setTaskTypes((await taskTypeRes.json()).taskTypes || []);
       } catch {
-        // Non-fatal — the assignee dropdown will just be empty; task can be created unassigned.
+        // Non-fatal — dropdowns will just be empty/short; task can still be created.
       }
     })();
   }, [canManage]);
+
+  const subTypeOptions = useMemo(
+    () => taskTypes.find((entry) => entry.name === taskType)?.subTypes || [],
+    [taskTypes, taskType],
+  );
+
+  const addTaskType = async () => {
+    const name = newType.trim();
+    if (!name) return;
+    setSavingType(true);
+    try {
+      const response = await fetch("/api/task-types", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.message || "Unable to add task type.");
+      setTaskTypes((prev) => (prev.some((t) => t.name === name) ? prev : [...prev, { name, subTypes: [] }]));
+      setTaskType(name);
+      setSubTaskType("");
+      setNewType("");
+      setShowNewType(false);
+      toast.success("Task type added.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to add task type.");
+    } finally {
+      setSavingType(false);
+    }
+  };
+
+  const addSubTaskType = async () => {
+    const name = newSubType.trim();
+    if (!name || !taskType) return;
+    setSavingType(true);
+    try {
+      const response = await fetch("/api/task-types/sub-types", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskType, name }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.message || "Unable to add sub-task type.");
+      setTaskTypes((prev) =>
+        prev.map((entry) =>
+          entry.name === taskType && !entry.subTypes.includes(name)
+            ? { ...entry, subTypes: [...entry.subTypes, name] }
+            : entry,
+        ),
+      );
+      setSubTaskType(name);
+      setNewSubType("");
+      setShowNewSubType(false);
+      toast.success("Sub-task type added.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to add sub-task type.");
+    } finally {
+      setSavingType(false);
+    }
+  };
 
   const handleSubmit = async () => {
     setServerError("");
@@ -73,6 +145,7 @@ export default function CreateTaskPage() {
         body: JSON.stringify({
           description,
           taskType,
+          subTaskType,
           assignedToEmpIds,
           projectNo: cleanReference(projectNo),
           workOrderNo: cleanReference(workOrderNo),
@@ -136,23 +209,81 @@ export default function CreateTaskPage() {
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             <div className="space-y-2">
               <Label>Task Type</Label>
-              <Input
-                placeholder="e.g. Installation, Inspection, Support"
+              <select
+                className="h-10 w-full rounded-md border bg-transparent px-3 text-sm"
                 value={taskType}
-                onChange={(e) => setTaskType(e.target.value)}
-              />
+                onChange={(e) => { setTaskType(e.target.value); setSubTaskType(""); }}
+              >
+                <option value="">Select task type...</option>
+                {taskTypes.map((entry) => (
+                  <option key={entry.name} value={entry.name}>{entry.name}</option>
+                ))}
+              </select>
+              {showNewType ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="New task type name"
+                    value={newType}
+                    onChange={(e) => setNewType(e.target.value)}
+                  />
+                  <Button type="button" size="sm" disabled={savingType || !newType.trim()} onClick={addTaskType}>Add</Button>
+                  <Button type="button" size="sm" variant="outline" onClick={() => { setShowNewType(false); setNewType(""); }}>Cancel</Button>
+                </div>
+              ) : (
+                <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => setShowNewType(true)}>
+                  <Plus className="size-3.5" /> Add Task Type
+                </Button>
+              )}
             </div>
 
             <div className="space-y-2">
-              <Label>Assign To</Label>
-              <EmployeeMultiSelect
-                employees={employees}
-                selectedEmpIds={assignedToEmpIds}
-                onChange={setAssignedToEmpIds}
-                placeholder="Leave unassigned (status: New)"
-              />
-              <p className="text-xs text-muted-foreground">Select one employee, or several to assign the task to a team. Leave blank to assign later from the Tasks list.</p>
+              <Label>Sub-Task Type</Label>
+              <select
+                className="h-10 w-full rounded-md border bg-transparent px-3 text-sm disabled:opacity-50"
+                value={subTaskType}
+                disabled={!taskType}
+                onChange={(e) => setSubTaskType(e.target.value)}
+              >
+                <option value="">{taskType ? "Select sub-task type..." : "Select a task type first"}</option>
+                {subTypeOptions.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+              {showNewSubType ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="New sub-task type name"
+                    value={newSubType}
+                    onChange={(e) => setNewSubType(e.target.value)}
+                  />
+                  <Button type="button" size="sm" disabled={savingType || !newSubType.trim()} onClick={addSubTaskType}>Add</Button>
+                  <Button type="button" size="sm" variant="outline" onClick={() => { setShowNewSubType(false); setNewSubType(""); }}>Cancel</Button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  disabled={!taskType}
+                  onClick={() => setShowNewSubType(true)}
+                >
+                  <Plus className="size-3.5" /> Add Sub-Task Type
+                </Button>
+              )}
+              {!taskType && <p className="text-xs text-muted-foreground">Select a task type above before adding a sub-task type.</p>}
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Assign To</Label>
+            <EmployeeMultiSelect
+              employees={employees}
+              selectedEmpIds={assignedToEmpIds}
+              onChange={setAssignedToEmpIds}
+              placeholder="Leave unassigned (status: New)"
+            />
+            <p className="text-xs text-muted-foreground">Select one employee, or several to assign the task to a team. Leave blank to assign later from the Tasks list.</p>
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
