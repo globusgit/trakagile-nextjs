@@ -6,6 +6,7 @@ const EmployeeDocumentSchema = new mongoose.Schema({
   category: { type: String, enum: ["IDENTITY", "CERTIFICATE", "TRAVEL", "HOTEL", "CLIENT", "MEDICAL", "OTHER"], required: true },
   title: { type: String, required: true, trim: true },
   description: { type: String, trim: true },
+  expiresAt: Date,
   gridFsFileId: { type: mongoose.Types.ObjectId },
   storedName: String,
   originalName: { type: String, required: true },
@@ -16,5 +17,6 @@ const EmployeeDocumentSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 EmployeeDocumentSchema.index({ orgId: 1, employeeId: 1, createdAt: -1 });
+EmployeeDocumentSchema.index({ orgId: 1, employeeId: 1, expiresAt: 1 });
 EmployeeDocumentSchema.index({ orgId: 1, employeeId: 1, fileHash: 1 }, { unique: true });
 export default mongoose.models.EmployeeDocument || mongoose.model("EmployeeDocument", EmployeeDocumentSchema);

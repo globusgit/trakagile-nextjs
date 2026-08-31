@@ -20,7 +20,7 @@ export function workStatusFor(attendance, location, now = new Date()) {
   const point = location || attendance.lastKnownLocation;
   const receivedAt = location?.receivedAt || attendance.lastLocationReceivedAt || point?.receivedAt;
   if (!point || !receivedAt || now.getTime() - new Date(receivedAt).getTime() > FIVE_MINUTES) {
-    return { state: "NEEDS_ATTENTION", confidence: "LOW", label: "Location overdue", reason: "No fresh GPS update was received within five minutes." };
+    return { state: "NEEDS_ATTENTION", confidence: "LOW", label: "GPS update overdue", reason: "No GPS update was received for over five minutes. Ask the employee to open TrakAgile and check mobile data, GPS, location permission, and battery optimization." };
   }
   if (!Number.isFinite(point.accuracy) || point.accuracy > ACCEPTABLE_GPS_ACCURACY_METERS) {
     return { state: "NEEDS_ATTENTION", confidence: "MEDIUM", label: "Low GPS accuracy", reason: `Latest GPS accuracy is ${Math.round(point.accuracy || 0)} m; 100 m or better is required.` };

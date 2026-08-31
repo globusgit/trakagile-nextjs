@@ -1183,6 +1183,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
       text: file.name.replaceFirst(RegExp(r'\.[^.]+$'), ''),
     );
     var category = 'OTHER';
+    DateTime? expiresAt;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -1212,6 +1213,30 @@ class _ModuleScreenState extends State<ModuleScreen> {
                 ],
                 onChanged: (value) {
                   if (value != null) setDialogState(() => category = value);
+                },
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Expiry date (optional)'),
+                subtitle: Text(
+                  expiresAt == null
+                      ? 'No expiry date'
+                      : '${expiresAt!.year}-${expiresAt!.month.toString().padLeft(2, '0')}-${expiresAt!.day.toString().padLeft(2, '0')}',
+                ),
+                trailing: const Icon(Icons.calendar_today_outlined),
+                onTap: () async {
+                  final selected = await showDatePicker(
+                    context: dialogContext,
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime.now().add(const Duration(days: 3650)),
+                    initialDate:
+                        expiresAt ??
+                        DateTime.now().add(const Duration(days: 365)),
+                  );
+                  if (selected != null) {
+                    setDialogState(() => expiresAt = selected);
+                  }
                 },
               ),
               const SizedBox(height: 8),
@@ -1251,6 +1276,9 @@ class _ModuleScreenState extends State<ModuleScreen> {
             ..fields['title'] = title.text.trim()
             ..fields['category'] = category
             ..fields['employeeId'] = '${widget.user['empId']}'
+            ..fields['expiresAt'] = expiresAt == null
+                ? ''
+                : '${expiresAt!.year}-${expiresAt!.month.toString().padLeft(2, '0')}-${expiresAt!.day.toString().padLeft(2, '0')}'
             ..files.add(
               await http.MultipartFile.fromPath(
                 'file',
@@ -2159,6 +2187,8 @@ class _ModuleScreenState extends State<ModuleScreen> {
       'markIn',
       'markOut',
       'description',
+      'expiryStatus',
+      'expiresAt',
       'originalName',
       'timestamp',
       'entityType',
