@@ -82,7 +82,7 @@ export default function EditEmployee() {
   useEffect(() => {
     if (!orgId) return;
     const fetchDesignations = async () => {
-      const res = await fetch(`/api/system-list?listName=Designation&orgId=${orgId}`);
+      const res = await fetch(`/api/system-list?listName=Designation`);
       const data = await res.json();
       setDesignations(Array.isArray(data?.data?.[0]) ? data.data[0] : []);
     };

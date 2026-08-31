@@ -1,26 +1,27 @@
 import { NextResponse } from "next/server";
 import connectDB from "@/lib/mongoose";
 import Holiday from "@/models/Holiday";
+import { errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
+import { escapeRegex, pagination } from "@/lib/query.mjs";
 
 export async function GET(request) {
   try {
     await connectDB();
+    const identity = await requireAttendanceUser();
     const { searchParams } = new URL(request.url);
-    const orgId = searchParams.get("orgId");
     const year = parseInt(searchParams.get("year"));
     const q = searchParams.get("q");
-    const page = parseInt(searchParams.get("page")) || 1;
-    const limit = parseInt(searchParams.get("limit")) || 10;
+    const { page, limit } = pagination(searchParams);
     const skip = (page - 1) * limit;
 
-    const query = { orgId };
+    const query = { orgId: identity.orgId };
     if (!isNaN(year)) {
       query.year = year;
     }
 
     if (q && q.trim() !== "") {
       const term = q.trim();
-      const regex = new RegExp(term, "i");
+      const regex = new RegExp(escapeRegex(term), "i");
       // "Yes"/"No" search support for the boolean fields
       const wantsYes = /^y(es)?$/i.test(term);
       const wantsNo = /^n(o)?$/i.test(term);
@@ -34,7 +35,7 @@ export async function GET(request) {
               input: {
                 $dateToString: { format: "%Y-%m-%d", date: "$date" },
               },
-              regex: term,
+              regex: escapeRegex(term),
               options: "i",
             },
           },
@@ -55,6 +56,7 @@ export async function GET(request) {
       { status: 200 },
     );
   } catch (error) {
+    if (error?.name === "AttendanceError") return errorResponse(error);
     console.error("Error searching holidays:", error);
     return NextResponse.json(
       { error: "Failed to search holidays" },

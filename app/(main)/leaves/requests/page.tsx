@@ -420,8 +420,7 @@ export default function LeaveRequestsPage() {
                         </div>
                       )}
 
-                      {(leave.status === "approved" || leave.status === "rejected" || leave.status === "cancelled") &&
-                        !(isOwn && (leave.status === "pending" || leave.status === "cancellation_pending")) && (
+                      {(leave.status === "approved" || leave.status === "rejected" || leave.status === "cancelled") && (
                           <Link href={`/leaves/${leave._id}`} className="text-xs text-cyan-700 hover:underline">
                             View details
                           </Link>

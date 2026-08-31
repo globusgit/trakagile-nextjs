@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --test tests/query.test.mjs",
     "migrate:multi-tenant": "node scripts/migrate-multi-tenant.mjs"
   },
   "dependencies": {

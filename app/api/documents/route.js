@@ -6,8 +6,8 @@ import { writeAudit } from "@/lib/audit";
 import Employee from "@/models/Employee";
 import EmployeeDocument from "@/models/EmployeeDocument";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../attendance/_lib/attendance";
+import { detectDocumentType, MAX_DOCUMENT_BYTES } from "@/lib/documentFile.mjs";
 
-const allowedTypes = new Set(["image/jpeg", "image/png", "application/pdf"]);
 const categories = new Set(["IDENTITY", "CERTIFICATE", "TRAVEL", "HOTEL", "CLIENT", "MEDICAL", "OTHER"]);
 const cleanName = (name) => path.basename(name).replace(/[^a-zA-Z0-9._-]/g, "_");
 
@@ -41,14 +41,19 @@ export async function POST(request) {
     if (!title) throw new AttendanceError("Document title is required.");
     if (!categories.has(category)) throw new AttendanceError("Select a valid document category.");
     if (!file || typeof file === "string" || !file.size) throw new AttendanceError("Select a document to upload.");
-    if (!allowedTypes.has(file.type)) throw new AttendanceError("Document must be JPG, PNG or PDF.");
-    if (file.size > 10 * 1024 * 1024) throw new AttendanceError("Document must be 10 MB or smaller.");
-    const bytes = Buffer.from(await file.arrayBuffer()); const fileHash = crypto.createHash("sha256").update(bytes).digest("hex");
+    if (file.size > MAX_DOCUMENT_BYTES) throw new AttendanceError("Document must be 10 MB or smaller.");
+    const bytes = Buffer.from(await file.arrayBuffer());
+    // Mobile and desktop clients often report uploads as application/octet-stream.
+    // Verify the actual file signature so valid files work without trusting client MIME data.
+    const detectedType = detectDocumentType(bytes);
+    if (!detectedType) throw new AttendanceError("Document must be a valid JPG, PNG or PDF file.");
+    const fileHash = crypto.createHash("sha256").update(bytes).digest("hex");
     if (await EmployeeDocument.exists({ orgId: identity.orgId, employeeId, fileHash })) throw new AttendanceError("This document was already uploaded.", 409);
-    const storedName = `${Date.now()}-${crypto.randomUUID()}-${cleanName(file.name || "document")}`;
-    const uploaded = await uploadToGridFS(bytes, { filename: storedName, contentType: file.type, metadata: { orgId: identity.orgId, employeeId, kind: "EMPLOYEE_DOCUMENT" } });
+    const suppliedName = cleanName(file.name || `document${detectedType.extension}`);
+    const storedName = `${Date.now()}-${crypto.randomUUID()}-${suppliedName}`;
+    const uploaded = await uploadToGridFS(bytes, { filename: storedName, contentType: detectedType.mimeType, metadata: { orgId: identity.orgId, employeeId, kind: "EMPLOYEE_DOCUMENT" } });
     let document;
-    try { document = await EmployeeDocument.create({ orgId: identity.orgId, employeeId, category, title, description: String(form.get("description") || "").trim(), gridFsFileId: uploaded.id, originalName: cleanName(file.name), mimeType: file.type, size: file.size, fileHash, uploadedBy: identity.userId }); }
+    try { document = await EmployeeDocument.create({ orgId: identity.orgId, employeeId, category, title, description: String(form.get("description") || "").trim(), gridFsFileId: uploaded.id, originalName: suppliedName, mimeType: detectedType.mimeType, size: bytes.length, fileHash, uploadedBy: identity.userId }); }
     catch (error) { await deleteFromGridFS(uploaded.id); throw error; }
     await writeAudit({ identity, action: "DOCUMENT_UPLOAD", entityType: "EMPLOYEE_DOCUMENT", entityId: document._id, details: { employeeId, category, title } });
     return Response.json({ document }, { status: 201 });

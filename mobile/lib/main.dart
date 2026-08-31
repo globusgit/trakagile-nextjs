@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,13 +27,17 @@ class AttendanceTrackingService {
     final token = prefs.getString('token');
     if (token == null) return;
     try {
-      final response = await http.get(
-        Uri.parse('$_apiBaseUrl/api/attendance/today'),
-        headers: {'authorization': 'Bearer $token'},
-      ).timeout(const Duration(seconds: 12));
+      final response = await http
+          .get(
+            Uri.parse('$_apiBaseUrl/api/attendance/today'),
+            headers: {'authorization': 'Bearer $token'},
+          )
+          .timeout(const Duration(seconds: 12));
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
-        if (body is Map && body['attendance'] is Map && body['attendance']['status'] == 'IN') {
+        if (body is Map &&
+            body['attendance'] is Map &&
+            body['attendance']['status'] == 'IN') {
           await start(token);
         }
       }
@@ -49,27 +54,38 @@ class AttendanceTrackingService {
     }
     if (!await Geolocator.isLocationServiceEnabled()) return;
     var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
-    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) return;
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      return;
+    }
 
-    final LocationSettings settings = defaultTargetPlatform == TargetPlatform.android
+    final LocationSettings settings =
+        defaultTargetPlatform == TargetPlatform.android
         ? AndroidSettings(
             accuracy: LocationAccuracy.high,
             distanceFilter: 50,
             intervalDuration: const Duration(seconds: 45),
             foregroundNotificationConfig: const ForegroundNotificationConfig(
               notificationTitle: 'TrakAgile attendance tracking',
-              notificationText: 'Location tracking is active until you mark out.',
+              notificationText:
+                  'Location tracking is active until you mark out.',
               enableWakeLock: true,
             ),
           )
-        : const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 50);
+        : const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 50,
+          );
     await _flushQueue();
-    _subscription = Geolocator.getPositionStream(locationSettings: settings).listen(
-      (position) => _queuePosition(position),
-      onError: (_) {},
+    _subscription = Geolocator.getPositionStream(locationSettings: settings)
+        .listen((position) => _queuePosition(position), onError: (_) {});
+    _retryTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _flushQueue(),
     );
-    _retryTimer = Timer.periodic(const Duration(minutes: 1), (_) => _flushQueue());
   }
 
   Future<void> stop() async {
@@ -94,7 +110,11 @@ class AttendanceTrackingService {
         position.longitude,
       );
       final lastTime = DateTime.tryParse('${last['capturedAt']}');
-      if (distance < 15 && lastTime != null && position.timestamp.difference(lastTime).inMinutes < 3) return;
+      if (distance < 15 &&
+          lastTime != null &&
+          position.timestamp.difference(lastTime).inMinutes < 3) {
+        return;
+      }
     }
     final item = <String, dynamic>{
       'latitude': position.latitude,
@@ -105,7 +125,8 @@ class AttendanceTrackingService {
       'capturedAt': position.timestamp.toUtc().toIso8601String(),
       'offlineQueued': true,
     };
-    final queue = (prefs.getStringList('tracking_offline_queue') ?? <String>[]).toList();
+    final queue = (prefs.getStringList('tracking_offline_queue') ?? <String>[])
+        .toList();
     queue.add(jsonEncode(item));
     if (queue.length > 500) queue.removeRange(0, queue.length - 500);
     await prefs.setStringList('tracking_offline_queue', queue);
@@ -118,14 +139,21 @@ class AttendanceTrackingService {
     _sending = true;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final queue = (prefs.getStringList('tracking_offline_queue') ?? <String>[]).toList();
+      final queue =
+          (prefs.getStringList('tracking_offline_queue') ?? <String>[])
+              .toList();
       while (queue.isNotEmpty && _token != null) {
         try {
-          final response = await http.post(
-            Uri.parse('$_apiBaseUrl/api/attendance/location'),
-            headers: {'authorization': 'Bearer $_token', 'content-type': 'application/json'},
-            body: queue.first,
-          ).timeout(const Duration(seconds: 15));
+          final response = await http
+              .post(
+                Uri.parse('$_apiBaseUrl/api/attendance/location'),
+                headers: {
+                  'authorization': 'Bearer $_token',
+                  'content-type': 'application/json',
+                },
+                body: queue.first,
+              )
+              .timeout(const Duration(seconds: 15));
           if (response.statusCode >= 200 && response.statusCode < 300) {
             queue.removeAt(0);
             await prefs.setStringList('tracking_offline_queue', queue);
@@ -413,7 +441,6 @@ class _ModuleScreenState extends State<ModuleScreen> {
   }
 
   String get _endpoint {
-    final orgId = Uri.encodeQueryComponent('${widget.user['orgId']}');
     final year = DateTime.now().year;
     final nextYear = year + 1;
     return switch (widget.module.title) {
@@ -422,16 +449,16 @@ class _ModuleScreenState extends State<ModuleScreen> {
       'Field Trips' => '/api/field-trips',
       'Work From Home' =>
         _isTeamRole ? '/api/wfh/requests?team=1' : '/api/wfh/requests',
-      'Leaves' => '/api/leave?page=1&limit=50',
+      'Leaves' => '/api/leave/search?page=1&limit=50',
       'Holidays' =>
-        '/api/holiday/search?orgId=$orgId&year=$year&page=1&limit=50',
+        '/api/holiday/search?year=$year&page=1&limit=50',
       'Reports' => '/api/reports/attendance',
       'Documents' => '/api/documents',
       'Live Tracking' => '/api/attendance/live',
       'Employees' => '/api/attendance/employees',
       'Audit Logs' => '/api/audit-logs',
       'Settings' =>
-        '/api/holiday/search?orgId=$orgId&year=$nextYear&page=1&limit=100',
+        '/api/holiday/search?year=$nextYear&page=1&limit=100',
       _ => '',
     };
   }
@@ -1147,8 +1174,14 @@ class _ModuleScreenState extends State<ModuleScreen> {
     );
     final file = picked?.files.single;
     if (file?.path == null || !mounted) return;
+    if (file!.size > 10 * 1024 * 1024) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Document must be 10 MB or smaller.')),
+      );
+      return;
+    }
     final title = TextEditingController(
-      text: file!.name.replaceFirst(RegExp(r'\.[^.]+$'), ''),
+      text: file.name.replaceFirst(RegExp(r'\.[^.]+$'), ''),
     );
     var category = 'OTHER';
     final confirmed = await showDialog<bool>(
@@ -1227,7 +1260,13 @@ class _ModuleScreenState extends State<ModuleScreen> {
               ),
             );
       final response = await request.send();
-      final body = jsonDecode(await response.stream.bytesToString());
+      final responseText = await response.stream.bytesToString();
+      dynamic body;
+      try {
+        body = jsonDecode(responseText);
+      } catch (_) {
+        body = null;
+      }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw Exception(
           body is Map
@@ -1379,7 +1418,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
             TextField(
               controller: reason,
               decoration: const InputDecoration(
-                labelText: 'Rejection reason (required to reject)',
+                labelText: 'Rejection reason (optional)',
               ),
               maxLines: 2,
             ),
@@ -1391,9 +1430,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
-              if (reason.text.trim().isNotEmpty) Navigator.pop(context, 'reject');
-            },
+            onPressed: () => Navigator.pop(context, 'reject'),
             child: const Text('Reject'),
           ),
           FilledButton(
@@ -1413,8 +1450,130 @@ class _ModuleScreenState extends State<ModuleScreen> {
       }, method: 'PUT');
       await _load();
       if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Leave request ${decision}d.')));
+      }
+    } catch (error) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Leave request ${decision}d.')),
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', '')),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _requestLeaveCancellation(Map request) async {
+    final status = '${request['status']}'.toLowerCase();
+    final isPending = status == 'pending';
+    final reason = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          isPending ? 'Cancel leave request' : 'Request cancellation',
+        ),
+        content: TextField(
+          controller: reason,
+          decoration: const InputDecoration(labelText: 'Reason (optional)'),
+          maxLines: 3,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Back'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(isPending ? 'Cancel Leave' : 'Submit Request'),
+          ),
+        ],
+      ),
+    );
+    final cancellationReason = reason.text.trim();
+    reason.dispose();
+    if (confirmed != true) return;
+    try {
+      await _sendJson('/api/leave/${request['_id']}', {
+        'action': isPending ? 'cancel_pending' : 'request_cancellation',
+        'cancellationReason': cancellationReason,
+      }, method: 'PUT');
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isPending
+                  ? 'Leave request cancelled.'
+                  : 'Leave cancellation requested.',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', '')),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _reviewLeaveCancellation(Map request) async {
+    final note = TextEditingController();
+    final decision = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Review cancellation request'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '${request['employeeName'] ?? request['userId']} | ${request['leaveType']} | ${request['days']} day(s)',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: note,
+              decoration: const InputDecoration(labelText: 'Note (optional)'),
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Back'),
+          ),
+          OutlinedButton(
+            onPressed: () => Navigator.pop(context, 'reject_cancellation'),
+            child: const Text('Reject Cancellation'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, 'approve_cancellation'),
+            child: const Text('Approve Cancellation'),
+          ),
+        ],
+      ),
+    );
+    final decisionReason = note.text.trim();
+    note.dispose();
+    if (decision == null) return;
+    try {
+      await _sendJson('/api/leave/${request['_id']}', {
+        'action': decision,
+        if (decision == 'reject_cancellation')
+          'cancellationDecisionReason': decisionReason,
+      }, method: 'PUT');
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cancellation request updated.')),
         );
       }
     } catch (error) {
@@ -1500,7 +1659,6 @@ class _ModuleScreenState extends State<ModuleScreen> {
         'date': date.toIso8601String(),
         'year': date.year,
         'note': note.text.trim(),
-        'orgId': widget.user['orgId'],
         'isRecurring': recurring,
         'isOptional': false,
       });
@@ -2161,7 +2319,8 @@ class _ModuleScreenState extends State<ModuleScreen> {
             _leaveDashboard(context),
             const SizedBox(height: 12),
           ],
-          if (widget.module.title == 'Leaves')
+          if (widget.module.title == 'Leaves' &&
+              '${widget.user['role']}'.toUpperCase() != 'DIRECTOR')
             FilledButton.icon(
               onPressed: _showLeaveRequest,
               icon: const Icon(Icons.add),
@@ -2236,15 +2395,29 @@ class _ModuleScreenState extends State<ModuleScreen> {
                   ),
                   trailing:
                       ((widget.module.title == 'Work From Home' &&
-                          _isTeamRole &&
-                          entry.$2 is Map &&
-                          entry.$2['status'] == 'PENDING') ||
-                      (widget.module.title == 'Leaves' &&
-                          _isTeamRole &&
-                          entry.$2 is Map &&
-                          '${entry.$2['status']}'.toLowerCase() == 'pending' &&
-                          '${entry.$2['userId']}' != '${widget.user['id']}'))
+                              _isTeamRole &&
+                              entry.$2 is Map &&
+                              entry.$2['status'] == 'PENDING') ||
+                          (widget.module.title == 'Leaves' &&
+                              _isTeamRole &&
+                              entry.$2 is Map &&
+                              const [
+                                'pending',
+                                'cancellation_pending',
+                              ].contains(
+                                '${entry.$2['status']}'.toLowerCase(),
+                              ) &&
+                              '${entry.$2['userId']}' !=
+                                  '${widget.user['id']}'))
                       ? const Icon(Icons.rate_review_outlined)
+                      : widget.module.title == 'Leaves' &&
+                            entry.$2 is Map &&
+                            '${entry.$2['userId']}' == '${widget.user['id']}' &&
+                            const [
+                              'pending',
+                              'approved',
+                            ].contains('${entry.$2['status']}'.toLowerCase())
+                      ? const Icon(Icons.cancel_outlined)
                       : null,
                   onTap:
                       widget.module.title == 'Work From Home' &&
@@ -2255,9 +2428,25 @@ class _ModuleScreenState extends State<ModuleScreen> {
                       : widget.module.title == 'Leaves' &&
                             _isTeamRole &&
                             entry.$2 is Map &&
-                            '${entry.$2['status']}'.toLowerCase() == 'pending' &&
+                            '${entry.$2['status']}'.toLowerCase() ==
+                                'pending' &&
                             '${entry.$2['userId']}' != '${widget.user['id']}'
                       ? () => _reviewLeave(entry.$2 as Map)
+                      : widget.module.title == 'Leaves' &&
+                            _isTeamRole &&
+                            entry.$2 is Map &&
+                            '${entry.$2['status']}'.toLowerCase() ==
+                                'cancellation_pending' &&
+                            '${entry.$2['userId']}' != '${widget.user['id']}'
+                      ? () => _reviewLeaveCancellation(entry.$2 as Map)
+                      : widget.module.title == 'Leaves' &&
+                            entry.$2 is Map &&
+                            '${entry.$2['userId']}' == '${widget.user['id']}' &&
+                            const [
+                              'pending',
+                              'approved',
+                            ].contains('${entry.$2['status']}'.toLowerCase())
+                      ? () => _requestLeaveCancellation(entry.$2 as Map)
                       : null,
                 ),
               ),

@@ -4,6 +4,7 @@ import { verifyMobileToken } from "@/lib/mobileAuth";
 import Attendance from "@/models/Attendance";
 import AttendancePolicy from "@/models/AttendancePolicy";
 import Employee from "@/models/Employee";
+import User from "@/models/User";
 
 export const DEFAULT_ATTENDANCE_POLICY = {
   timeZone: "Asia/Kolkata",
@@ -38,11 +39,37 @@ export async function requireAttendanceUser(allowedRoles) {
     throw new AttendanceError("Authentication is required.", 401);
   }
 
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
+  // Revalidate every signed token against the database so deactivation and
+  // role changes take effect immediately instead of waiting for token expiry.
+  const activeUser = await User.findOne({
+    _id: user.id,
+    username: user.empId,
+    orgId: user.orgId,
+    status: "Active",
+  }).select("role").lean();
+  if (!activeUser) {
+    throw new AttendanceError("Your account is inactive or unavailable.", 401);
+  }
+
+  const employee = await Employee.findOne({
+    orgId: user.orgId,
+    empId: user.empId,
+    status: "Active",
+  }).select("designation isManager").lean();
+  if (!employee) {
+    throw new AttendanceError("Your employee profile is inactive or unavailable.", 403);
+  }
+  const role = employee.designation?.trim().toUpperCase() === "DIRECTOR"
+    ? "DIRECTOR"
+    : employee.isManager && activeUser.role === "USER"
+      ? "MANAGER"
+      : activeUser.role;
+
+  if (allowedRoles && !allowedRoles.includes(role)) {
     throw new AttendanceError("You are not allowed to perform this action.", 403);
   }
 
-  return { userId: user.id, empId: user.empId, orgId: user.orgId, role: user.role };
+  return { userId: user.id, empId: user.empId, orgId: user.orgId, role };
 }
 
 export async function getAttendancePolicy(orgId) {
