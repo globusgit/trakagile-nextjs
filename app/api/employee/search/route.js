@@ -7,7 +7,8 @@ import { visibleEmployeeIds } from "@/lib/access";
 export async function GET(request) {
   try {
     await connectDB();
-    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR", "MANAGER"]);
+    // HR included so HR can look up employees to assign tasks to (Tasks module).
+    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR", "MANAGER", "HR"]);
     const { searchParams } = new URL(request.url);
     const orgId = identity.orgId;
     const q = searchParams.get("q");

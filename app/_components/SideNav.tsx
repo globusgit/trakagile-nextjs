@@ -13,6 +13,7 @@ import {
   Home,
   House,
   ListCheckIcon,
+  ListTodo,
   MapPinned,
   ScrollText,
   Settings,
@@ -23,6 +24,7 @@ import styles from "./AppShell.module.css";
 const employeeItems = [
   { label: "Dashboard", href: "/dashboard", icon: <Home size={20} /> },
   { label: "Attendance", href: "/attendance", icon: <CalendarCheck2 size={20} /> },
+  { label: "Tasks", href: "/tasks", icon: <ListTodo size={20} /> },
   { label: "Notifications", href: "/notifications", icon: <Bell size={20} /> },
   { label: "Field Trips", href: "/field-trips", icon: <BriefcaseBusiness size={20} /> },
   { label: "Work From Home", href: "/work-from-home", icon: <House size={20} /> },
@@ -50,11 +52,11 @@ export default function SideNav({ collapsed }: { collapsed: boolean }) {
   const isTeamRole = ["MANAGER", "ADMIN", "DIRECTOR"].includes(role || "");
   const isAdminRole = ["ADMIN", "DIRECTOR"].includes(role || "");
   const visibleItems = [
-    ...employeeItems.slice(0, 2),
+    ...employeeItems.slice(0, 3),
     ...(isTeamRole ? teamOnlyItems.slice(0, 1) : []),
-    ...employeeItems.slice(2, 5),
+    ...employeeItems.slice(3, 6),
     ...(isTeamRole ? teamOnlyItems.slice(1) : []),
-    ...employeeItems.slice(5),
+    ...employeeItems.slice(6),
     ...(isAdminRole ? adminOnlyItems : []),
   ];
 
