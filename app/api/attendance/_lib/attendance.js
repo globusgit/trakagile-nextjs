@@ -14,6 +14,12 @@ export const DEFAULT_ATTENDANCE_POLICY = {
   reminderAfterMinutes: [15, 30],
   autoCloseMinutes: 1200,
   overtimeGraceMinutes: 30,
+  officeGeofence: {
+    enabled: false,
+    name: "Main Office",
+    radiusMeters: 300,
+    maximumAccuracyMeters: 100,
+  },
 };
 
 export class AttendanceError extends Error {

@@ -39,6 +39,23 @@ export async function POST(request) {
       : null;
     const policy = await getAttendancePolicy(identity.orgId);
 
+    if (attendanceType === "OFFICE" && policy.officeGeofence?.enabled) {
+      const office = policy.officeGeofence;
+      if (location.accuracy != null && location.accuracy > office.maximumAccuracyMeters) {
+        throw new AttendanceError(
+          `GPS accuracy is ${Math.round(location.accuracy)} m. Move to an open area and retry with accuracy below ${office.maximumAccuracyMeters} m.`,
+          409,
+        );
+      }
+      const distance = distanceBetween(location, office);
+      if (distance > office.radiusMeters) {
+        throw new AttendanceError(
+          `You are ${Math.round(distance)} m from ${office.name || "the office"}. Office attendance is allowed within ${office.radiusMeters} m.`,
+          409,
+        );
+      }
+    }
+
     if (attendanceType === "FIELD_VISIT") {
       if (!mongoose.isValidObjectId(body.clientSiteId)) {
         throw new AttendanceError("Select a valid client/site for field work.", 400);
