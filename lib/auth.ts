@@ -269,6 +269,21 @@ export const {
 
         token.isFirstLogin =
           user.isFirstLogin;
+      } else if (token.id && token.empId && token.orgId) {
+        // Refresh authorization from the database so promotions to Manager,
+        // Director or Admin appear without requiring a new browser login.
+        await connectDB();
+        const [activeUser, employee] = await Promise.all([
+          User.findOne({ _id: token.id, username: token.empId, orgId: token.orgId, status: "Active" }).select("role").lean(),
+          Employee.findOne({ empId: token.empId, orgId: token.orgId, status: "Active" }).select("designation isManager").lean(),
+        ]);
+        if (activeUser && employee) {
+          token.role = employee.designation?.trim().toUpperCase() === "DIRECTOR"
+            ? "DIRECTOR"
+            : employee.isManager && activeUser.role === "USER"
+              ? "MANAGER"
+              : activeUser.role;
+        }
       }
 
       return token;

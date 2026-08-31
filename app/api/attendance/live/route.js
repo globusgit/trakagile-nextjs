@@ -5,21 +5,18 @@ import TrackingLocation from "@/models/TrackingLocation";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../_lib/attendance";
 import { notifyAttendance } from "../_lib/notifications";
 import { workStatusFor } from "../_lib/work-status";
+import { visibleEmployeeIds } from "@/lib/access";
 
 export async function GET() {
   try {
     await connectDB();
     const identity = await requireAttendanceUser(["MANAGER", "DIRECTOR", "ADMIN"]);
-    const manager = identity.role === "MANAGER"
-      ? await Employee.findOne({ orgId: identity.orgId, empId: identity.empId }).select("_id").lean()
-      : null;
-    const employees = ["ADMIN", "DIRECTOR"].includes(identity.role)
-      ? await Employee.find({ orgId: identity.orgId, status: "Active" }).select("name empId photo reportingTo").lean()
-      : await Employee.find({ orgId: identity.orgId, status: "Active" })
-          .where("reportingTo")
-          .equals(manager?._id)
-          .select("name empId photo reportingTo")
-          .lean();
+    const visibleIds = await visibleEmployeeIds(identity);
+    const employees = await Employee.find({
+      orgId: identity.orgId,
+      status: "Active",
+      ...(visibleIds ? { empId: { $in: visibleIds } } : {}),
+    }).select("name empId photo reportingTo").lean();
 
     if (!employees.length) return Response.json({ employees: [] });
     const empIds = employees.map((employee) => employee.empId);
@@ -32,8 +29,17 @@ export async function GET() {
           { $group: { _id: "$attendanceId", location: { $first: "$$ROOT" } } },
         ])
       : [];
+    const histories = attendanceIds.length
+      ? await TrackingLocation.aggregate([
+          { $match: { attendanceId: { $in: attendanceIds } } },
+          { $sort: { receivedAt: -1 } },
+          { $group: { _id: "$attendanceId", points: { $push: { latitude: "$latitude", longitude: "$longitude", accuracy: "$accuracy", speed: "$speed", capturedAt: "$capturedAt", receivedAt: "$receivedAt", locationName: "$locationName" } } } },
+          { $project: { points: { $slice: ["$points", 50] } } },
+        ])
+      : [];
     const locationByAttendance = new Map(locations.map((item) => [String(item._id), item.location]));
     const employeeById = new Map(employees.map((employee) => [employee.empId, employee]));
+    const historyByAttendance = new Map(histories.map((item) => [String(item._id), item.points]));
     const now = Date.now();
     await Promise.all(attendances.map((attendance) => {
       const location = locationByAttendance.get(String(attendance._id));
@@ -54,6 +60,7 @@ export async function GET() {
         attendance,
         location: locationByAttendance.get(String(attendance._id)) || null,
         workStatus: workStatusFor(attendance, locationByAttendance.get(String(attendance._id)) || null),
+        triggerPoints: historyByAttendance.get(String(attendance._id)) || [],
       })),
     });
   } catch (error) {

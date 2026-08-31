@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
@@ -197,6 +198,24 @@ class _TrakAgileAppState extends State<TrakAgileApp> {
     final prefs = await SharedPreferences.getInstance();
     final rawUser = prefs.getString('user');
     if (rawUser != null) _user = jsonDecode(rawUser) as Map<String, dynamic>;
+    final token = prefs.getString('token');
+    if (_user != null && token != null) {
+      try {
+        final response = await http.get(
+          Uri.parse('$_apiBaseUrl/api/mobile/me'),
+          headers: {'authorization': 'Bearer $token'},
+        );
+        if (response.statusCode == 200) {
+          final body = jsonDecode(response.body);
+          if (body is Map && body['user'] is Map) {
+            _user = Map<String, dynamic>.from(body['user'] as Map);
+            await prefs.setString('user', jsonEncode(_user));
+          }
+        }
+      } catch (_) {
+        // Keep the cached profile available when the phone is temporarily offline.
+      }
+    }
     if (_user != null) unawaited(AttendanceTrackingService.instance.restore());
     if (mounted) setState(() => _loading = false);
   }
@@ -794,13 +813,26 @@ class _ModuleScreenState extends State<ModuleScreen> {
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
                     onPressed: () async {
-                      final captured = await ImagePicker().pickImage(
-                        source: ImageSource.camera,
-                        imageQuality: 82,
-                        maxWidth: 1920,
-                      );
-                      if (captured != null) {
-                        setDialogState(() => selfie = captured);
+                      try {
+                        final captured = await ImagePicker().pickImage(
+                          source: ImageSource.camera,
+                          imageQuality: 82,
+                          maxWidth: 1920,
+                          preferredCameraDevice: CameraDevice.rear,
+                        );
+                        if (captured != null) {
+                          setDialogState(() => selfie = captured);
+                        }
+                      } on PlatformException catch (error) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Camera unavailable: ${error.message ?? error.code}. Check camera access in Android Settings.',
+                              ),
+                            ),
+                          );
+                        }
                       }
                     },
                     icon: const Icon(Icons.camera_alt_outlined),
@@ -2444,6 +2476,59 @@ class _ModuleScreenState extends State<ModuleScreen> {
         : lines.join('\n');
   }
 
+  Future<void> _showLiveTrackingDetails(Map item) async {
+    final employee = item['employee'] is Map
+        ? item['employee'] as Map
+        : const {};
+    final points = item['triggerPoints'] is List
+        ? item['triggerPoints'] as List
+        : const [];
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('${employee['name'] ?? employee['empId'] ?? 'Employee'}'),
+        content: SizedBox(
+          width: 560,
+          child: points.isEmpty
+              ? const Text('No GPS trigger points received.')
+              : ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: points.length,
+                  separatorBuilder: (_, _) => const Divider(),
+                  itemBuilder: (context, index) {
+                    final point = points[index] is Map
+                        ? points[index] as Map
+                        : const {};
+                    final timestamp = DateTime.tryParse(
+                      '${point['capturedAt'] ?? point['receivedAt'] ?? ''}',
+                    )?.toLocal();
+                    final locationName = '${point['locationName'] ?? ''}'
+                        .trim();
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.location_on_outlined),
+                      title: Text(
+                        locationName.isNotEmpty
+                            ? locationName
+                            : '${point['latitude']}, ${point['longitude']}',
+                      ),
+                      subtitle: Text(
+                        '${timestamp ?? 'Time unavailable'}\nAccuracy: ${point['accuracy'] == null ? 'unavailable' : '±${(point['accuracy'] as num).round()} m'}',
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _updateTask(Map task, String action, [String? status]) async {
     final id = '${task['_id'] ?? ''}';
     if (id.isEmpty) return;
@@ -2814,7 +2899,10 @@ class _ModuleScreenState extends State<ModuleScreen> {
                             ].contains('${entry.$2['status']}'.toLowerCase())
                       ? const Icon(Icons.cancel_outlined)
                       : null,
-                  onTap: widget.module.title == 'Tasks' && entry.$2 is Map
+                  onTap:
+                      widget.module.title == 'Live Tracking' && entry.$2 is Map
+                      ? () => _showLiveTrackingDetails(entry.$2 as Map)
+                      : widget.module.title == 'Tasks' && entry.$2 is Map
                       ? () => _showTaskActions(entry.$2 as Map)
                       : widget.module.title == 'Work From Home' &&
                             _isTeamRole &&

@@ -15,6 +15,7 @@ type LiveEmployee = {
   attendance: { totalDistanceMeters?: number };
   location?: { latitude: number; longitude: number; accuracy?: number; speed?: number; locationName?: string; receivedAt: string };
   workStatus: { state: string; confidence: string; label: string; reason: string };
+  triggerPoints?: Array<{ latitude: number; longitude: number; accuracy?: number; speed?: number; locationName?: string; capturedAt?: string; receivedAt: string }>;
 };
 
 export default function LiveTrackingPage() {
@@ -72,6 +73,7 @@ function EmployeeMap({ item }: { item: LiveEmployee }) {
     <div className={`rounded-lg border p-3 text-sm ${stale ? "border-amber-300 bg-amber-50" : "border-emerald-300 bg-emerald-50"}`}><p className="font-medium">Confidence: {item.workStatus.confidence}</p><p className="mt-1 text-muted-foreground">{item.workStatus.reason}</p></div>
     <div className="grid gap-3 text-sm sm:grid-cols-2"><Detail label="Employee ID" value={item.employee?.empId || "—"} /><Detail label="Last update" value={item.location ? new Date(item.location.receivedAt).toLocaleString() : "—"} /><Detail label="Location" value={item.location?.locationName || "Location name pending"} /><Detail label="Distance travelled" value={`${((item.attendance.totalDistanceMeters || 0) / 1000).toFixed(2)} km`} /><Detail label="Coordinates" value={`${lat?.toFixed(6) || "—"}, ${lon?.toFixed(6) || "—"}`} /><Detail label="Accuracy / speed" value={`${item.location?.accuracy ? `±${Math.round(item.location.accuracy)} m` : "—"} · ${item.location?.speed != null ? `${(item.location.speed * 3.6).toFixed(1)} km/h` : "—"}`} /></div>
     {lat != null && lon != null ? <iframe title={`Map for ${item.employee?.empId}`} className="h-[420px] w-full rounded-md border" loading="lazy" src={`https://www.openstreetmap.org/export/embed.html?bbox=${lon - 0.01}%2C${lat - 0.01}%2C${lon + 0.01}%2C${lat + 0.01}&layer=mapnik&marker=${lat}%2C${lon}`} /> : <div className="flex h-64 items-center justify-center rounded-md border text-muted-foreground">No location received.</div>}
+    <div><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">Recent trigger points</h3><Badge variant="secondary">{item.triggerPoints?.length || 0} points</Badge></div><div className="max-h-96 divide-y overflow-y-auto rounded-lg border">{item.triggerPoints?.map((point, index) => <div key={`${point.receivedAt}-${index}`} className="grid gap-1 p-3 text-sm sm:grid-cols-[10rem_1fr_auto]"><time className="font-medium">{new Date(point.capturedAt || point.receivedAt).toLocaleString("en-IN")}</time><span>{point.locationName || `${point.latitude.toFixed(6)}, ${point.longitude.toFixed(6)}`}</span><span className="text-xs text-muted-foreground">{point.accuracy != null ? `±${Math.round(point.accuracy)} m` : "Accuracy unavailable"}</span></div>)}{!item.triggerPoints?.length && <p className="p-4 text-sm text-muted-foreground">No GPS trigger points received.</p>}</div></div>
   </CardContent></Card>;
 }
 
