@@ -18,6 +18,10 @@ export const TASK_STATUSES = [
 // Statuses that "close" a task: Age stops incrementing once a task reaches one of these.
 export const TASK_CLOSED_STATUSES = ["Done", "Rejected"];
 
+// Fixed list of task sources - the top of the Task Source -> Task Vertical (Project
+// only) -> Task Type -> Sub-Task Type hierarchy.
+export const TASK_SOURCES = ["Accounting", "Sales", "IT", "Project", "Internal", "Personal"] as const;
+
 // Shared shape for the Project No / Work-Order No / Tender No reference fields.
 // Only "number" is required to consider the reference "present" - the rest are
 // optional context shown in that column's hover card.
@@ -38,6 +42,12 @@ const taskSchema = new mongoose.Schema(
     taskId: { type: String, required: true, trim: true }, // e.g. TSK-00001
     description: { type: String, required: true, trim: true },
     status: { type: String, enum: TASK_STATUSES, default: "New" },
+
+    // Task Source -> Task Vertical (only for "Project") -> Task Type -> Sub-Task Type.
+    // Task Type / Sub-Task Type are picked from the org's TaskType/SubTaskType
+    // taxonomy, scoped by taskSource (+ taskVertical when Project).
+    taskSource: { type: String, enum: TASK_SOURCES },
+    taskVertical: { type: String, trim: true }, // only set when taskSource === "Project"
     taskType: { type: String, trim: true },
     subTaskType: { type: String, trim: true },
 

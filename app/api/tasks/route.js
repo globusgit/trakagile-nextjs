@@ -1,5 +1,5 @@
 import { connectDB } from "@/lib/mongoose";
-import Task from "@/models/Task";
+import Task, { TASK_SOURCES } from "@/models/Task";
 import User from "@/models/User";
 import { visibleEmployeeIds } from "@/lib/access";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../attendance/_lib/attendance";
@@ -49,6 +49,8 @@ export async function GET(request) {
         { description: pattern },
         { taskType: pattern },
         { subTaskType: pattern },
+        { taskSource: pattern },
+        { taskVertical: pattern },
         { "projectNo.number": pattern },
         { "workOrderNo.number": pattern },
         { "tenderNo.number": pattern },
@@ -68,7 +70,7 @@ export async function GET(request) {
       limit,
       total,
       totalPages: Math.ceil(total / limit),
-      canCreate: TASK_MANAGE_ROLES.includes(identity.role),
+      canManage: TASK_MANAGE_ROLES.includes(identity.role),
     });
   } catch (error) {
     return errorResponse(error, "Unable to load tasks.");
@@ -78,12 +80,23 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     await connectDB();
-    const identity = await requireAttendanceUser(TASK_MANAGE_ROLES);
+    // Anyone can create a task now. Only management roles may assign it to
+    // someone else - everyone else's tasks are always self-assigned.
+    const identity = await requireAttendanceUser();
+    const canManage = TASK_MANAGE_ROLES.includes(identity.role);
     const body = await request.json();
     const description = String(body.description || "").trim();
     if (!description) throw new AttendanceError("Task description is required.");
 
-    const assignedToEmpIds = [...new Set((body.assignedToEmpIds || []).filter(Boolean))];
+    const taskSource = TASK_SOURCES.includes(body.taskSource) ? body.taskSource : undefined;
+    const taskVertical = taskSource === "Project" ? String(body.taskVertical || "").trim() || undefined : undefined;
+
+    let assignedToEmpIds = [...new Set((body.assignedToEmpIds || []).filter(Boolean))];
+    if (!canManage) {
+      // Non-management roles can only self-assign - ignore anything else they send.
+      assignedToEmpIds = [identity.empId];
+    }
+
     let assignees = [];
     if (assignedToEmpIds.length) {
       assignees = await User.find({ orgId: identity.orgId, username: { $in: assignedToEmpIds } }).lean();
@@ -96,6 +109,8 @@ export async function POST(request) {
     const task = await Task.create({
       taskId: await nextTaskId(identity.orgId),
       description,
+      taskSource,
+      taskVertical,
       taskType: String(body.taskType || "").trim() || undefined,
       subTaskType: String(body.subTaskType || "").trim() || undefined,
       projectNo: normalizeReference(body.projectNo),
@@ -117,6 +132,7 @@ export async function POST(request) {
     });
 
     for (const assignee of assignees) {
+      if (assignee.username === identity.empId) continue; // no need to notify yourself
       await notifyTask({
         orgId: identity.orgId,
         recipientEmpId: assignee.username,

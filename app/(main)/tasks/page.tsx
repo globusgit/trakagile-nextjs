@@ -337,16 +337,16 @@ export default function TasksPage() {
     <div className="space-y-4">
       <PageHeader title="Tasks" />
 
-      <ListingToolbar
+       <ListingToolbar
         searchValue={search}
         onSearchChange={(value) => { setSearch(value); setQuery(value); setPage(1); }}
         pageSize={size}
         onPageSizeChange={(value) => { setSize(value); setPage(1); }}
         searchPlaceholder="Search by Task ID, description, project/WO/tender no..."
-        showAddButton={canManage}
+        showAddButton
         addHref="/tasks/create"
         addLabel="Create Task"
-      />
+        />
 
       {error ? <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
 

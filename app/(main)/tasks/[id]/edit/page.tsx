@@ -6,12 +6,11 @@ import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import PageHeader from "@/app/_components/PageHeader";
 import EmployeeMultiSelect from "@/app/_components/EmployeeMultiSelect";
+import SearchableSelect from "@/app/_components/SearchableSelect";
 import ReferenceFieldGroup, { EMPTY_REFERENCE, ReferenceValue } from "@/app/_components/ReferenceFieldGroup";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
 
 // Roles allowed to edit tasks — keep in sync with TASK_MANAGE_ROLES
 // in app/api/tasks/_lib/tasks.js
@@ -34,6 +33,8 @@ type Task = {
   taskId: string;
   description: string;
   status: string;
+  taskSource?: string;
+  taskVertical?: string;
   taskType?: string;
   subTaskType?: string;
   createdByName?: string;
@@ -72,6 +73,17 @@ function cleanReference(value: ReferenceValue) {
   return value.number.trim() ? value : undefined;
 }
 
+async function postJson(url: string, body: unknown) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.message || "Request failed.");
+  return result;
+}
+
 function ReadOnlyField({ label, value }: { label: string; value: string }) {
   return (
     <div className="space-y-2">
@@ -102,12 +114,6 @@ export default function EditTaskPage() {
   const [taskStatus, setTaskStatus] = useState("");
   const [assignedToEmpIds, setAssignedToEmpIds] = useState<string[]>([]);
 
-  const [showNewType, setShowNewType] = useState(false);
-  const [newType, setNewType] = useState("");
-  const [showNewSubType, setShowNewSubType] = useState(false);
-  const [newSubType, setNewSubType] = useState("");
-  const [savingType, setSavingType] = useState(false);
-
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
 
@@ -136,64 +142,71 @@ export default function EditTaskPage() {
     })();
   }, [id]);
 
+  // Task Source / Task Vertical are fixed at creation - Task Type options are
+  // looked up within that fixed scope.
+  const taskSource = task?.taskSource || "";
+  const taskVertical = task?.taskVertical || "";
+  const scopeReady = Boolean(taskSource) && (taskSource !== "Project" || Boolean(taskVertical));
+
   useEffect(() => {
     if (!canManage) return;
     (async () => {
       try {
-        const [employeeRes, taskTypeRes] = await Promise.all([
-          fetch("/api/employee/search?limit=200", { cache: "no-store" }),
-          fetch("/api/task-types", { cache: "no-store" }),
-        ]);
-        if (employeeRes.ok) setEmployees((await employeeRes.json()).employees || []);
-        if (taskTypeRes.ok) setTaskTypes((await taskTypeRes.json()).taskTypes || []);
+        const response = await fetch("/api/employee/search?limit=200", { cache: "no-store" });
+        if (response.ok) setEmployees((await response.json()).employees || []);
       } catch {
-        // Non-fatal — dropdowns will just be empty/short.
+        // Non-fatal — the assignee picker will just be empty.
       }
     })();
   }, [canManage]);
+
+  useEffect(() => {
+    if (!canManage) return;
+    (async () => {
+      if (!scopeReady) {
+        setTaskTypes([]);
+        return;
+      }
+      try {
+        const params = new URLSearchParams({ taskSource });
+        if (taskSource === "Project") params.set("taskVertical", taskVertical);
+        const response = await fetch(`/api/task-types?${params}`, { cache: "no-store" });
+        if (response.ok) setTaskTypes((await response.json()).taskTypes || []);
+      } catch {
+        // Non-fatal.
+      }
+    })();
+  }, [canManage, scopeReady, taskSource, taskVertical]);
 
   const subTypeOptions = useMemo(
     () => taskTypes.find((entry) => entry.name === taskType)?.subTypes || [],
     [taskTypes, taskType],
   );
 
-  const addTaskType = async () => {
-    const name = newType.trim();
-    if (!name) return;
-    setSavingType(true);
+  const handleTaskTypeChange = (nextValue: string) => {
+    setTaskType(nextValue);
+    setSubTaskType("");
+  };
+
+  const handleAddTaskType = async (name: string) => {
     try {
-      const response = await fetch("/api/task-types", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.message || "Unable to add task type.");
-      setTaskTypes((prev) => (prev.some((t) => t.name === name) ? prev : [...prev, { name, subTypes: [] }]));
-      setTaskType(name);
-      setSubTaskType("");
-      setNewType("");
-      setShowNewType(false);
+      await postJson("/api/task-types", { name, taskSource, taskVertical: taskSource === "Project" ? taskVertical : undefined });
+      setTaskTypes((prev) => (prev.some((entry) => entry.name === name) ? prev : [...prev, { name, subTypes: [] }]));
+      handleTaskTypeChange(name);
       toast.success("Task type added.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to add task type.");
-    } finally {
-      setSavingType(false);
     }
   };
 
-  const addSubTaskType = async () => {
-    const name = newSubType.trim();
-    if (!name || !taskType) return;
-    setSavingType(true);
+  const handleAddSubTaskType = async (name: string) => {
     try {
-      const response = await fetch("/api/task-types/sub-types", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taskType, name }),
+      await postJson("/api/task-types/sub-types", {
+        name,
+        taskType,
+        taskSource,
+        taskVertical: taskSource === "Project" ? taskVertical : undefined,
       });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.message || "Unable to add sub-task type.");
       setTaskTypes((prev) =>
         prev.map((entry) =>
           entry.name === taskType && !entry.subTypes.includes(name)
@@ -202,13 +215,9 @@ export default function EditTaskPage() {
         ),
       );
       setSubTaskType(name);
-      setNewSubType("");
-      setShowNewSubType(false);
       toast.success("Sub-task type added.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to add sub-task type.");
-    } finally {
-      setSavingType(false);
     }
   };
 
@@ -288,6 +297,11 @@ export default function EditTaskPage() {
 
               <ReadOnlyField label="Description" value={task.description} />
 
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                <ReadOnlyField label="Task Source" value={task.taskSource || ""} />
+                {task.taskSource === "Project" && <ReadOnlyField label="Task Vertical" value={task.taskVertical || ""} />}
+              </div>
+
               <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
                 <ReadOnlyField label="Created Date" value={formatDate(task.createdAt)} />
                 <ReadOnlyField label="Assigned By" value={task.assignedByName || ""} />
@@ -306,69 +320,28 @@ export default function EditTaskPage() {
                   <div className="grid grid-cols-1 gap-6 border-t border-gray-100 pt-6 md:grid-cols-2">
                     <div className="space-y-2">
                       <Label>Task Type</Label>
-                      <select
-                        className="h-10 w-full rounded-md border bg-transparent px-3 text-sm"
+                      <SearchableSelect
+                        options={taskTypes.map((entry) => entry.name)}
                         value={taskType}
-                        onChange={(e) => { setTaskType(e.target.value); setSubTaskType(""); }}
-                      >
-                        <option value="">Select task type...</option>
-                        {taskTypes.map((entry) => (
-                          <option key={entry.name} value={entry.name}>{entry.name}</option>
-                        ))}
-                      </select>
-                      {showNewType ? (
-                        <div className="flex items-center gap-2">
-                          <Input
-                            placeholder="New task type name"
-                            value={newType}
-                            onChange={(e) => setNewType(e.target.value)}
-                          />
-                          <Button type="button" size="sm" disabled={savingType || !newType.trim()} onClick={addTaskType}>Add</Button>
-                          <Button type="button" size="sm" variant="outline" onClick={() => { setShowNewType(false); setNewType(""); }}>Cancel</Button>
-                        </div>
-                      ) : (
-                        <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => setShowNewType(true)}>
-                          <Plus className="size-3.5" /> Add Task Type
-                        </Button>
-                      )}
+                        onChange={handleTaskTypeChange}
+                        onAddNew={handleAddTaskType}
+                        placeholder="Search or add a task type..."
+                        disabled={!scopeReady}
+                        disabledMessage={!scopeReady ? "This task has no task source set." : undefined}
+                      />
                     </div>
 
                     <div className="space-y-2">
                       <Label>Sub-Task Type</Label>
-                      <select
-                        className="h-10 w-full rounded-md border bg-transparent px-3 text-sm disabled:opacity-50"
+                      <SearchableSelect
+                        options={subTypeOptions}
                         value={subTaskType}
+                        onChange={setSubTaskType}
+                        onAddNew={handleAddSubTaskType}
+                        placeholder="Search or add a sub-task type..."
                         disabled={!taskType}
-                        onChange={(e) => setSubTaskType(e.target.value)}
-                      >
-                        <option value="">{taskType ? "Select sub-task type..." : "Select a task type first"}</option>
-                        {subTypeOptions.map((option) => (
-                          <option key={option} value={option}>{option}</option>
-                        ))}
-                      </select>
-                      {showNewSubType ? (
-                        <div className="flex items-center gap-2">
-                          <Input
-                            placeholder="New sub-task type name"
-                            value={newSubType}
-                            onChange={(e) => setNewSubType(e.target.value)}
-                          />
-                          <Button type="button" size="sm" disabled={savingType || !newSubType.trim()} onClick={addSubTaskType}>Add</Button>
-                          <Button type="button" size="sm" variant="outline" onClick={() => { setShowNewSubType(false); setNewSubType(""); }}>Cancel</Button>
-                        </div>
-                      ) : (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-8 text-xs"
-                          disabled={!taskType}
-                          onClick={() => setShowNewSubType(true)}
-                        >
-                          <Plus className="size-3.5" /> Add Sub-Task Type
-                        </Button>
-                      )}
-                      {!taskType && <p className="text-xs text-muted-foreground">Select a task type above before adding a sub-task type.</p>}
+                        disabledMessage={!taskType ? "Select a task type first." : undefined}
+                      />
                     </div>
                   </div>
 
