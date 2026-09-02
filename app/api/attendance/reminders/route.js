@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { hasPermission, PERMISSIONS } from "@/lib/permissions.mjs";
 import { connectDB } from "@/lib/mongoose";
 import Attendance from "@/models/Attendance";
 import { AttendanceError, errorResponse, getAttendancePolicy, minutesInTimeZone } from "../_lib/attendance";
@@ -10,7 +11,7 @@ export async function POST(request) {
     const cronAllowed = Boolean(process.env.CRON_SECRET && suppliedSecret === process.env.CRON_SECRET);
     if (!cronAllowed) {
       const session = await auth();
-      if (!["ADMIN", "DIRECTOR"].includes(session?.user?.role || "")) {
+      if (!hasPermission(session?.user?.role, PERMISSIONS.ATTENDANCE_REMINDERS_RUN)) {
         throw new AttendanceError("Director access or a valid cron secret is required.", 403);
       }
     }

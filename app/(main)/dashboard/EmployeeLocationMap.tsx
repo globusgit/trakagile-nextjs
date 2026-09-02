@@ -4,7 +4,6 @@ import L from "leaflet";
 import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
 import MarkerClusterGroup from "react-leaflet-cluster";
 import { Fragment, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { Clock3, MapPin, Navigation } from "lucide-react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -40,6 +39,12 @@ function ResizeMap({ fullScreen }: { fullScreen: boolean }) {
     const timer = window.setTimeout(() => map.invalidateSize(), 120);
     return () => window.clearTimeout(timer);
   }, [fullScreen, map]);
+  return null;
+}
+
+function FocusEmployee({ employee }: { employee?: EmployeeLocation }) {
+  const map = useMap();
+  useEffect(() => { if (employee) map.flyTo([employee.latitude, employee.longitude], 16, { duration: 0.7 }); }, [employee, map]);
   return null;
 }
 
@@ -88,15 +93,16 @@ function directionIcon(employee: EmployeeLocation) {
   });
 }
 
-export default function EmployeeLocationMap({ locations, fullScreen = false }: { locations: EmployeeLocation[]; fullScreen?: boolean }) {
-  const router = useRouter();
+export default function EmployeeLocationMap({ locations, fullScreen = false, selectedEmpId, onSelectEmployee }: { locations: EmployeeLocation[]; fullScreen?: boolean; selectedEmpId?: string | null; onSelectEmployee?: (empId: string) => void }) {
+  const selectedEmployee = locations.find((employee) => employee.empId === selectedEmpId);
   if (!locations.length) return <div className={`grid place-items-center rounded-xl bg-slate-100 text-slate-500 ${fullScreen ? "h-[calc(100vh-110px)]" : "h-[620px]"}`}>No employee location has been received yet.</div>;
   return (
     <MapContainer center={[locations[0].latitude, locations[0].longitude]} zoom={12} scrollWheelZoom className={`w-full rounded-xl ${fullScreen ? "h-[calc(100vh-110px)]" : "h-[620px]"}`}>
       <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
       <FitLocations locations={locations} />
       <ResizeMap fullScreen={fullScreen} />
-      {locations.map((employee) => {
+      <FocusEmployee employee={selectedEmployee} />
+      {locations.filter((employee) => employee.empId === selectedEmpId).map((employee) => {
         if (employee.route.length < 2) return null;
         const color = colorForEmployee(employee.empId);
         const lastPoint = employee.route.at(-1)!;
@@ -119,8 +125,8 @@ export default function EmployeeLocationMap({ locations, fullScreen = false }: {
         iconCreateFunction={clusterIcon}
       >
       {locations.map((employee) => (
-        <Marker key={employee.empId} position={[employee.latitude, employee.longitude]} icon={employeeIcon(employee)} eventHandlers={{ click: () => router.push(`/live-tracking?empId=${encodeURIComponent(employee.empId)}`) }}>
-          <Tooltip direction="top" offset={[0, -46]} opacity={1} className="employee-location-label">
+        <Marker key={employee.empId} position={[employee.latitude, employee.longitude]} icon={employeeIcon(employee)} eventHandlers={{ click: () => onSelectEmployee?.(employee.empId) }}>
+          <Tooltip permanent direction="top" offset={[0, -46]} opacity={1} className="employee-location-label">
             <button type="button" className="min-w-52 max-w-64 text-left" title="Click to live track this employee">
               <span className="block truncate font-bold text-slate-900">{employee.name}</span>
               <span className="mt-0.5 flex items-center gap-1 truncate text-xs text-slate-600"><MapPin className="size-3 shrink-0 text-cyan-700" />{employee.locationName}</span>

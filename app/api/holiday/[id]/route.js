@@ -3,10 +3,11 @@ import mongoose from "mongoose";
 import connectDB from "@/lib/mongoose";
 import Holiday from "@/models/Holiday";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
+import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 
 // Roles allowed to create/manage holidays — keep in sync with
 // HOLIDAY_MANAGE_ROLES in app/api/holiday/route.js and the holidays pages.
-const HOLIDAY_MANAGE_ROLES = ["ADMIN", "DIRECTOR", "MANAGER"];
+const HOLIDAY_MANAGE_ROLES = rolesForPermission(PERMISSIONS.HOLIDAY_MANAGE);
 
 async function scopedHoliday(id, orgId) {
   if (!mongoose.isValidObjectId(id)) throw new AttendanceError("Invalid holiday.");

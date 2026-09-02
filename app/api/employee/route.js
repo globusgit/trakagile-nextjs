@@ -6,13 +6,14 @@ import bcrypt from "bcryptjs";
 import { deleteFromGridFS, uploadToGridFS } from "@/lib/gridfs";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../attendance/_lib/attendance";
 import { visibleEmployeeIds } from "@/lib/access";
+import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 
 const allowedPhotoTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export async function GET(req) {
   try {
     await connectDB();
-    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR", "MANAGER"]);
+    const identity = await requireAttendanceUser(rolesForPermission(PERMISSIONS.EMPLOYEE_READ_TEAM));
     const { searchParams } = new URL(req.url);
     const page = parseInt(searchParams.get("page")) || 1;
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit")) || 20));
@@ -55,7 +56,7 @@ export async function POST(req) {
   let uploadedPhotoId;
   let createdEmployeeId;
   try {
-    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR"]);
+    const identity = await requireAttendanceUser(rolesForPermission(PERMISSIONS.EMPLOYEE_MANAGE));
     const formData = await req.formData();
 
     const name = formData.get("name");

@@ -17,6 +17,7 @@ declare module "next-auth" {
     orgId: string;
 
     isFirstLogin: boolean;
+    tokenVersion: number;
   }
 
   interface Session {
@@ -30,6 +31,7 @@ declare module "next-auth" {
       orgId: string;
 
       isFirstLogin: boolean;
+      tokenVersion: number;
     } & DefaultSession["user"];
   }
 }
@@ -45,6 +47,8 @@ declare module "next-auth/jwt" {
     orgId: string;
 
     isFirstLogin: boolean;
+    tokenVersion: number;
+    revoked?: boolean;
   }
 }
 

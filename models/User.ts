@@ -4,20 +4,21 @@ const UserSchema = new mongoose.Schema(
   {
     username: {
       type: String,
-      require: true,
+      required: true,
       trim: true,
     },
     password: {
       type: String,
-      require: true,
+      required: true,
+      select: false,
     },
     employeeName: {
       type: String,
-      require: true,
+      required: true,
     },
     status: {
       type: String,
-      require: true,
+      required: true,
       default: "Active",
     },
     role: {
@@ -27,6 +28,10 @@ const UserSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    failedLoginAttempts: { type: Number, default: 0, min: 0, select: false },
+    lockedUntil: { type: Date, select: false },
+    passwordChangedAt: { type: Date },
+    tokenVersion: { type: Number, default: 0, min: 0, select: false },
     orgId: {
       type: String,
     },

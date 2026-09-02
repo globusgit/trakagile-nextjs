@@ -4,6 +4,7 @@ import Employee from "@/models/Employee";
 import { deleteFromGridFS, uploadToGridFS } from "@/lib/gridfs";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
 import { visibleEmployeeIds } from "@/lib/access";
+import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 
 const allowedPhotoTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
@@ -42,7 +43,7 @@ export async function PUT(req, { params }) {
   let uploadedPhotoId;
   let photoUpdateCommitted = false;
   try {
-    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR"]);
+    const identity = await requireAttendanceUser(rolesForPermission(PERMISSIONS.EMPLOYEE_MANAGE));
     const { id } = await params;
     const formData = await req.formData();
     const currentEmployee = await Employee.findOne({ _id: id, orgId: identity.orgId }).select("orgId empId photoFileId");

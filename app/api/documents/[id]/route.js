@@ -8,9 +8,11 @@ import { writeAudit } from "@/lib/audit";
 import Employee from "@/models/Employee";
 import EmployeeDocument from "@/models/EmployeeDocument";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
+import { hasPermission, PERMISSIONS } from "@/lib/permissions.mjs";
 
 async function authorize(identity, document, allowManager = true) {
-  if (document.employeeId === identity.empId || ["ADMIN", "DIRECTOR"].includes(identity.role)) return;
+  const permission = allowManager ? PERMISSIONS.DOCUMENT_READ_ALL : PERMISSIONS.DOCUMENT_DELETE_ANY;
+  if (document.employeeId === identity.empId || hasPermission(identity.role, permission)) return;
   if (allowManager && identity.role === "MANAGER") {
     const manager = await Employee.findOne({ orgId: identity.orgId, empId: identity.empId }).select("_id").lean();
     if (await Employee.exists({ orgId: identity.orgId, empId: document.employeeId, reportingTo: manager?._id })) return;

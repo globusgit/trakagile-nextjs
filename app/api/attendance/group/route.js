@@ -10,8 +10,9 @@ import GroupAttendance from "@/models/GroupAttendance";
 import TrackingLocation from "@/models/TrackingLocation";
 import VisitedSite from "@/models/VisitedSite";
 import { detectDocumentType } from "@/lib/documentFile.mjs";
-import { AttendanceError, dayKey, distanceBetween, errorResponse, locationFrom, requireAttendanceUser } from "../_lib/attendance";
+import { AttendanceError, dayKey, distanceBetween, errorResponse, getAttendancePolicy, locationFrom, requireAttendanceUser } from "../_lib/attendance";
 import { reverseGeocode } from "../_lib/notifications";
+import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 
 const CONTEXTS = new Set(["FIELD_TRIP", "SITE_VISIT", "TRAINING", "EVENT", "TEAM_SHIFT"]);
 const MAX_SELFIE_BYTES = 8 * 1024 * 1024;
@@ -19,7 +20,7 @@ const MAX_SELFIE_BYTES = 8 * 1024 * 1024;
 export async function GET(request) {
   try {
     await connectDB();
-    const identity = await requireAttendanceUser(["MANAGER", "HR", "ADMIN", "DIRECTOR"]);
+    const identity = await requireAttendanceUser(rolesForPermission(PERMISSIONS.ATTENDANCE_GROUP_READ));
     const mode = new URL(request.url).searchParams.get("mode");
     if (mode === "team") {
       if (identity.role !== "MANAGER") return Response.json({ employees: [] });
@@ -40,7 +41,8 @@ export async function POST(request) {
   let session;
   try {
     await connectDB();
-    const identity = await requireAttendanceUser(["MANAGER"]);
+    const identity = await requireAttendanceUser(rolesForPermission(PERMISSIONS.ATTENDANCE_GROUP_CREATE));
+    const policy = await getAttendancePolicy(identity.orgId);
     const form = await request.formData();
     const contextType = String(form.get("contextType") || "").trim();
     const purpose = String(form.get("purpose") || "").trim();
@@ -80,7 +82,7 @@ export async function POST(request) {
     await session.withTransaction(async () => {
       const employees = await Employee.find({ orgId: identity.orgId, empId: { $in: employeeIds }, status: "Active" }).session(session);
       if (employees.length !== employeeIds.length) throw new AttendanceError("One or more selected employees are unavailable.");
-      const date = dayKey(now);
+      const date = dayKey(now, policy.timeZone);
       if (await Attendance.exists({ orgId: identity.orgId, empId: { $in: employeeIds }, $or: [{ status: "IN" }, { attendanceDate: date }] }).session(session)) {
         throw new AttendanceError("One or more selected employees already have attendance for today.", 409);
       }

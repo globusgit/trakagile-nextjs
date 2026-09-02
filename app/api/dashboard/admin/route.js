@@ -2,13 +2,21 @@ import { connectDB } from "@/lib/mongoose";
 import Attendance from "@/models/Attendance";
 import Employee from "@/models/Employee";
 import TrackingLocation from "@/models/TrackingLocation";
-import { dayKey, errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
+import { visibleEmployeeIds } from "@/lib/access";
+import { dayKey, errorResponse, getAttendancePolicy, requireAttendanceUser } from "../../attendance/_lib/attendance";
+import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 
 export async function GET() {
   try {
     await connectDB();
-    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR"]);
-    const employees = await Employee.find({ orgId: identity.orgId, status: "Active" })
+    const identity = await requireAttendanceUser(rolesForPermission(PERMISSIONS.DASHBOARD_TEAM_READ));
+    const policy = await getAttendancePolicy(identity.orgId);
+    const visibleIds = await visibleEmployeeIds(identity);
+    const employees = await Employee.find({
+      orgId: identity.orgId,
+      status: "Active",
+      ...(visibleIds ? { empId: { $in: visibleIds } } : {}),
+    })
       .select("name empId photo designation")
       .sort({ name: 1 })
       .lean();
@@ -20,13 +28,19 @@ export async function GET() {
           .lean()
       : [];
 
-    const today = dayKey();
+    const today = dayKey(new Date(), policy.timeZone);
     const presentIds = new Set(attendance.filter((item) => item.attendanceDate === today).map((item) => item.empId));
-    const latestByEmployee = new Map();
-    for (const item of attendance) if (!latestByEmployee.has(item.empId)) latestByEmployee.set(item.empId, item);
-    const latestAttendance = [...latestByEmployee.values()];
-    const trackingPoints = latestAttendance.length
-      ? await TrackingLocation.find({ orgId: identity.orgId, attendanceId: { $in: latestAttendance.map((item) => item._id) } })
+    // A monitoring dashboard must never present an older attendance location
+    // as if it were live. Only today's marked attendance belongs on this map.
+    const todayByEmployee = new Map();
+    for (const item of attendance) {
+      if (item.attendanceDate === today && !todayByEmployee.has(item.empId)) {
+        todayByEmployee.set(item.empId, item);
+      }
+    }
+    const todayAttendance = [...todayByEmployee.values()];
+    const trackingPoints = todayAttendance.length
+      ? await TrackingLocation.find({ orgId: identity.orgId, attendanceId: { $in: todayAttendance.map((item) => item._id) } })
           .select("attendanceId latitude longitude capturedAt receivedAt locationName locationNameRefreshed speed heading")
           .sort({ capturedAt: 1 })
           .limit(5000)
@@ -40,7 +54,7 @@ export async function GET() {
     }
 
     const locations = employees.flatMap((employee) => {
-      const item = latestByEmployee.get(employee.empId);
+      const item = todayByEmployee.get(employee.empId);
       const point = item?.lastKnownLocation || item?.markOut?.location || item?.markIn?.location;
       if (!point || !Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)) return [];
       const rawRoute = pointsByAttendance.get(String(item._id)) || [];
@@ -83,6 +97,14 @@ export async function GET() {
         located: locations.length,
         noLocation: Math.max(0, employees.length - locations.length),
       },
+      employees: employees.map((employee) => ({
+        empId: employee.empId,
+        name: employee.name,
+        designation: employee.designation || "Employee",
+        photo: employee.photo || null,
+        presentToday: presentIds.has(employee.empId),
+        located: locations.some((location) => location.empId === employee.empId),
+      })),
       locations,
     });
   } catch (error) {

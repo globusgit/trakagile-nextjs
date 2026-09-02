@@ -2,6 +2,7 @@ import Counter from "@/models/Counter";
 import Employee from "@/models/Employee";
 import Notification from "@/models/Notification";
 import User from "@/models/User";
+import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 
 // Roles allowed to create tasks, assign them, and edit
 // Project No / Work-Order No / Tender No / Task status / Task Type / Assigned To
@@ -12,11 +13,11 @@ import User from "@/models/User";
 // DIRECTOR/MANAGER are derived from the employee record). To let someone
 // use the Tasks module as HR, set their User.role to "HR" directly in the
 // database, the same way ADMIN users are provisioned today.
-export const TASK_MANAGE_ROLES = ["ADMIN", "DIRECTOR", "MANAGER", "HR"];
+export const TASK_MANAGE_ROLES = rolesForPermission(PERMISSIONS.TASK_MANAGE);
 
 // Roles that can see every task in the organization rather than only
 // their own team's tasks (mirrors isOrganizationRole in lib/access.js).
-export const TASK_ORG_WIDE_ROLES = ["ADMIN", "DIRECTOR", "HR"];
+export const TASK_ORG_WIDE_ROLES = rolesForPermission(PERMISSIONS.TASK_READ_ALL);
 
 export async function nextTaskId(orgId) {
   const counter = await Counter.findOneAndUpdate(

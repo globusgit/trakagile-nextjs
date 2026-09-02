@@ -1,7 +1,6 @@
-import bcrypt from "bcryptjs";
-
 import connectDB from "@/lib/mongoose";
 import { createMobileToken } from "@/lib/mobileAuth";
+import { CREDENTIAL_RESULT, credentialFields, verifyAccountPassword } from "@/lib/credentialAuth";
 import Employee from "@/models/Employee";
 import User from "@/models/User";
 import { organizationIdForCode } from "@/lib/organization";
@@ -21,13 +20,17 @@ export async function POST(request) {
     if (organizationCode && !orgId) {
       return Response.json({ message: "Invalid organization code." }, { status: 401 });
     }
-    const candidates = await User.find({ username: empId, ...(orgId ? { orgId } : {}) }).limit(2).lean();
+    const candidates = await User.find({ username: empId, ...(orgId ? { orgId } : {}) }).select(credentialFields).limit(2).lean();
     if (candidates.length !== 1) {
       return Response.json({ message: "Employee account is unavailable for this organization." }, { status: 401 });
     }
     const user = candidates[0];
-    if (!user || user.status !== "Active" || !user.password || !(await bcrypt.compare(password, user.password))) {
-      return Response.json({ message: "Invalid employee ID or password." }, { status: 401 });
+    const credentialResult = await verifyAccountPassword(user, password);
+    if (credentialResult !== CREDENTIAL_RESULT.VALID) {
+      const message = credentialResult === CREDENTIAL_RESULT.LOCKED
+        ? "Sign-in is temporarily locked after repeated failures. Try again in 15 minutes."
+        : "Invalid employee ID or password.";
+      return Response.json({ message }, { status: 401 });
     }
 
     const employee = await Employee.findOne({ orgId: user.orgId, empId: user.username })
@@ -43,6 +46,7 @@ export async function POST(request) {
       role,
       orgId: user.orgId,
       isFirstLogin: Boolean(user.isFirstLogin),
+      tokenVersion: Number(user.tokenVersion || 0),
     };
 
     return Response.json({ token: createMobileToken(identity), user: identity });

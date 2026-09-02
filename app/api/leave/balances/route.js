@@ -3,11 +3,12 @@ import Employee from "@/models/Employee";
 import LeavesInfo from "@/models/LeavesInfo";
 import User from "@/models/User";
 import { errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
+import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 
 export async function GET(request) {
   try {
     await connectDB();
-    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR"]);
+    const identity = await requireAttendanceUser(rolesForPermission(PERMISSIONS.LEAVE_BALANCE_MANAGE));
     const { searchParams } = new URL(request.url);
     const year = Number(searchParams.get("year") || new Date().getFullYear());
     const employees = await Employee.find({ orgId: identity.orgId, status: "Active" })

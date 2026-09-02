@@ -6,19 +6,28 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Search, UserRound } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import { toast } from "sonner";
+
+const LiveEmployeeMap = dynamic(() => import("./LiveEmployeeMap"), {
+  ssr: false,
+  loading: () => <div className="flex h-[420px] items-center justify-center rounded-md border text-muted-foreground">Loading map...</div>,
+});
 
 type LiveEmployee = {
   employee?: { name?: string; empId: string; photo?: string };
   attendance: { totalDistanceMeters?: number };
   location?: { latitude: number; longitude: number; accuracy?: number; speed?: number; locationName?: string; receivedAt: string };
   workStatus: { state: string; confidence: string; label: string; reason: string };
-  triggerPoints?: Array<{ latitude: number; longitude: number; accuracy?: number; speed?: number; locationName?: string; capturedAt?: string; receivedAt: string }>;
+  schedule?: { dispatchedAt?: string | null; expectedEndAt?: string | null; serverNow: string; remainingSeconds?: number | null };
+  triggerPoints?: Array<{ latitude: number; longitude: number; accuracy?: number; speed?: number; locationName?: string; locationNameRefreshed?: boolean; type?: "MARK_IN" | "LOCATION_TRIGGER"; capturedAt?: string; receivedAt: string }>;
+  movementPoints?: Array<{ latitude: number; longitude: number; accuracy?: number; speed?: number; locationName?: string; locationNameRefreshed?: boolean; capturedAt?: string; receivedAt: string }>;
 };
 
 export default function LiveTrackingPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const requestedEmpId = searchParams.get("empId") || "";
   const [employees, setEmployees] = useState<LiveEmployee[]>([]);
@@ -56,7 +65,7 @@ export default function LiveTrackingPage() {
           <p className="text-xs text-muted-foreground">{filtered.length} active employee(s)</p>
           <div className="max-h-[520px] space-y-2 overflow-y-auto">{filtered.map((item) => {
             const stale = item.workStatus.state !== "VERIFIED";
-            return <button type="button" key={item.employee?.empId} onClick={() => setSelectedEmpId(item.employee?.empId || "")} className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left hover:bg-muted ${activeEmpId === item.employee?.empId ? "border-primary bg-muted" : ""}`}>
+            return <button type="button" key={item.employee?.empId} onClick={() => { const empId = item.employee?.empId || ""; setSelectedEmpId(empId); router.replace(`/live-tracking?empId=${encodeURIComponent(empId)}`, { scroll: false }); }} className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left hover:bg-muted ${activeEmpId === item.employee?.empId ? "border-primary bg-muted" : ""}`}>
               <Image src={item.employee?.photo ? `/api/files/employees/${encodeURIComponent(item.employee.photo)}` : "/default-avatar.jpg"} alt={item.employee?.name || "Employee"} width={36} height={36} unoptimized className="size-9 shrink-0 rounded-full object-cover" /><span className="min-w-0 flex-1"><span className="block truncate font-medium">{item.employee?.name || "Employee"}</span><span className="block text-xs text-muted-foreground">{item.employee?.empId}</span></span><Badge variant={stale ? "destructive" : "default"}>{item.workStatus.label}</Badge>
             </button>;
           })}{filtered.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">No matching employee.</p>}</div>
@@ -71,12 +80,33 @@ function EmployeeMap({ item }: { item: LiveEmployee }) {
   const lat = item.location?.latitude; const lon = item.location?.longitude;
   return <Card><CardHeader><CardTitle className="flex items-center justify-between"><span>{item.employee?.name || item.employee?.empId}</span><Badge variant={stale ? "destructive" : "default"}>{item.workStatus.label}</Badge></CardTitle></CardHeader><CardContent className="space-y-4">
     <div className={`rounded-lg border p-3 text-sm ${stale ? "border-amber-300 bg-amber-50" : "border-emerald-300 bg-emerald-50"}`}><p className="font-medium">Confidence: {item.workStatus.confidence}</p><p className="mt-1 text-muted-foreground">{item.workStatus.reason}</p></div>
+    <div className="grid gap-3 rounded-lg border bg-muted/30 p-3 text-sm sm:grid-cols-3"><Detail label="Dispatch / mark-in time" value={formatTimestamp(item.schedule?.dispatchedAt)} /><Detail label="Expected completion" value={formatTimestamp(item.schedule?.expectedEndAt)} /><Detail label="Remaining time" value={<RemainingTime expectedEndAt={item.schedule?.expectedEndAt} />} /></div>
     <div className="grid gap-3 text-sm sm:grid-cols-2"><Detail label="Employee ID" value={item.employee?.empId || "—"} /><Detail label="Last update" value={item.location ? new Date(item.location.receivedAt).toLocaleString() : "—"} /><Detail label="Location" value={item.location?.locationName || "Location name pending"} /><Detail label="Distance travelled" value={`${((item.attendance.totalDistanceMeters || 0) / 1000).toFixed(2)} km`} /><Detail label="Coordinates" value={`${lat?.toFixed(6) || "—"}, ${lon?.toFixed(6) || "—"}`} /><Detail label="Accuracy / speed" value={`${item.location?.accuracy ? `±${Math.round(item.location.accuracy)} m` : "—"} · ${item.location?.speed != null ? `${(item.location.speed * 3.6).toFixed(1)} km/h` : "—"}`} /></div>
-    {lat != null && lon != null ? <iframe title={`Map for ${item.employee?.empId}`} className="h-[420px] w-full rounded-md border" loading="lazy" src={`https://www.openstreetmap.org/export/embed.html?bbox=${lon - 0.01}%2C${lat - 0.01}%2C${lon + 0.01}%2C${lat + 0.01}&layer=mapnik&marker=${lat}%2C${lon}`} /> : <div className="flex h-64 items-center justify-center rounded-md border text-muted-foreground">No location received.</div>}
-    <div><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">Recent trigger points</h3><Badge variant="secondary">{item.triggerPoints?.length || 0} points</Badge></div><div className="max-h-96 divide-y overflow-y-auto rounded-lg border">{item.triggerPoints?.map((point, index) => <div key={`${point.receivedAt}-${index}`} className="grid gap-1 p-3 text-sm sm:grid-cols-[10rem_1fr_auto]"><time className="font-medium">{new Date(point.capturedAt || point.receivedAt).toLocaleString("en-IN")}</time><span>{point.locationName || `${point.latitude.toFixed(6)}, ${point.longitude.toFixed(6)}`}</span><span className="text-xs text-muted-foreground">{point.accuracy != null ? `±${Math.round(point.accuracy)} m` : "Accuracy unavailable"}</span></div>)}{!item.triggerPoints?.length && <p className="p-4 text-sm text-muted-foreground">No GPS trigger points received.</p>}</div></div>
+    {lat != null && lon != null && item.location ? <LiveEmployeeMap latest={item.location} triggers={item.triggerPoints || []} movements={item.movementPoints || []} /> : <div className="flex h-64 items-center justify-center rounded-md border text-muted-foreground">No location received.</div>}
+    <div><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">Start and triggered locations</h3><Badge variant="secondary">{item.triggerPoints?.length || 0} points</Badge></div><div className="max-h-96 divide-y overflow-y-auto rounded-lg border">{item.triggerPoints?.map((point, index) => <div key={`${point.receivedAt}-${index}`} className="grid gap-1 p-3 text-sm sm:grid-cols-[10rem_7rem_1fr_auto]"><time className="font-medium">{new Date(point.capturedAt || point.receivedAt).toLocaleString("en-IN")}</time><Badge variant="outline" className="w-fit">{point.type === "MARK_IN" ? "Mark in" : `Trigger ${index + 1}`}</Badge><span>{point.locationName || `${point.latitude.toFixed(6)}, ${point.longitude.toFixed(6)}`}</span><span className="text-xs text-muted-foreground">{point.accuracy != null ? `±${Math.round(point.accuracy)} m` : "Accuracy unavailable"}</span></div>)}{!item.triggerPoints?.length && <p className="p-4 text-sm text-muted-foreground">No GPS trigger points received.</p>}</div></div>
   </CardContent></Card>;
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
+function formatTimestamp(value?: string | null) {
+  return value ? new Date(value).toLocaleString("en-IN") : "Not scheduled";
+}
+
+function RemainingTime({ expectedEndAt }: { expectedEndAt?: string | null }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  if (!expectedEndAt) return <>Not scheduled</>;
+  const seconds = Math.round((new Date(expectedEndAt).getTime() - now) / 1000);
+  const absolute = Math.abs(seconds);
+  const hours = Math.floor(absolute / 3600);
+  const minutes = Math.floor((absolute % 3600) / 60);
+  const secs = absolute % 60;
+  const duration = `${hours ? `${hours}h ` : ""}${minutes}m ${secs}s`;
+  return <span className={seconds < 0 ? "text-red-700" : "text-emerald-700"}>{seconds < 0 ? `Overdue by ${duration}` : duration}</span>;
+}
+
+function Detail({ label, value }: { label: string; value: React.ReactNode }) {
   return <div><p className="text-xs text-muted-foreground">{label}</p><p className="font-medium">{value}</p></div>;
 }

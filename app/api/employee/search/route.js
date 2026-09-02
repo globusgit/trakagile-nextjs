@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import connectDB from "@/lib/mongoose";
 import Employee from "@/models/Employee";
 import { errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
+import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 import { visibleEmployeeIds } from "@/lib/access";
 import { escapeRegex, pagination } from "@/lib/query.mjs";
 
@@ -9,7 +10,7 @@ export async function GET(request) {
   try {
     await connectDB();
     // HR included so HR can look up employees to assign tasks to (Tasks module).
-    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR", "MANAGER", "HR"]);
+    const identity = await requireAttendanceUser(rolesForPermission(PERMISSIONS.EMPLOYEE_SEARCH));
     const { searchParams } = new URL(request.url);
     const orgId = identity.orgId;
     const q = searchParams.get("q");

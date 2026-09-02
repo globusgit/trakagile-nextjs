@@ -11,6 +11,7 @@ const TrackingLocationSchema = new mongoose.Schema(
     employeeId: { type: String, required: true, index: true },
     visitId: { type: mongoose.Types.ObjectId, ref: "EmployeeVisit", default: null },
     orgId: { type: String, required: true, index: true },
+    clientPointId: { type: String, trim: true, maxlength: 120 },
     latitude: { type: Number, required: true, min: -90, max: 90 },
     longitude: { type: Number, required: true, min: -180, max: 180 },
     accuracy: { type: Number, min: 0 },
@@ -26,6 +27,10 @@ const TrackingLocationSchema = new mongoose.Schema(
 
 TrackingLocationSchema.index({ attendanceId: 1, capturedAt: 1 });
 TrackingLocationSchema.index({ orgId: 1, employeeId: 1, receivedAt: -1 });
+TrackingLocationSchema.index(
+  { attendanceId: 1, clientPointId: 1 },
+  { unique: true, sparse: true },
+);
 
 export default mongoose.models.TrackingLocation ||
   mongoose.model("TrackingLocation", TrackingLocationSchema);

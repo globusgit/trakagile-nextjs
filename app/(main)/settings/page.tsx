@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CalendarPlus, MapPinned } from "lucide-react";
+import { CalendarPlus, Globe2, MapPinned } from "lucide-react";
 import { toast } from "sonner";
 
 export default function SettingsPage() {
@@ -15,6 +15,7 @@ export default function SettingsPage() {
   const nextYear = new Date().getFullYear() + 1;
   const [saving, setSaving] = useState(false);
   const [office, setOffice] = useState({ enabled: false, name: "Main Office", latitude: "", longitude: "", radiusMeters: "300", maximumAccuracyMeters: "100" });
+  const [regional, setRegional] = useState({ timeZone: "Asia/Kolkata", locale: "en-IN", currency: "INR", countryCode: "IN", weekStartsOn: "1" });
 
   useEffect(() => {
     void fetch("/api/attendance/policy", { cache: "no-store" })
@@ -33,6 +34,10 @@ export default function SettingsPage() {
       })
       .catch((error) => toast.error(error instanceof Error ? error.message : "Unable to load attendance settings."));
   }, []);
+
+  useEffect(() => { void fetch("/api/organization/settings", { cache: "no-store" }).then(async (response) => { const body = await response.json(); if (!response.ok) throw new Error(body.message); setRegional({ ...body.settings, weekStartsOn: String(body.settings.weekStartsOn) }); }).catch((error) => toast.error(error instanceof Error ? error.message : "Unable to load regional settings.")); }, []);
+
+  const saveRegional = async () => { setSaving(true); try { const response = await fetch("/api/organization/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...regional, weekStartsOn: Number(regional.weekStartsOn) }) }); const body = await response.json(); if (!response.ok) throw new Error(body.message || "Unable to save regional settings."); toast.success(body.message); } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to save regional settings."); } finally { setSaving(false); } };
 
   const saveOffice = async () => {
     setSaving(true);
@@ -90,6 +95,7 @@ export default function SettingsPage() {
             <Button disabled={saving} onClick={() => void saveOffice()}>{saving ? "Saving..." : "Save attendance area"}</Button>
           </CardContent>
         </Card>
+        <Card className="shadow-sm sm:col-span-2 lg:col-span-3"><CardContent className="space-y-4 p-5"><div className="flex items-start gap-4"><div className="rounded-lg bg-violet-50 p-3"><Globe2 className="h-6 w-6 text-violet-800" /></div><div><p className="font-semibold">International and regional settings</p><p className="text-sm text-muted-foreground">Controls attendance dates and organization formatting. Use IANA timezone and ISO country/currency codes.</p></div></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><Label>Time zone<Input className="mt-1" value={regional.timeZone} onChange={(event) => setRegional({ ...regional, timeZone: event.target.value })} /></Label><Label>Locale<Input className="mt-1" value={regional.locale} onChange={(event) => setRegional({ ...regional, locale: event.target.value })} /></Label><Label>Currency<Input className="mt-1" maxLength={3} value={regional.currency} onChange={(event) => setRegional({ ...regional, currency: event.target.value.toUpperCase() })} /></Label><Label>Country<Input className="mt-1" maxLength={2} value={regional.countryCode} onChange={(event) => setRegional({ ...regional, countryCode: event.target.value.toUpperCase() })} /></Label><Label>Week starts (0–6)<Input className="mt-1" type="number" min="0" max="6" value={regional.weekStartsOn} onChange={(event) => setRegional({ ...regional, weekStartsOn: event.target.value })} /></Label></div><Button disabled={saving} onClick={() => void saveRegional()}>{saving ? "Saving..." : "Save regional settings"}</Button></CardContent></Card>
       </div>
     </div>
   );

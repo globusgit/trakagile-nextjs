@@ -8,6 +8,7 @@ import Employee from "@/models/Employee";
 import FieldTrip from "@/models/FieldTrip";
 import TripExpense from "@/models/TripExpense";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../../../attendance/_lib/attendance";
+import { hasPermission, PERMISSIONS } from "@/lib/permissions.mjs";
 
 export async function GET(_request, { params }) {
   try {
@@ -18,7 +19,7 @@ export async function GET(_request, { params }) {
     const expense = await TripExpense.findOne({ _id: id, orgId: identity.orgId }).lean();
     if (!expense?.receiptName && !expense?.receiptFileId) throw new AttendanceError("Receipt not found.", 404);
     const trip = await FieldTrip.findById(expense.tripId).select("employeeId").lean();
-    let allowed = trip?.employeeId === identity.empId || ["ADMIN", "DIRECTOR"].includes(identity.role);
+    let allowed = trip?.employeeId === identity.empId || hasPermission(identity.role, PERMISSIONS.FIELD_TRIP_READ_ALL);
     if (!allowed && identity.role === "MANAGER" && trip) {
       const manager = await Employee.findOne({ orgId: identity.orgId, empId: identity.empId }).select("_id").lean();
       allowed = Boolean(await Employee.exists({ orgId: identity.orgId, empId: trip.employeeId, reportingTo: manager?._id }));

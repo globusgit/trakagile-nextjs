@@ -5,9 +5,11 @@ import Organization from "@/models/Organization";
 import Employee from "@/models/Employee";
 import User from "@/models/User";
 import bcrypt from "bcryptjs";
+import { serverEnvironment } from "@/lib/env.mjs";
+import { normalizeInternationalSettings } from "@/lib/internationalSettings.mjs";
 
 function platformAuthorized(request) {
-  const expected = process.env.PLATFORM_ADMIN_KEY;
+  const expected = serverEnvironment().platformAdminKey;
   return Boolean(expected && request.headers.get("x-platform-admin-key") === expected);
 }
 
@@ -39,6 +41,7 @@ export async function POST(request) {
     if (!code || !/^[A-Z0-9][A-Z0-9_-]{1,31}$/.test(code) || !name || !adminEmpId || !adminName || !adminEmail || adminPassword.length < 8) {
       return Response.json({ message: "Organization details and a first Director with an 8+ character password are required." }, { status: 400 });
     }
+    const international = normalizeInternationalSettings(body);
     organization = await Organization.create({
       name,
       code,
@@ -52,6 +55,7 @@ export async function POST(request) {
       gstNumber: body.gstNumber,
       panNumber: body.panNumber,
       registrationNumber: body.registrationNumber,
+      ...international,
     });
     const orgId = organization._id.toString();
     const employee = await Employee.create({

@@ -1,13 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _apiBaseUrl = String.fromEnvironment(
@@ -15,14 +18,27 @@ const _apiBaseUrl = String.fromEnvironment(
   defaultValue: 'http://10.0.2.2:3000',
 );
 
+String _friendlyNetworkError(Object error) {
+  final message = error.toString().replaceFirst('Exception: ', '');
+  if (message.contains('SocketException') ||
+      message.contains('Failed host lookup') ||
+      message.contains('Connection refused') ||
+      message.contains('Network is unreachable')) {
+    return 'Cannot connect to TrakAgile. Check mobile data or Wi-Fi and confirm the server is online, then retry.';
+  }
+  return message;
+}
+
 class AttendanceTrackingService {
   AttendanceTrackingService._();
   static final instance = AttendanceTrackingService._();
 
   StreamSubscription<Position>? _subscription;
   Timer? _retryTimer;
+  Timer? _heartbeatTimer;
   bool _sending = false;
   String? _token;
+  final Random _random = Random.secure();
 
   Future<void> restore() async {
     final prefs = await SharedPreferences.getInstance();
@@ -82,11 +98,16 @@ class AttendanceTrackingService {
             distanceFilter: 50,
           );
     await _flushQueue();
+    await _captureHeartbeat();
     _subscription = Geolocator.getPositionStream(locationSettings: settings)
         .listen((position) => _queuePosition(position), onError: (_) {});
     _retryTimer = Timer.periodic(
       const Duration(minutes: 1),
       (_) => _flushQueue(),
+    );
+    _heartbeatTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _captureHeartbeat(),
     );
   }
 
@@ -96,7 +117,24 @@ class AttendanceTrackingService {
     _subscription = null;
     _retryTimer?.cancel();
     _retryTimer = null;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
     _token = null;
+  }
+
+  Future<void> _captureHeartbeat() async {
+    if (_token == null || !await Geolocator.isLocationServiceEnabled()) return;
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 20),
+        ),
+      );
+      await _queuePosition(position);
+    } catch (_) {
+      // The stream and the next minute heartbeat provide automatic recovery.
+    }
   }
 
   Future<void> _queuePosition(Position position) async {
@@ -112,13 +150,15 @@ class AttendanceTrackingService {
         position.longitude,
       );
       final lastTime = DateTime.tryParse('${last['capturedAt']}');
-      if (distance < 15 &&
+      if (distance < 5 &&
           lastTime != null &&
-          position.timestamp.difference(lastTime).inMinutes < 3) {
+          position.timestamp.difference(lastTime).inSeconds < 45) {
         return;
       }
     }
     final item = <String, dynamic>{
+      'clientPointId':
+          '${position.timestamp.microsecondsSinceEpoch}-${_random.nextInt(1 << 32)}',
       'latitude': position.latitude,
       'longitude': position.longitude,
       'accuracy': position.accuracy,
@@ -249,6 +289,8 @@ class _TrakAgileAppState extends State<TrakAgileApp> {
           ? const Scaffold(body: Center(child: CircularProgressIndicator()))
           : _user == null
           ? LoginPage(onSignedIn: _signedIn)
+          : _user!['isFirstLogin'] == true
+          ? ChangePasswordPage(onPasswordChanged: _signOut)
           : HomePage(user: _user!, onSignOut: _signOut),
     );
   }
@@ -408,6 +450,164 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
+class ChangePasswordPage extends StatefulWidget {
+  const ChangePasswordPage({required this.onPasswordChanged, super.key});
+
+  final Future<void> Function() onPasswordChanged;
+
+  @override
+  State<ChangePasswordPage> createState() => _ChangePasswordPageState();
+}
+
+class _ChangePasswordPageState extends State<ChangePasswordPage> {
+  final _currentPassword = TextEditingController();
+  final _newPassword = TextEditingController();
+  final _confirmPassword = TextEditingController();
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _currentPassword.dispose();
+    _newPassword.dispose();
+    _confirmPassword.dispose();
+    super.dispose();
+  }
+
+  Future<void> _changePassword() async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      if (token == null) {
+        throw Exception('Your session has expired. Sign in again.');
+      }
+      final response = await http.put(
+        Uri.parse('$_apiBaseUrl/api/account/password'),
+        headers: {
+          'authorization': 'Bearer $token',
+          'content-type': 'application/json',
+        },
+        body: jsonEncode({
+          'currentPassword': _currentPassword.text,
+          'newPassword': _newPassword.text,
+          'confirmPassword': _confirmPassword.text,
+        }),
+      );
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode != 200) {
+        throw Exception(body['message'] ?? 'Unable to change password.');
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password changed. Sign in again.')),
+      );
+      await widget.onPasswordChanged();
+    } catch (error) {
+      if (mounted) setState(() => _error = _friendlyNetworkError(error));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(28),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Icon(
+                        Icons.password_rounded,
+                        size: 52,
+                        color: Color(0xFF2563EB),
+                      ),
+                      const SizedBox(height: 18),
+                      Text(
+                        'Change your password',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Replace your temporary password before accessing workforce data.',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 24),
+                      TextField(
+                        controller: _currentPassword,
+                        obscureText: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Current password',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: _newPassword,
+                        obscureText: true,
+                        decoration: const InputDecoration(
+                          labelText: 'New password',
+                          helperText: '12+ characters with uppercase, lowercase and a number',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: _confirmPassword,
+                        obscureText: true,
+                        onSubmitted: (_) => _changePassword(),
+                        decoration: const InputDecoration(
+                          labelText: 'Confirm new password',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      if (_error != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Text(
+                            _error!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 20),
+                      FilledButton(
+                        onPressed: _saving ? null : _changePassword,
+                        child: Padding(
+                          padding: const EdgeInsets.all(13),
+                          child: Text(
+                            _saving
+                                ? 'Changing password...'
+                                : 'Change password',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class AppModule {
   const AppModule(this.icon, this.title, this.description);
 
@@ -438,6 +638,8 @@ class _ModuleScreenState extends State<ModuleScreen> {
   final _fieldPurpose = TextEditingController();
   DateTime _expectedWorkEndAt = DateTime.now().add(const Duration(hours: 8));
   bool _overnightWork = false;
+  Timer? _liveRefreshTimer;
+  String? _selectedLiveEmployeeId;
 
   bool get _isTeamRole => const [
     'MANAGER',
@@ -453,10 +655,17 @@ class _ModuleScreenState extends State<ModuleScreen> {
   void initState() {
     super.initState();
     _load();
+    if (widget.module.title == 'Live Tracking') {
+      _liveRefreshTimer = Timer.periodic(
+        const Duration(seconds: 30),
+        (_) => _load(silent: true),
+      );
+    }
   }
 
   @override
   void dispose() {
+    _liveRefreshTimer?.cancel();
     _fieldPurpose.dispose();
     super.dispose();
   }
@@ -484,7 +693,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
     };
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool silent = false}) async {
     if (_endpoint.isEmpty) {
       setState(() {
         _loading = false;
@@ -492,10 +701,12 @@ class _ModuleScreenState extends State<ModuleScreen> {
       });
       return;
     }
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
@@ -570,12 +781,10 @@ class _ModuleScreenState extends State<ModuleScreen> {
       }
     } catch (error) {
       if (mounted) {
-        setState(
-          () => _error = error.toString().replaceFirst('Exception: ', ''),
-        );
+        setState(() => _error = _friendlyNetworkError(error));
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && !silent) setState(() => _loading = false);
     }
   }
 
@@ -2434,12 +2643,17 @@ class _ModuleScreenState extends State<ModuleScreen> {
     if (nestedEmployee is Map) {
       final workStatus = item['workStatus'];
       final location = item['location'];
+      final schedule = item['schedule'];
       return [
         'Employee ID: ${nestedEmployee['empId'] ?? '-'}',
         if (workStatus is Map)
           'Status: ${workStatus['label'] ?? workStatus['status'] ?? '-'}',
         if (location is Map)
           'Location: ${location['locationName'] ?? '${location['latitude']}, ${location['longitude']}'}',
+        if (schedule is Map && schedule['dispatchedAt'] != null)
+          'Dispatched: ${_mobileTimestamp(schedule['dispatchedAt'])}',
+        if (schedule is Map && schedule['expectedEndAt'] != null)
+          'Remaining: ${_mobileRemaining(schedule['expectedEndAt'])}',
       ].join('\n');
     }
     const preferred = [
@@ -2476,6 +2690,8 @@ class _ModuleScreenState extends State<ModuleScreen> {
         : lines.join('\n');
   }
 
+  // Kept temporarily for compatibility with older navigation state.
+  // ignore: unused_element
   Future<void> _showLiveTrackingDetails(Map item) async {
     final employee = item['employee'] is Map
         ? item['employee'] as Map
@@ -2483,30 +2699,88 @@ class _ModuleScreenState extends State<ModuleScreen> {
     final points = item['triggerPoints'] is List
         ? item['triggerPoints'] as List
         : const [];
+    final movements = item['movementPoints'] is List
+        ? item['movementPoints'] as List
+        : const [];
+    final latest = item['location'] is Map ? item['location'] as Map : null;
+    final schedule = item['schedule'] is Map
+        ? item['schedule'] as Map
+        : const {};
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('${employee['name'] ?? employee['empId'] ?? 'Employee'}'),
-        content: SizedBox(
-          width: 560,
-          child: points.isEmpty
-              ? const Text('No GPS trigger points received.')
-              : ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: points.length,
-                  separatorBuilder: (_, _) => const Divider(),
-                  itemBuilder: (context, index) {
-                    final point = points[index] is Map
-                        ? points[index] as Map
-                        : const {};
-                    final timestamp = DateTime.tryParse(
-                      '${point['capturedAt'] ?? point['receivedAt'] ?? ''}',
-                    )?.toLocal();
-                    final locationName = '${point['locationName'] ?? ''}'
-                        .trim();
-                    return ListTile(
+      builder: (dialogContext) => Dialog.fullscreen(
+        child: Scaffold(
+          appBar: AppBar(
+            title: Text(
+              '${employee['name'] ?? employee['empId'] ?? 'Employee'}',
+            ),
+            leading: IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () => Navigator.pop(dialogContext),
+            ),
+          ),
+          body: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Dispatch / mark-in: ${_mobileTimestamp(schedule['dispatchedAt'])}',
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        'Expected completion: ${_mobileTimestamp(schedule['expectedEndAt'])}',
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        'Remaining time: ${_mobileRemaining(schedule['expectedEndAt'])}',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              if (latest != null)
+                _LiveTrackingMap(
+                  latest: latest,
+                  triggers: points,
+                  movements: movements,
+                )
+              else
+                const SizedBox(
+                  height: 260,
+                  child: Center(child: Text('No live location received.')),
+                ),
+              const SizedBox(height: 16),
+              Text(
+                'Triggered locations (${points.length})',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              if (points.isEmpty)
+                const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('No named location trigger points received.'),
+                  ),
+                )
+              else
+                ...points.indexed.map((entry) {
+                  final index = entry.$1;
+                  final point = entry.$2 is Map ? entry.$2 as Map : const {};
+                  final timestamp = DateTime.tryParse(
+                    '${point['capturedAt'] ?? point['receivedAt'] ?? ''}',
+                  )?.toLocal();
+                  final locationName = '${point['locationName'] ?? ''}'.trim();
+                  return Card(
+                    child: ListTile(
                       contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.location_on_outlined),
+                      leading: CircleAvatar(child: Text('T${index + 1}')),
                       title: Text(
                         locationName.isNotEmpty
                             ? locationName
@@ -2515,18 +2789,26 @@ class _ModuleScreenState extends State<ModuleScreen> {
                       subtitle: Text(
                         '${timestamp ?? 'Time unavailable'}\nAccuracy: ${point['accuracy'] == null ? 'unavailable' : '±${(point['accuracy'] as num).round()} m'}',
                       ),
-                    );
-                  },
-                ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Close'),
+                    ),
+                  );
+                }),
+            ],
           ),
-        ],
+        ),
       ),
     );
+  }
+
+  Future<void> _showAdvancedLiveTrackingDetails(Map item) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => Dialog.fullscreen(
+        child: _LiveTrackingDialog(
+          initialItem: Map<String, dynamic>.from(item),
+        ),
+      ),
+    );
+    if (mounted) await _load(silent: true);
   }
 
   Future<void> _updateTask(Map task, String action, [String? status]) async {
@@ -2664,6 +2946,302 @@ class _ModuleScreenState extends State<ModuleScreen> {
     return value is num ? value : num.tryParse('$value') ?? 0;
   }
 
+  Widget _liveTrackingWorkspace(List<dynamic> items) {
+    final employees = items.whereType<Map>().toList();
+    if (employees.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          children: const [
+            SizedBox(height: 180),
+            Center(child: Text('No employees are currently marked IN.')),
+          ],
+        ),
+      );
+    }
+
+    Map selected = employees.first;
+    for (final item in employees) {
+      final employee = item['employee'];
+      if (employee is Map &&
+          '${employee['empId']}' == _selectedLiveEmployeeId) {
+        selected = item;
+        break;
+      }
+    }
+    final selectedEmployee = selected['employee'] is Map
+        ? selected['employee'] as Map
+        : const {};
+    final latest = selected['location'] is Map
+        ? selected['location'] as Map
+        : null;
+    final triggers = selected['triggerPoints'] is List
+        ? selected['triggerPoints'] as List
+        : const [];
+    final movements = selected['movementPoints'] is List
+        ? selected['movementPoints'] as List
+        : const [];
+
+    final schedule = selected['schedule'] is Map
+        ? selected['schedule'] as Map
+        : const {};
+    final workStatus = selected['workStatus'] is Map
+        ? selected['workStatus'] as Map
+        : const {};
+    final locality = latest == null
+        ? 'No location'
+        : _shortMobileLocation('${latest['locationName'] ?? ''}');
+
+    return LayoutBuilder(
+      builder: (context, constraints) => Stack(
+        children: [
+          Positioned.fill(
+            bottom: 104,
+            child: Row(
+              children: [
+                Container(
+                  width: 112,
+                  color: const Color(0xFF073552),
+                  padding: const EdgeInsets.fromLTRB(8, 12, 8, 6),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'TEAM (${employees.length})',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          InkWell(
+                            onTap: () => _load(silent: true),
+                            child: const Icon(
+                              Icons.refresh,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Expanded(
+                        child: ListView.separated(
+                          itemCount: employees.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 8),
+                          itemBuilder: (context, index) {
+                            final item = employees[index];
+                            final employee = item['employee'] is Map
+                                ? item['employee'] as Map
+                                : const {};
+                            final empId = '${employee['empId'] ?? '-'}';
+                            final name = '${employee['name'] ?? 'Employee'}';
+                            final isSelected =
+                                empId == '${selectedEmployee['empId']}';
+                            final location = item['location'];
+                            final receivedAt = location is Map
+                                ? DateTime.tryParse('${location['receivedAt']}')
+                                : null;
+                            final fresh =
+                                receivedAt != null &&
+                                DateTime.now().difference(
+                                      receivedAt.toLocal(),
+                                    ) <
+                                    const Duration(minutes: 5);
+                            return InkWell(
+                              borderRadius: BorderRadius.circular(10),
+                              onTap: () => setState(
+                                () => _selectedLiveEmployeeId = empId,
+                              ),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? const Color(0xFF07517A)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: isSelected
+                                      ? Border.all(
+                                          color: const Color(0xFF16C7F3),
+                                        )
+                                      : null,
+                                ),
+                                child: Column(
+                                  children: [
+                                    Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 22,
+                                          backgroundColor: const Color(
+                                            0xFF14BCEB,
+                                          ),
+                                          child: Text(
+                                            _mobileInitials(name),
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                        Positioned(
+                                          right: -2,
+                                          bottom: 1,
+                                          child: Container(
+                                            width: 12,
+                                            height: 12,
+                                            decoration: BoxDecoration(
+                                              color: fresh
+                                                  ? const Color(0xFF35D05B)
+                                                  : const Color(0xFFFFB020),
+                                              shape: BoxShape.circle,
+                                              border: Border.all(
+                                                color: const Color(0xFF073552),
+                                                width: 2,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 5),
+                                    Text(
+                                      name,
+                                      maxLines: 2,
+                                      textAlign: TextAlign.center,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                    Text(
+                                      _mobileTime(
+                                        (item['schedule']
+                                            as Map?)?['dispatchedAt'],
+                                      ),
+                                      style: const TextStyle(
+                                        color: Colors.white60,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: latest == null
+                      ? const Center(child: Text('No GPS location received.'))
+                      : _LiveTrackingMap(
+                          latest: latest,
+                          triggers: triggers,
+                          movements: movements,
+                          employeeName:
+                              '${selectedEmployee['name'] ?? selectedEmployee['empId']}',
+                          teamItems: employees,
+                          height: constraints.maxHeight - 104,
+                        ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 106,
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Color(0xFF073552),
+                border: Border(
+                  top: BorderSide(color: Color(0xFF16C7F3), width: 2),
+                ),
+              ),
+              padding: const EdgeInsets.fromLTRB(14, 12, 12, 8),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 25,
+                    backgroundColor: const Color(0xFF14BCEB),
+                    child: Text(
+                      _mobileInitials('${selectedEmployee['name'] ?? ''}'),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    flex: 3,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${selectedEmployee['name'] ?? 'Employee'}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          '${selectedEmployee['empId'] ?? '-'}',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 11,
+                          ),
+                        ),
+                        Text(
+                          'In ${_mobileTime(schedule['dispatchedAt'])}',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    flex: 3,
+                    child: _LiveSummaryValue(
+                      label: 'Last update',
+                      value: _mobileTime(latest?['receivedAt']),
+                      detail: '${workStatus['label'] ?? 'GPS status'}',
+                    ),
+                  ),
+                  Expanded(
+                    flex: 3,
+                    child: _LiveSummaryValue(
+                      label: 'Remaining',
+                      value: _mobileRemaining(schedule['expectedEndAt']),
+                      detail: locality,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _leaveDashboard(BuildContext context) {
     final info = _data?['leaveInfo'] is Map
         ? Map<String, dynamic>.from(_data!['leaveInfo'] as Map)
@@ -2764,6 +3342,9 @@ class _ModuleScreenState extends State<ModuleScreen> {
       return _attendanceView(context);
     }
     final items = _items;
+    if (widget.module.title == 'Live Tracking') {
+      return _liveTrackingWorkspace(items);
+    }
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -2901,7 +3482,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
                       : null,
                   onTap:
                       widget.module.title == 'Live Tracking' && entry.$2 is Map
-                      ? () => _showLiveTrackingDetails(entry.$2 as Map)
+                      ? () => _showAdvancedLiveTrackingDetails(entry.$2 as Map)
                       : widget.module.title == 'Tasks' && entry.$2 is Map
                       ? () => _showTaskActions(entry.$2 as Map)
                       : widget.module.title == 'Work From Home' &&
@@ -2936,6 +3517,503 @@ class _ModuleScreenState extends State<ModuleScreen> {
               ),
         ],
       ),
+    );
+  }
+}
+
+class _LiveTrackingDialog extends StatefulWidget {
+  const _LiveTrackingDialog({required this.initialItem});
+
+  final Map<String, dynamic> initialItem;
+
+  @override
+  State<_LiveTrackingDialog> createState() => _LiveTrackingDialogState();
+}
+
+class _LiveTrackingDialogState extends State<_LiveTrackingDialog> {
+  late Map<String, dynamic> _item;
+  Timer? _timer;
+  bool _refreshing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _item = widget.initialItem;
+    _timer = Timer.periodic(const Duration(seconds: 15), (_) => _refresh());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    if (_refreshing) return;
+    _refreshing = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      if (token == null) return;
+      final response = await http.get(
+        Uri.parse('$_apiBaseUrl/api/attendance/live'),
+        headers: {'authorization': 'Bearer $token'},
+      );
+      if (response.statusCode != 200) return;
+      final body = jsonDecode(response.body);
+      final employees = body is Map && body['employees'] is List
+          ? body['employees'] as List
+          : const [];
+      final empId = '${(_item['employee'] as Map?)?['empId'] ?? ''}';
+      final updated = employees.whereType<Map>().cast<Map>().where((entry) {
+        final employee = entry['employee'];
+        return employee is Map && '${employee['empId']}' == empId;
+      }).firstOrNull;
+      if (mounted && updated != null) {
+        setState(() => _item = Map<String, dynamic>.from(updated));
+      }
+    } finally {
+      _refreshing = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final employee = _item['employee'] is Map
+        ? _item['employee'] as Map
+        : const {};
+    final triggers = _item['triggerPoints'] is List
+        ? _item['triggerPoints'] as List
+        : const [];
+    final movements = _item['movementPoints'] is List
+        ? _item['movementPoints'] as List
+        : const [];
+    final latest = _item['location'] is Map ? _item['location'] as Map : null;
+    final schedule = _item['schedule'] is Map
+        ? _item['schedule'] as Map
+        : const {};
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('${employee['name'] ?? employee['empId'] ?? 'Employee'}'),
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.pop(context),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh now',
+            onPressed: _refresh,
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Dispatch / mark-in: ${_mobileTimestamp(schedule['dispatchedAt'])}',
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    'Expected completion: ${_mobileTimestamp(schedule['expectedEndAt'])}',
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    'Remaining time: ${_mobileRemaining(schedule['expectedEndAt'])}',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 5),
+                  const Text(
+                    'Live data refreshes every 15 seconds.',
+                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (latest != null)
+            _LiveTrackingMap(
+              latest: latest,
+              triggers: triggers,
+              movements: movements,
+            )
+          else
+            const SizedBox(
+              height: 260,
+              child: Center(child: Text('No live location received.')),
+            ),
+          const SizedBox(height: 16),
+          Text(
+            'Triggered locations (${triggers.length})',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          if (triggers.isEmpty)
+            const Card(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('No named location trigger points received.'),
+              ),
+            )
+          else
+            ...triggers.indexed.map((entry) {
+              final point = entry.$2 is Map ? entry.$2 as Map : const {};
+              final name = '${point['locationName'] ?? ''}'.trim();
+              return Card(
+                child: ListTile(
+                  leading: CircleAvatar(
+                    child: Text(
+                      point['type'] == 'MARK_IN' ? 'IN' : 'T${entry.$1 + 1}',
+                    ),
+                  ),
+                  title: Text(
+                    name.isNotEmpty
+                        ? name
+                        : '${point['latitude']}, ${point['longitude']}',
+                  ),
+                  subtitle: Text(
+                    '${_mobileTimestamp(point['capturedAt'] ?? point['receivedAt'])}\nAccuracy: ${point['accuracy'] == null ? 'unavailable' : '±${(point['accuracy'] as num).round()} m'}',
+                  ),
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+}
+
+String _mobileTimestamp(dynamic value) {
+  if (value == null) return 'Not scheduled';
+  final parsed = DateTime.tryParse('$value')?.toLocal();
+  if (parsed == null) return 'Unavailable';
+  final day = parsed.day.toString().padLeft(2, '0');
+  final month = parsed.month.toString().padLeft(2, '0');
+  final hour = parsed.hour.toString().padLeft(2, '0');
+  final minute = parsed.minute.toString().padLeft(2, '0');
+  return '$day/$month/${parsed.year} $hour:$minute';
+}
+
+String _mobileTime(dynamic value) {
+  final parsed = value == null ? null : DateTime.tryParse('$value')?.toLocal();
+  if (parsed == null) return '--:--';
+  final hour = parsed.hour.toString().padLeft(2, '0');
+  final minute = parsed.minute.toString().padLeft(2, '0');
+  return '$hour:$minute';
+}
+
+String _mobileInitials(String name) {
+  final parts = name
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((part) => part.isNotEmpty);
+  final initials = parts.take(2).map((part) => part[0].toUpperCase()).join();
+  return initials.isEmpty ? 'EM' : initials;
+}
+
+String _shortMobileLocation(String value) => value
+    .split(',')
+    .map((part) => part.trim())
+    .where((part) => part.isNotEmpty)
+    .take(2)
+    .join(', ');
+
+class _LiveSummaryValue extends StatelessWidget {
+  const _LiveSummaryValue({
+    required this.label,
+    required this.value,
+    required this.detail,
+  });
+  final String label;
+  final String value;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.only(left: 9),
+    decoration: const BoxDecoration(
+      border: Border(left: BorderSide(color: Colors.white24)),
+    ),
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white60, fontSize: 10),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        Text(
+          detail,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: Color(0xFF25D6F4), fontSize: 9),
+        ),
+      ],
+    ),
+  );
+}
+
+String _mobileRemaining(dynamic value) {
+  if (value == null) return 'Not scheduled';
+  final expected = DateTime.tryParse('$value');
+  if (expected == null) return 'Unavailable';
+  final seconds = expected.difference(DateTime.now()).inSeconds;
+  final absolute = seconds.abs();
+  final hours = absolute ~/ 3600;
+  final minutes = (absolute % 3600) ~/ 60;
+  final secs = absolute % 60;
+  final duration = '${hours > 0 ? '${hours}h ' : ''}${minutes}m ${secs}s';
+  return seconds < 0 ? 'Overdue by $duration' : duration;
+}
+
+class _LiveTrackingMap extends StatelessWidget {
+  const _LiveTrackingMap({
+    required this.latest,
+    required this.triggers,
+    required this.movements,
+    this.employeeName,
+    this.teamItems = const [],
+    this.height = 430,
+  });
+
+  final Map latest;
+  final List triggers;
+  final List movements;
+  final String? employeeName;
+  final List teamItems;
+  final double height;
+
+  LatLng? _coordinate(dynamic value) {
+    if (value is! Map) return null;
+    final latitude = value['latitude'];
+    final longitude = value['longitude'];
+    if (latitude is! num || longitude is! num) return null;
+    return LatLng(latitude.toDouble(), longitude.toDouble());
+  }
+
+  String _name(Map point) {
+    final name = '${point['locationName'] ?? ''}'.trim();
+    if (name.isNotEmpty) {
+      final parts = name
+          .split(',')
+          .map((part) => part.trim())
+          .where((part) => part.isNotEmpty)
+          .take(2);
+      return parts.join(', ');
+    }
+    return '${point['latitude']}, ${point['longitude']}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final latestCoordinate = _coordinate(latest);
+    if (latestCoordinate == null) {
+      return const SizedBox(
+        height: 300,
+        child: Center(child: Text('No valid live coordinates received.')),
+      );
+    }
+    final movementCoordinates = movements
+        .map(_coordinate)
+        .whereType<LatLng>()
+        .toList();
+    final triggerEntries = triggers
+        .whereType<Map>()
+        .map((point) => (point, _coordinate(point)))
+        .where((entry) => entry.$2 != null)
+        .toList();
+    final boundsPoints = <LatLng>[
+      ...movementCoordinates,
+      ...triggerEntries.map((entry) => entry.$2!),
+      latestCoordinate,
+    ];
+    final teamGroups = <String, List<(Map, LatLng)>>{};
+    for (final item in teamItems.whereType<Map>()) {
+      final coordinate = _coordinate(item['location']);
+      if (coordinate == null) continue;
+      final key =
+          '${coordinate.latitude.toStringAsFixed(4)},${coordinate.longitude.toStringAsFixed(4)}';
+      teamGroups.putIfAbsent(key, () => []).add((item, coordinate));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: SizedBox(
+            height: height.clamp(260, 900),
+            child: FlutterMap(
+              options: MapOptions(
+                initialCenter: latestCoordinate,
+                initialZoom: 16,
+                initialCameraFit: boundsPoints.length > 1
+                    ? CameraFit.bounds(
+                        bounds: LatLngBounds.fromPoints(boundsPoints),
+                        padding: const EdgeInsets.all(42),
+                        maxZoom: 16,
+                      )
+                    : null,
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.trakagile.trakagile_mobile',
+                ),
+                if (movementCoordinates.length > 1)
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(
+                        points: movementCoordinates,
+                        strokeWidth: 5,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ],
+                  ),
+                MarkerLayer(
+                  markers: [
+                    for (final group in teamGroups.values)
+                      Marker(
+                        point: group.first.$2,
+                        width: 48,
+                        height: 48,
+                        child: Container(
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF073552),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                            boxShadow: const [
+                              BoxShadow(blurRadius: 5, color: Colors.black38),
+                            ],
+                          ),
+                          child: Text(
+                            group.length > 1
+                                ? '${group.length}'
+                                : _mobileInitials(
+                                    '${(group.first.$1['employee'] as Map?)?['name'] ?? ''}',
+                                  ),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                    for (final entry in triggerEntries.indexed)
+                      Marker(
+                        point: entry.$2.$2!,
+                        width: 150,
+                        height: 54,
+                        child: Column(
+                          children: [
+                            Container(
+                              constraints: const BoxConstraints(maxWidth: 145),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(6),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    blurRadius: 3,
+                                    color: Colors.black26,
+                                  ),
+                                ],
+                              ),
+                              child: Text(
+                                '${entry.$2.$1['type'] == 'MARK_IN' ? 'MARK IN' : 'T${entry.$1 + 1}'} · ${_name(entry.$2.$1)}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            const Icon(
+                              Icons.location_on,
+                              color: Colors.deepPurple,
+                              size: 28,
+                            ),
+                          ],
+                        ),
+                      ),
+                    Marker(
+                      point: latestCoordinate,
+                      width: 150,
+                      height: 58,
+                      child: Column(
+                        children: [
+                          Container(
+                            constraints: const BoxConstraints(maxWidth: 145),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.shade100,
+                              borderRadius: BorderRadius.circular(6),
+                              boxShadow: const [
+                                BoxShadow(blurRadius: 3, color: Colors.black26),
+                              ],
+                            ),
+                            child: Text(
+                              '${employeeName ?? 'LIVE'} · ${_name(latest)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          const Icon(
+                            Icons.location_on,
+                            color: Colors.orange,
+                            size: 32,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const RichAttributionWidget(
+                  attributions: [
+                    TextSourceAttribution('OpenStreetMap contributors'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (height == 430) ...[
+          const SizedBox(height: 10),
+          Text(
+            'Live position and movement path · ${triggerEntries.length} triggered location${triggerEntries.length == 1 ? '' : 's'}',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ],
     );
   }
 }

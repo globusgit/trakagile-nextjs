@@ -1,7 +1,7 @@
 import { connectDB } from "@/lib/mongoose";
 import Attendance from "@/models/Attendance";
 import EmployeeVisit from "@/models/EmployeeVisit";
-import { dayKey, errorResponse, requireAttendanceUser } from "../_lib/attendance";
+import { dayKey, errorResponse, getAttendancePolicy, requireAttendanceUser } from "../_lib/attendance";
 import { workStatusFor } from "../_lib/work-status";
 import { reverseGeocode } from "../_lib/notifications";
 
@@ -9,11 +9,12 @@ export async function GET() {
   try {
     await connectDB();
     const { orgId, empId } = await requireAttendanceUser();
+    const policy = await getAttendancePolicy(orgId);
 
     const attendance = await Attendance.findOne({
       orgId,
       empId,
-      $or: [{ status: "IN" }, { attendanceDate: dayKey() }],
+      $or: [{ status: "IN" }, { attendanceDate: dayKey(new Date(), policy.timeZone) }],
     })
       .sort({ status: 1, "markIn.time": -1 })
       .lean();

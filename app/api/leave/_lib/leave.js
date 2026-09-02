@@ -2,6 +2,7 @@ import Holiday from "@/models/Holiday";
 import LeavesInfo from "@/models/LeavesInfo";
 import LeaveRequest from "@/models/LeaveRequest";
 import { AttendanceError } from "../../attendance/_lib/attendance";
+import { hasPermission, PERMISSIONS } from "@/lib/permissions.mjs";
 
 const usedFieldByType = {
   casual: "usedCasual",
@@ -87,4 +88,4 @@ export async function applyLeaveBalance(leave, direction) {
   await balance.save();
 }
 
-export const isLeaveReviewer = (role) => ["MANAGER", "ADMIN", "DIRECTOR"].includes(role);
+export const isLeaveReviewer = (role) => hasPermission(role, PERMISSIONS.LEAVE_REVIEW);

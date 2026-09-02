@@ -8,6 +8,8 @@ import EmployeeDocument from "@/models/EmployeeDocument";
 import Notification from "@/models/Notification";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../attendance/_lib/attendance";
 import { detectDocumentType, MAX_DOCUMENT_BYTES } from "@/lib/documentFile.mjs";
+import { hasPermission, PERMISSIONS } from "@/lib/permissions.mjs";
+import { tenantFilter } from "@/lib/tenantScope.mjs";
 
 const categories = new Set(["IDENTITY", "CERTIFICATE", "TRAVEL", "HOTEL", "CLIENT", "MEDICAL", "OTHER"]);
 const cleanName = (name) => path.basename(name).replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -22,7 +24,7 @@ function expiryStatus(expiresAt, now = new Date()) {
 }
 
 async function allowedEmployeeIds(identity) {
-  if (["ADMIN", "DIRECTOR"].includes(identity.role)) return null;
+  if (hasPermission(identity.role, PERMISSIONS.DOCUMENT_READ_ALL)) return null;
   if (identity.role !== "MANAGER") return [identity.empId];
   const manager = await Employee.findOne({ orgId: identity.orgId, empId: identity.empId }).select("_id").lean();
   const team = await Employee.find({ orgId: identity.orgId, reportingTo: manager?._id }).select("empId").lean();
@@ -33,7 +35,7 @@ export async function GET(request) {
   try {
     await connectDB(); const identity = await requireAttendanceUser(); const allowed = await allowedEmployeeIds(identity);
     const requested = new URL(request.url).searchParams.get("employeeId")?.trim();
-    const query = { orgId: identity.orgId };
+    const query = tenantFilter(identity);
     if (allowed) query.employeeId = requested && allowed.includes(requested) ? requested : { $in: allowed };
     else if (requested) query.employeeId = requested;
     const documents = await EmployeeDocument.find(query).sort({ createdAt: -1 }).limit(200).lean();
@@ -55,7 +57,7 @@ export async function POST(request) {
   try {
     await connectDB(); const identity = await requireAttendanceUser(); const form = await request.formData();
     const employeeId = String(form.get("employeeId") || identity.empId).trim();
-    if (employeeId !== identity.empId && !["ADMIN", "DIRECTOR"].includes(identity.role)) throw new AttendanceError("You can upload only your own documents.", 403);
+    if (employeeId !== identity.empId && !hasPermission(identity.role, PERMISSIONS.DOCUMENT_UPLOAD_FOR_OTHERS)) throw new AttendanceError("You can upload only your own documents.", 403);
     if (!await Employee.exists({ orgId: identity.orgId, empId: employeeId, status: "Active" })) throw new AttendanceError("Employee is unavailable.", 404);
     const title = String(form.get("title") || "").trim(); const category = String(form.get("category") || "OTHER"); const file = form.get("file");
     const expiresAtValue = String(form.get("expiresAt") || "").trim();

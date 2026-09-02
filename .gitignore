@@ -31,6 +31,10 @@ yarn-error.log*
 .pnpm-debug.log*
 server.log
 /server-error.log
+/*-server.log
+/*-server-error.log
+/production-*.log
+/mobile-server*.log
 
 # local mobile builds and test screenshots
 /TrakAgile-*.apk
@@ -38,6 +42,7 @@ server.log
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel

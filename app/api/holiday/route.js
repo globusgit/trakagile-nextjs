@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import connectDB from "@/lib/mongoose";
 import Holiday from "@/models/Holiday";
 import { errorResponse, requireAttendanceUser } from "../attendance/_lib/attendance";
+import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 
 // Roles allowed to create/manage holidays.
-const HOLIDAY_MANAGE_ROLES = ["ADMIN", "DIRECTOR", "MANAGER"];
+const HOLIDAY_MANAGE_ROLES = rolesForPermission(PERMISSIONS.HOLIDAY_MANAGE);
 
 export async function GET(request) {
   try {

@@ -1,6 +1,7 @@
 import { connectDB } from "@/lib/mongoose";
 import Attendance from "@/models/Attendance";
 import { errorResponse, requireAttendanceUser } from "./_lib/attendance";
+import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 import { visibleEmployeeIds } from "@/lib/access";
 
 function escapeRegex(value) {
@@ -10,7 +11,7 @@ function escapeRegex(value) {
 export async function GET(request) {
   try {
     await connectDB();
-    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR", "MANAGER"]);
+    const identity = await requireAttendanceUser(rolesForPermission(PERMISSIONS.ATTENDANCE_TEAM_READ));
     const { searchParams } = new URL(request.url);
     const page = Math.max(1, Number(searchParams.get("page")) || 1);
     const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit")) || 10));

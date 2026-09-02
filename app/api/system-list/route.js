@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongoose";
 import SystemList from "@/models/SystemList";
 import { errorResponse, requireAttendanceUser } from "../attendance/_lib/attendance";
+import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 
 export async function GET(req) {
   try {
@@ -24,7 +25,7 @@ export async function GET(req) {
 export async function POST(req) {
   try {
     await connectDB();
-    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR"]);
+    const identity = await requireAttendanceUser(rolesForPermission(PERMISSIONS.SYSTEM_LIST_MANAGE));
     const body = await req.json();
     const orgId = identity.orgId;
     const listName = String(body.listName || "").trim();

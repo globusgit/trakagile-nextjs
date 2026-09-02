@@ -24,8 +24,25 @@ export async function POST(request) {
       maxClockDifferenceMs: body.offlineQueued ? 24 * 60 * 60 * 1000 : 5 * 60 * 1000,
     });
     const movement = movementFrom(body);
+    const clientPointId =
+      typeof body.clientPointId === "string" && body.clientPointId.trim()
+        ? body.clientPointId.trim().slice(0, 120)
+        : undefined;
     const attendance = await getActiveAttendance(identity.orgId, identity.empId);
     if (!attendance) throw new AttendanceError("No active attendance found.", 404);
+    if (clientPointId) {
+      const duplicate = await TrackingLocation.exists({
+        attendanceId: attendance._id,
+        clientPointId,
+      });
+      if (duplicate) {
+        return Response.json({
+          message: "Location point was already received.",
+          accepted: true,
+          duplicate: true,
+        });
+      }
+    }
     const distanceMeters = reliableDistance(attendance.lastKnownLocation, location);
     if (location.accuracy != null && location.accuracy > 100) {
       return Response.json({ accepted: false, reason: "LOW_ACCURACY", message: "GPS point ignored because accuracy exceeded 100 metres." });
@@ -36,7 +53,7 @@ export async function POST(request) {
       if (elapsedSeconds <= 0 || distanceMeters / elapsedSeconds > 55) {
         return Response.json({ accepted: false, reason: "UNREALISTIC_JUMP", message: "GPS point ignored because the movement was not physically plausible." });
       }
-      if (distanceMeters < 10 && elapsedSeconds < 180) {
+      if (distanceMeters < 5 && elapsedSeconds < 30) {
         return Response.json({ accepted: false, reason: "DUPLICATE", message: "Duplicate location point ignored." });
       }
     }
@@ -50,7 +67,8 @@ export async function POST(request) {
     const movedSinceNamedLocation = previousLocation
       ? distanceBetween(previousLocation, location)
       : Infinity;
-    const shouldRefreshLocationName = !previousLocation?.locationName || movedSinceNamedLocation >= 500;
+    // Balance useful field-location triggers against reverse-geocoding every heartbeat.
+    const shouldRefreshLocationName = !previousLocation?.locationName || movedSinceNamedLocation >= 250;
     const refreshedLocationName = shouldRefreshLocationName
       ? await reverseGeocode(location.latitude, location.longitude)
       : null;
@@ -63,16 +81,42 @@ export async function POST(request) {
       status: "IN_PROGRESS",
     });
 
-    await TrackingLocation.create({
-      attendanceId: attendance._id,
-      employeeId: identity.empId,
-      visitId: visit?._id || null,
-      orgId: identity.orgId,
-      ...location,
-      ...movement,
-      locationName: locationName || undefined,
-      locationNameRefreshed: Boolean(refreshedLocationName),
-    });
+    try {
+      await TrackingLocation.create({
+        attendanceId: attendance._id,
+        employeeId: identity.empId,
+        visitId: visit?._id || null,
+        orgId: identity.orgId,
+        clientPointId,
+        ...location,
+        ...movement,
+        locationName: locationName || undefined,
+        locationNameRefreshed: Boolean(refreshedLocationName),
+      });
+    } catch (error) {
+      if (error?.code === 11000 && clientPointId) {
+        return Response.json({
+          message: "Location point was already received.",
+          accepted: true,
+          duplicate: true,
+        });
+      }
+      throw error;
+    }
+
+    const lastCapturedAt = attendance.lastKnownLocation?.capturedAt
+      ? new Date(attendance.lastKnownLocation.capturedAt)
+      : null;
+    if (lastCapturedAt && lastCapturedAt >= location.capturedAt) {
+      return Response.json({
+        message: "Historical location point stored without replacing the live position.",
+        accepted: true,
+        historical: true,
+        location,
+        receivedAt: now,
+        locationName,
+      });
+    }
     const updatedAttendance = await Attendance.findOneAndUpdate(
       { _id: attendance._id, status: "IN" },
       {
