@@ -137,14 +137,15 @@ export default function HolidayList() {
         <Table>
           <TableHeader className="sticky top-0 bg-cyan-200 z-10 shadow-sm">
             <TableRow>
+              {canManageHolidays && (
+                <TableHead className="font-bold">Edit</TableHead>
+              )}
               <TableHead className="font-bold">Name</TableHead>
               <TableHead className="font-bold">Date</TableHead>
               <TableHead className="font-bold">Recurring</TableHead>
               <TableHead className="font-bold">Year</TableHead>
               {/*<TableHead className="font-bold">Note</TableHead> */}
-              {canManageHolidays && (
-                <TableHead className="font-bold">Actions</TableHead>
-              )}
+              
             </TableRow>
           </TableHeader>
 
@@ -177,6 +178,18 @@ export default function HolidayList() {
               !error &&
               holidays.map((h) => (
                 <TableRow key={h._id} className="hover:bg-gray-50">
+                  {canManageHolidays && (
+                    <TableCell>
+                      <Link
+                        href={`/holidays/${h._id}`}
+                        className="inline-flex items-center gap-1 text-orange-500 hover:text-orange-700"
+                        aria-label={`Edit ${h.name}`}
+                      >
+                        <Pencil size={16} />
+                        
+                      </Link>
+                    </TableCell>
+                  )}
                   <TableCell className="font-medium">{h.name}</TableCell>
                   <TableCell>{formatDate(h.date)}</TableCell>
                   <TableCell>{h.isRecurring ? "Yes" : "No"}</TableCell>
@@ -184,18 +197,7 @@ export default function HolidayList() {
                   {/*<TableCell className="max-w-[280px] truncate">
                     {h.note || "-"}
                   </TableCell> */}
-                  {canManageHolidays && (
-                    <TableCell>
-                      <Link
-                        href={`/holidays/${h._id}`}
-                        className="inline-flex items-center gap-1 text-cyan-700 hover:text-cyan-900"
-                        aria-label={`Edit ${h.name}`}
-                      >
-                        <Pencil size={16} />
-                        <span className="text-sm">Edit</span>
-                      </Link>
-                    </TableCell>
-                  )}
+                  
                 </TableRow>
               ))}
           </TableBody>
