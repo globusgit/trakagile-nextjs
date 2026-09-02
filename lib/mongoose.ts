@@ -1,10 +1,7 @@
 import mongoose from "mongoose";
+import { serverEnvironment } from "@/lib/env.mjs";
 
-const MONGODB_URI = process.env.MONGODB_URI ?? "";
-
-if (!MONGODB_URI) {
-  throw new Error("MONGODB_URI is not defined in .env");
-}
+const MONGODB_URI = serverEnvironment().mongoUri;
 
 type MongooseCache = {
   conn: typeof mongoose | null;

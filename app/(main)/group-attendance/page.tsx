@@ -42,7 +42,10 @@ export default function GroupAttendancePage() {
     if (teamResponse?.ok) setEmployees((await teamResponse.json()).employees || []);
     if (sitesResponse?.ok) setSites((await sitesResponse.json()).data || []);
   }, [isManager]);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const request = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(request);
+  }, [load]);
 
   async function submit() {
     setBusy(true);

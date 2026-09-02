@@ -5,5 +5,6 @@ import MainLayoutClient from "./MainLayoutClient";
 export default async function Layout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session?.user?.id || !session.user.empId || !session.user.orgId) redirect("/");
+  if (session.user.isFirstLogin) redirect("/change-password");
   return <MainLayoutClient>{children}</MainLayoutClient>;
 }

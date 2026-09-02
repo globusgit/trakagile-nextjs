@@ -5,6 +5,8 @@ import Attendance from "@/models/Attendance";
 import AttendancePolicy from "@/models/AttendancePolicy";
 import Employee from "@/models/Employee";
 import User from "@/models/User";
+import Organization from "@/models/Organization";
+import { zonedDayKey } from "@/lib/dateTime.mjs";
 
 export const DEFAULT_ATTENDANCE_POLICY = {
   timeZone: "Asia/Kolkata",
@@ -30,7 +32,7 @@ export class AttendanceError extends Error {
   }
 }
 
-export async function requireAttendanceUser(allowedRoles) {
+export async function requireAttendanceUser(allowedRoles, options = {}) {
   const session = await auth();
   let user = session?.user;
 
@@ -52,9 +54,15 @@ export async function requireAttendanceUser(allowedRoles) {
     username: user.empId,
     orgId: user.orgId,
     status: "Active",
-  }).select("role").lean();
+  }).select("role isFirstLogin +tokenVersion").lean();
   if (!activeUser) {
     throw new AttendanceError("Your account is inactive or unavailable.", 401);
+  }
+  if (Number(user.tokenVersion || 0) !== Number(activeUser.tokenVersion || 0)) {
+    throw new AttendanceError("Your session has expired. Sign in again.", 401);
+  }
+  if (activeUser.isFirstLogin && !options.allowFirstLogin) {
+    throw new AttendanceError("Change your temporary password before continuing.", 403);
   }
 
   const employee = await Employee.findOne({
@@ -75,12 +83,27 @@ export async function requireAttendanceUser(allowedRoles) {
     throw new AttendanceError("You are not allowed to perform this action.", 403);
   }
 
-  return { userId: user.id, empId: user.empId, orgId: user.orgId, role };
+  return {
+    userId: user.id,
+    empId: user.empId,
+    orgId: user.orgId,
+    role,
+    isFirstLogin: Boolean(activeUser.isFirstLogin),
+    tokenVersion: Number(activeUser.tokenVersion || 0),
+  };
 }
 
 export async function getAttendancePolicy(orgId) {
-  const policy = await AttendancePolicy.findOne({ orgId }).lean();
-  return { ...DEFAULT_ATTENDANCE_POLICY, ...(policy || {}), orgId };
+  const [policy, organization] = await Promise.all([
+    AttendancePolicy.findOne({ orgId }).lean(),
+    Organization.findById(orgId).select("timeZone").lean(),
+  ]);
+  return {
+    ...DEFAULT_ATTENDANCE_POLICY,
+    ...(policy || {}),
+    timeZone: policy?.timeZone || organization?.timeZone || DEFAULT_ATTENDANCE_POLICY.timeZone,
+    orgId,
+  };
 }
 
 export function minutesInTimeZone(date, timeZone) {
@@ -198,13 +221,8 @@ export function reliableDistance(from, to) {
   return distance >= accuracyThreshold ? Math.round(distance) : 0;
 }
 
-export function dayKey(date = new Date()) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Kolkata",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date);
+export function dayKey(date = new Date(), timeZone = DEFAULT_ATTENDANCE_POLICY.timeZone) {
+  return zonedDayKey(date, timeZone);
 }
 
 export async function getEmployee(orgId, empId, session) {

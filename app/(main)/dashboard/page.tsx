@@ -48,15 +48,14 @@ export default async function Dashboard() {
   if (!user?.empId || !user.orgId) redirect("/");
 
   const isTeamRole = ["MANAGER", "ADMIN", "DIRECTOR"].includes(user.role || "");
-  const isAdminRole = ["ADMIN", "DIRECTOR"].includes(user.role || "");
-  if (isAdminRole) return <AdminDashboard name={user.name || user.empId} role={user.role || "ADMIN"} />;
+  if (isTeamRole) return <AdminDashboard name={user.name || user.empId} role={user.role || "MANAGER"} />;
   const modules = [
     ...employeeModules.slice(0, 2),
     ...(isTeamRole ? teamModules.slice(0, 1) : []),
     ...employeeModules.slice(2, 5),
     ...(isTeamRole ? teamModules.slice(1) : []),
     ...employeeModules.slice(5),
-    ...(isAdminRole ? adminModules : []),
+    ...(["ADMIN", "DIRECTOR"].includes(user.role || "") ? adminModules : []),
   ];
 
   return (

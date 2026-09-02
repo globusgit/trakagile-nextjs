@@ -1,12 +1,13 @@
 import { connectDB } from "@/lib/mongoose";
 import WorkFromHomeRequest from "@/models/WorkFromHomeRequest";
-import { dayKey, errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
+import { dayKey, errorResponse, getAttendancePolicy, requireAttendanceUser } from "../../attendance/_lib/attendance";
 
 export async function GET() {
   try {
     await connectDB();
     const { orgId, empId } = await requireAttendanceUser();
-    const today = dayKey();
+    const policy = await getAttendancePolicy(orgId);
+    const today = dayKey(new Date(), policy.timeZone);
     const request = await WorkFromHomeRequest.findOne({
       orgId,
       employeeId: empId,

@@ -9,6 +9,7 @@ import {
   errorResponse,
   distanceBetween,
   getActiveAttendance,
+  getAttendancePolicy,
   locationFrom,
   reliableDistance,
   requireAttendanceUser,
@@ -25,6 +26,7 @@ export async function POST(request) {
     const identity = await requireAttendanceUser();
     const body = await request.json();
     const now = new Date();
+    const policy = await getAttendancePolicy(identity.orgId);
     const location = locationFrom(body, now);
     location.locationName = await reverseGeocode(location.latitude, location.longitude);
     let closedAttendance;
@@ -53,7 +55,7 @@ export async function POST(request) {
         if (distance > wfhRequest.radiusMeters) throw new AttendanceError(`You are ${Math.round(distance)} m from the approved WFH location.`, 409);
         if (attendance.wfh?.breakStartedAt) wfhBreakMinutes += Math.max(0, Math.round((now.getTime() - attendance.wfh.breakStartedAt.getTime()) / 60000));
         attendance.set({ "wfh.breakStartedAt": undefined, "wfh.totalBreakMinutes": wfhBreakMinutes, "wfh.dailySummary": dailySummary, "wfh.pendingTasks": String(body.pendingTasks || "").trim(), "wfh.blockers": String(body.blockers || "").trim() });
-        if (dayKey(now) >= wfhRequest.toDate) wfhRequest.status = "COMPLETED";
+        if (dayKey(now, policy.timeZone) >= wfhRequest.toDate) wfhRequest.status = "COMPLETED";
         await wfhRequest.save({ session: dbSession });
       }
 

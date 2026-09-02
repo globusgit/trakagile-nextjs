@@ -1,11 +1,12 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
 
 import connectDB from "@/lib/mongoose";
 import User from "@/models/User";
 import Employee from "@/models/Employee";
 import { organizationIdForCode } from "@/lib/organization";
+import { serverEnvironment } from "@/lib/env.mjs";
+import { CREDENTIAL_RESULT, credentialFields, verifyAccountPassword } from "@/lib/credentialAuth";
 
 /* =========================================================
    NEXTAUTH CONFIGURATION
@@ -86,7 +87,7 @@ export const {
           const candidates = await User.find({
             username: empId.trim(),
             ...(orgId ? { orgId } : {}),
-          }).limit(2).lean();
+          }).select(credentialFields).limit(2).lean();
           if (candidates.length !== 1) return null;
           const user = candidates[0];
 
@@ -125,19 +126,8 @@ export const {
             return null;
           }
 
-          const isValid =
-            await bcrypt.compare(
-              password,
-              user.password
-            );
-
-          if (!isValid) {
-            console.warn(
-              `[AUTH] Invalid password: ${empId}`
-            );
-
-            return null;
-          }
+          const credentialResult = await verifyAccountPassword(user, password);
+          if (credentialResult !== CREDENTIAL_RESULT.VALID) return null;
 
           /* -----------------------------------------------
              LOGIN SUCCESS
@@ -205,6 +195,7 @@ export const {
               Boolean(
                 user.isFirstLogin
               ),
+            tokenVersion: Number(user.tokenVersion || 0),
           };
         } catch (error) {
           console.error(
@@ -269,20 +260,26 @@ export const {
 
         token.isFirstLogin =
           user.isFirstLogin;
+        token.tokenVersion = user.tokenVersion;
       } else if (token.id && token.empId && token.orgId) {
         // Refresh authorization from the database so promotions to Manager,
         // Director or Admin appear without requiring a new browser login.
         await connectDB();
         const [activeUser, employee] = await Promise.all([
-          User.findOne({ _id: token.id, username: token.empId, orgId: token.orgId, status: "Active" }).select("role").lean(),
+          User.findOne({ _id: token.id, username: token.empId, orgId: token.orgId, status: "Active" }).select("role +tokenVersion isFirstLogin").lean(),
           Employee.findOne({ empId: token.empId, orgId: token.orgId, status: "Active" }).select("designation isManager").lean(),
         ]);
         if (activeUser && employee) {
+          if (Number(activeUser.tokenVersion || 0) !== Number(token.tokenVersion || 0)) {
+            token.revoked = true;
+            return token;
+          }
           token.role = employee.designation?.trim().toUpperCase() === "DIRECTOR"
             ? "DIRECTOR"
             : employee.isManager && activeUser.role === "USER"
               ? "MANAGER"
               : activeUser.role;
+          token.isFirstLogin = Boolean(activeUser.isFirstLogin);
         }
       }
 
@@ -302,6 +299,12 @@ export const {
       if (
         session.user
       ) {
+        if (token.revoked) {
+          session.user.id = "";
+          session.user.empId = "";
+          session.user.orgId = "";
+          return session;
+        }
         session.user.id =
           token.id as string;
 
@@ -321,6 +324,7 @@ export const {
           Boolean(
             token.isFirstLogin
           );
+        session.user.tokenVersion = Number(token.tokenVersion || 0);
       }
 
       return session;
@@ -339,9 +343,5 @@ export const {
      SECRET
   ======================================================= */
 
-  secret:
-    process.env
-      .AUTH_SECRET ??
-    process.env
-      .NEXTAUTH_SECRET,
+  secret: serverEnvironment().authSecret,
 });

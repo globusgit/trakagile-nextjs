@@ -2,6 +2,7 @@ import { connectDB } from "@/lib/mongoose";
 import Task, { TASK_SOURCES } from "@/models/Task";
 import User from "@/models/User";
 import { visibleEmployeeIds } from "@/lib/access";
+import { tenantFilter } from "@/lib/tenantScope.mjs";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../attendance/_lib/attendance";
 import {
   TASK_MANAGE_ROLES,
@@ -26,7 +27,7 @@ export async function GET(request) {
     const status = searchParams.get("status")?.trim() || "";
     const search = searchParams.get("search")?.trim() || "";
 
-    const query = { orgId: identity.orgId };
+    const query = tenantFilter(identity);
 
     if (!TASK_ORG_WIDE_ROLES.includes(identity.role)) {
       // Managers see their team's tasks; everyone else sees only tasks

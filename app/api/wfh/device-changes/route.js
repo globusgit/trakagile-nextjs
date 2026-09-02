@@ -5,6 +5,7 @@ import WfhDeviceChange from "@/models/WfhDeviceChange";
 import { AttendanceError, errorResponse, locationFrom, requireAttendanceUser } from "../../attendance/_lib/attendance";
 import { notifyAttendance, reverseGeocode } from "../../attendance/_lib/notifications";
 import { deviceFrom } from "../_lib/device";
+import { hasPermission, PERMISSIONS } from "@/lib/permissions.mjs";
 
 export async function GET(request) {
   try {
@@ -12,8 +13,8 @@ export async function GET(request) {
     const team = new URL(request.url).searchParams.get("team") === "1";
     let filter = { orgId: identity.orgId, employeeId: identity.empId };
     if (team) {
-      if (!["MANAGER", "DIRECTOR", "ADMIN"].includes(identity.role)) throw new AttendanceError("Manager access is required.", 403);
-      if (["ADMIN", "DIRECTOR"].includes(identity.role)) filter = { orgId: identity.orgId };
+      if (!hasPermission(identity.role, PERMISSIONS.WFH_REVIEW)) throw new AttendanceError("Manager access is required.", 403);
+      if (hasPermission(identity.role, PERMISSIONS.WFH_READ_ALL)) filter = { orgId: identity.orgId };
       else { const manager = await Employee.findOne({ orgId: identity.orgId, empId: identity.empId }).select("_id").lean(); const reports = await Employee.find({ orgId: identity.orgId, reportingTo: manager?._id }).select("empId").lean(); filter = { orgId: identity.orgId, employeeId: { $in: reports.map((item) => item.empId) } }; }
     }
     const changes = await WfhDeviceChange.find(filter).sort({ createdAt: -1 }).limit(100).lean();

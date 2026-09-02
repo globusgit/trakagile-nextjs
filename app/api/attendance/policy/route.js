@@ -6,6 +6,7 @@ import {
   requireAttendanceUser,
 } from "../_lib/attendance";
 import AttendancePolicy from "@/models/AttendancePolicy";
+import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 
 export async function GET() {
   try {
@@ -20,7 +21,7 @@ export async function GET() {
 export async function PUT(request) {
   try {
     await connectDB();
-    const { orgId } = await requireAttendanceUser(["ADMIN", "DIRECTOR"]);
+    const { orgId } = await requireAttendanceUser(rolesForPermission(PERMISSIONS.ATTENDANCE_POLICY_MANAGE));
     const body = await request.json();
     const geofence = body.officeGeofence || {};
     const enabled = geofence.enabled === true;

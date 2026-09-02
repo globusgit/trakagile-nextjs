@@ -23,7 +23,7 @@ export async function POST() {
 
     const policy = await getAttendancePolicy(identity.orgId);
     const now = new Date();
-    const isOldAttendance = attendance.attendanceDate !== dayKey(now);
+    const isOldAttendance = attendance.attendanceDate !== dayKey(now, policy.timeZone);
     const overtimeDeadline = attendance.overtime?.active && attendance.overtime.expectedEndAt
       ? new Date(attendance.overtime.expectedEndAt.getTime() + policy.overtimeGraceMinutes * 60000)
       : null;

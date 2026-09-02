@@ -3,12 +3,13 @@ import { connectDB } from "@/lib/mongoose";
 import Employee from "@/models/Employee";
 import WorkFromHomeRequest from "@/models/WorkFromHomeRequest";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../../../../attendance/_lib/attendance";
+import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 import { notifyAttendance } from "../../../../attendance/_lib/notifications";
 
 export async function PATCH(request, { params }) {
   try {
     await connectDB();
-    const identity = await requireAttendanceUser(["MANAGER", "DIRECTOR", "ADMIN"]);
+    const identity = await requireAttendanceUser(rolesForPermission(PERMISSIONS.WFH_REVIEW));
     const { id } = await params; const body = await request.json();
     if (!mongoose.isValidObjectId(id) || !["APPROVED", "REJECTED"].includes(body.status)) throw new AttendanceError("Invalid review request.");
     const wfh = await WorkFromHomeRequest.findOne({ _id: id, orgId: identity.orgId, status: "PENDING" });

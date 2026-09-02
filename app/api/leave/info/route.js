@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import { connectDB } from "@/lib/mongoose";
 import LeavesInfo from "@/models/LeavesInfo";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
+import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 import { isOrganizationRole, userIdsForEmployeeIds, visibleEmployeeIds } from "@/lib/access";
 import User from "@/models/User";
 
@@ -39,7 +40,7 @@ export async function GET(request) {
 export async function PATCH(request) {
   try {
     await connectDB();
-    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR"]);
+    const identity = await requireAttendanceUser(rolesForPermission(PERMISSIONS.LEAVE_BALANCE_MANAGE));
     const body = await request.json();
     const userId = String(body.userId || "");
     const year = Number(body.year || new Date().getFullYear());

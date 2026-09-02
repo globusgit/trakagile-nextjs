@@ -3,11 +3,12 @@ import { connectDB } from "@/lib/mongoose";
 import { readFromGridFS } from "@/lib/gridfs";
 import GroupAttendance from "@/models/GroupAttendance";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../../../_lib/attendance";
+import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 
 export async function GET(_request, { params }) {
   try {
     await connectDB();
-    const identity = await requireAttendanceUser(["MANAGER", "HR", "ADMIN", "DIRECTOR"]);
+    const identity = await requireAttendanceUser(rolesForPermission(PERMISSIONS.ATTENDANCE_GROUP_READ));
     const { id } = await params;
     if (!mongoose.isValidObjectId(id)) throw new AttendanceError("Invalid group attendance.");
     const record = await GroupAttendance.findOne({ _id: id, orgId: identity.orgId, ...(identity.role === "MANAGER" ? { managerEmpId: identity.empId } : {}) }).lean();

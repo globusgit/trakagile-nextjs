@@ -73,7 +73,7 @@ export async function POST(request) {
     const wfhDevice = attendanceType === "WORK_FROM_HOME" ? deviceFrom(body, request) : null;
 
     if (attendanceType === "WORK_FROM_HOME") {
-      const today = dayKey(now);
+      const today = dayKey(now, policy.timeZone);
       approvedWfh = await WorkFromHomeRequest.findOne({
         orgId: identity.orgId, employeeId: identity.empId, status: "APPROVED",
         fromDate: { $lte: today }, toDate: { $gte: today },
@@ -109,7 +109,7 @@ export async function POST(request) {
           empObjId: employee._id,
           empId: identity.empId,
           orgId: identity.orgId,
-          attendanceDate: dayKey(now),
+          attendanceDate: dayKey(now, policy.timeZone),
           markIn: { time: now, location },
           lastKnownLocation: location,
           lastKnownLocationName: location.locationName,
@@ -132,6 +132,7 @@ export async function POST(request) {
           employeeId: identity.empId,
           orgId: identity.orgId,
           ...location,
+          locationNameRefreshed: Boolean(location.locationName),
         }],
         { session: dbSession },
       );

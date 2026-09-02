@@ -3,19 +3,21 @@ import { NextResponse } from "next/server";
 import connectDB from "@/lib/mongoose";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../attendance/_lib/attendance";
 import User from "@/models/User";
+import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
+import { tenantFilter } from "@/lib/tenantScope.mjs";
 
 export async function GET(request) {
   try {
     await connectDB();
-    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR"]);
+    const identity = await requireAttendanceUser(rolesForPermission(PERMISSIONS.USER_MANAGE));
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get("page")) || 1;
     const limit = parseInt(searchParams.get("limit")) || 10;
     const skip = (page - 1) * limit;
 
     const [users, total] = await Promise.all([
-      User.find({ orgId: identity.orgId }).select("-password").skip(skip).limit(limit),
-      User.countDocuments({ orgId: identity.orgId }),
+      User.find(tenantFilter(identity)).select("-password").skip(skip).limit(limit),
+      User.countDocuments(tenantFilter(identity)),
     ]);
 
     return NextResponse.json(
@@ -37,7 +39,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    await requireAttendanceUser(["ADMIN", "DIRECTOR"]);
+    await requireAttendanceUser(rolesForPermission(PERMISSIONS.USER_MANAGE));
     await request.json();
     return NextResponse.json(
       { message: "User created successfully" },

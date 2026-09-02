@@ -3,6 +3,7 @@ import ActivityLog from "@/models/ActivityLog";
 import Employee from "@/models/Employee";
 import User from "@/models/User";
 import { errorResponse, requireAttendanceUser } from "../attendance/_lib/attendance";
+import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 
 function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -11,7 +12,7 @@ function escapeRegex(value) {
 export async function GET(request) {
   try {
     await connectDB();
-    const identity = await requireAttendanceUser(["ADMIN", "DIRECTOR"]);
+    const identity = await requireAttendanceUser(rolesForPermission(PERMISSIONS.AUDIT_READ));
     const { searchParams } = new URL(request.url);
     const page = Math.max(1, Number(searchParams.get("page")) || 1);
     const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit")) || 25));

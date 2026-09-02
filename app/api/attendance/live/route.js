@@ -3,6 +3,7 @@ import Attendance from "@/models/Attendance";
 import Employee from "@/models/Employee";
 import TrackingLocation from "@/models/TrackingLocation";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../_lib/attendance";
+import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 import { notifyAttendance } from "../_lib/notifications";
 import { workStatusFor } from "../_lib/work-status";
 import { visibleEmployeeIds } from "@/lib/access";
@@ -10,7 +11,7 @@ import { visibleEmployeeIds } from "@/lib/access";
 export async function GET() {
   try {
     await connectDB();
-    const identity = await requireAttendanceUser(["MANAGER", "DIRECTOR", "ADMIN"]);
+    const identity = await requireAttendanceUser(rolesForPermission(PERMISSIONS.ATTENDANCE_LIVE_READ));
     const visibleIds = await visibleEmployeeIds(identity);
     const employees = await Employee.find({
       orgId: identity.orgId,
@@ -24,25 +25,34 @@ export async function GET() {
     const attendanceIds = attendances.map((attendance) => attendance._id);
     const locations = attendanceIds.length
       ? await TrackingLocation.aggregate([
-          { $match: { attendanceId: { $in: attendanceIds } } },
+          { $match: { orgId: identity.orgId, attendanceId: { $in: attendanceIds } } },
           { $sort: { receivedAt: -1 } },
           { $group: { _id: "$attendanceId", location: { $first: "$$ROOT" } } },
         ])
       : [];
     const histories = attendanceIds.length
       ? await TrackingLocation.aggregate([
-          { $match: { attendanceId: { $in: attendanceIds } } },
-          { $sort: { receivedAt: -1 } },
-          { $group: { _id: "$attendanceId", points: { $push: { latitude: "$latitude", longitude: "$longitude", accuracy: "$accuracy", speed: "$speed", capturedAt: "$capturedAt", receivedAt: "$receivedAt", locationName: "$locationName" } } } },
+          { $match: { orgId: identity.orgId, attendanceId: { $in: attendanceIds } } },
+          { $sort: { capturedAt: -1 } },
+          { $group: { _id: "$attendanceId", points: { $push: { latitude: "$latitude", longitude: "$longitude", accuracy: "$accuracy", speed: "$speed", capturedAt: "$capturedAt", receivedAt: "$receivedAt", locationName: "$locationName", locationNameRefreshed: "$locationNameRefreshed" } } } },
           { $project: { points: { $slice: ["$points", 50] } } },
+        ])
+      : [];
+    const movements = attendanceIds.length
+      ? await TrackingLocation.aggregate([
+          { $match: { orgId: identity.orgId, attendanceId: { $in: attendanceIds } } },
+          { $sort: { receivedAt: -1 } },
+          { $group: { _id: "$attendanceId", points: { $push: { latitude: "$latitude", longitude: "$longitude", accuracy: "$accuracy", speed: "$speed", capturedAt: "$capturedAt", receivedAt: "$receivedAt", locationName: "$locationName", locationNameRefreshed: "$locationNameRefreshed" } } } },
+          { $project: { points: { $slice: ["$points", 100] } } },
         ])
       : [];
     const locationByAttendance = new Map(locations.map((item) => [String(item._id), item.location]));
     const employeeById = new Map(employees.map((employee) => [employee.empId, employee]));
     const historyByAttendance = new Map(histories.map((item) => [String(item._id), item.points]));
+    const movementByAttendance = new Map(movements.map((item) => [String(item._id), item.points.reverse()]));
     const now = Date.now();
     await Promise.all(attendances.map((attendance) => {
-      const location = locationByAttendance.get(String(attendance._id));
+      const location = locationByAttendance.get(String(attendance._id)) || attendance.lastKnownLocation || attendance.markIn?.location;
       if (location && now - new Date(location.receivedAt).getTime() <= 5 * 60_000) return null;
       return notifyAttendance({
         orgId: identity.orgId,
@@ -55,13 +65,37 @@ export async function GET() {
       });
     }));
     return Response.json({
-      employees: attendances.map((attendance) => ({
+      employees: attendances.map((attendance) => {
+        const expectedEndAt = attendance.overtime?.active
+          ? attendance.overtime.expectedEndAt
+          : attendance.expectedWorkEndAt;
+        return ({
         employee: employeeById.get(attendance.empId),
         attendance,
-        location: locationByAttendance.get(String(attendance._id)) || null,
-        workStatus: workStatusFor(attendance, locationByAttendance.get(String(attendance._id)) || null),
-        triggerPoints: historyByAttendance.get(String(attendance._id)) || [],
-      })),
+        schedule: {
+          dispatchedAt: attendance.markIn?.time || null,
+          expectedEndAt: expectedEndAt || null,
+          serverNow: new Date(now),
+          remainingSeconds: expectedEndAt
+            ? Math.round((new Date(expectedEndAt).getTime() - now) / 1000)
+            : null,
+        },
+        location: locationByAttendance.get(String(attendance._id)) || attendance.lastKnownLocation || attendance.markIn?.location || null,
+        workStatus: workStatusFor(attendance, locationByAttendance.get(String(attendance._id)) || attendance.lastKnownLocation || attendance.markIn?.location || null),
+        triggerPoints: (() => {
+          const namedTriggers = historyByAttendance.get(String(attendance._id)) || [];
+          const start = attendance.markIn?.location;
+          const startAlreadyIncluded = start && namedTriggers.some((point) =>
+            Math.abs(point.latitude - start.latitude) < 0.000001 &&
+            Math.abs(point.longitude - start.longitude) < 0.000001,
+          );
+          return [
+            ...(!start || startAlreadyIncluded ? [] : [{ ...start, type: "MARK_IN" }]),
+            ...namedTriggers.map((point) => ({ ...point, type: "LOCATION_TRIGGER" })),
+          ];
+        })(),
+        movementPoints: movementByAttendance.get(String(attendance._id)) || [],
+      });}),
     });
   } catch (error) {
     if (error instanceof AttendanceError) return errorResponse(error);

@@ -2,6 +2,7 @@ import { connectDB } from "@/lib/mongoose";
 import Attendance from "@/models/Attendance";
 import Employee from "@/models/Employee";
 import { errorResponse, getAttendancePolicy, minutesInTimeZone, requireAttendanceUser } from "../../attendance/_lib/attendance";
+import { hasPermission, PERMISSIONS } from "@/lib/permissions.mjs";
 
 const validMonth = (value) => /^\d{4}-(0[1-9]|1[0-2])$/.test(value || "");
 const csvCell = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
@@ -15,7 +16,7 @@ export async function GET(request) {
     const fallbackMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     const month = validMonth(searchParams.get("month")) ? searchParams.get("month") : fallbackMonth;
     const requestedEmpId = searchParams.get("employeeId")?.trim();
-    const isDirector = ["ADMIN", "DIRECTOR"].includes(identity.role);
+    const isDirector = hasPermission(identity.role, PERMISSIONS.ATTENDANCE_REPORT_READ_ALL);
     const isManager = identity.role === "MANAGER";
     let employees;
     if (isDirector) {

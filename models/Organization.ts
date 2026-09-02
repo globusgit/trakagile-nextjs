@@ -14,6 +14,11 @@ const OrganizationSchema = new mongoose.Schema(
     gstNumber: { type: String },
     panNumber: { type: String },
     registrationNumber: { type: String },
+    timeZone: { type: String, default: "Asia/Kolkata" },
+    locale: { type: String, default: "en-IN" },
+    currency: { type: String, default: "INR", uppercase: true },
+    countryCode: { type: String, default: "IN", uppercase: true },
+    weekStartsOn: { type: Number, min: 0, max: 6, default: 1 },
 
     // Add any other fields relevant to your organization
   },
