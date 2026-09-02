@@ -17,6 +17,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pencil, UserPlus } from "lucide-react";
+import { useRegionalSettings } from "@/app/_components/RegionalSettingsProvider";
+import { formatRegionalDate } from "@/lib/regionalFormat.mjs";
 
 // Roles allowed to create tasks, assign tasks and edit tasks via the edit page.
 // Keep in sync with TASK_MANAGE_ROLES in app/api/tasks/_lib/tasks.js
@@ -68,9 +70,9 @@ type Task = {
 
 type Employee = { _id: string; empId: string; name: string };
 
-function formatDate(value?: string) {
+function formatDate(value: string | undefined, regional: { locale: string; timeZone: string }) {
   if (!value) return "-";
-  return new Date(value).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  return formatRegionalDate(value, regional);
 }
 
 // Days + hours since createdAt, frozen at closedAt once the task is Done/Rejected.
@@ -250,6 +252,7 @@ function StatusCell({
 }
 
 export default function TasksPage() {
+  const regional = useRegionalSettings();
   const { data: session } = useSession();
   const role = session?.user?.role ?? "";
   const currentEmpId = session?.user?.empId;
@@ -401,16 +404,16 @@ export default function TasksPage() {
                   </TableCell>
                   <TableCell className="whitespace-nowrap">{task.taskType || "-"}</TableCell>
                   <TableCell className="whitespace-nowrap">{task.createdByName || task.createdByEmpId}</TableCell>
-                  <TableCell className="whitespace-nowrap">{formatDate(task.createdAt)}</TableCell>
+                  <TableCell className="whitespace-nowrap">{formatDate(task.createdAt, regional)}</TableCell>
                   <TableCell className="whitespace-nowrap">{ageLabel(task.createdAt, task.closedAt, now)}</TableCell>
                   <TableCell><AssignedToCell assignedToNames={task.assignedToNames} /></TableCell>
                   <TableCell className="whitespace-nowrap">{task.assignedByName || "-"}</TableCell>
-                  <TableCell className="whitespace-nowrap">{formatDate(task.assignedAt)}</TableCell>
+                  <TableCell className="whitespace-nowrap">{formatDate(task.assignedAt, regional)}</TableCell>
                   <TableCell><ReferenceCell reference={task.projectNo} /></TableCell>
                   <TableCell><ReferenceCell reference={task.workOrderNo} /></TableCell>
                   <TableCell><ReferenceCell reference={task.tenderNo} /></TableCell>
                   <TableCell className="whitespace-nowrap">{isInternal(task) ? "Internal" : ""}</TableCell>
-                  <TableCell className="whitespace-nowrap">{task.status === "Done" ? formatDate(task.completedDate) : ""}</TableCell>
+                  <TableCell className="whitespace-nowrap">{task.status === "Done" ? formatDate(task.completedDate, regional) : ""}</TableCell>
                 </TableRow>
               ))
             )}
