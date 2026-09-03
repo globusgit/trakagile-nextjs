@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import PageHeader from "@/app/_components/PageHeader";
 import ListingToolbar from "@/app/_components/ListingToolbar";
 import HoverPanel from "@/app/_components/HoverPanel";
+import MultiSelectDropdown from "@/app/_components/MultiSelectDropdown";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -70,6 +71,22 @@ type Task = {
 
 type Employee = { _id: string; empId: string; name: string };
 
+// Options for the Task Source -> Task Vertical -> Task Type -> Sub-Task Type
+// cascading filter bar, returned by GET /api/tasks/filters.
+type TaskFilterOptions = {
+  taskSources: string[];
+  taskVerticals: string[];
+  taskTypes: string[];
+  subTaskTypes: string[];
+};
+
+const EMPTY_FILTER_OPTIONS: TaskFilterOptions = {
+  taskSources: [],
+  taskVerticals: [],
+  taskTypes: [],
+  subTaskTypes: [],
+};
+
 function formatDate(value: string | undefined, regional: { locale: string; timeZone: string }) {
   if (!value) return "-";
   return formatRegionalDate(value, regional);
@@ -85,16 +102,22 @@ function ageLabel(createdAt: string, closedAt: string | undefined, now: number) 
   return `${days}d ${hours}h`;
 }
 
-function isInternal(task: Task) {
-  return !task.projectNo?.number && !task.workOrderNo?.number && !task.tenderNo?.number;
-}
-
-// Small hover-triggered card showing the full task description.
-function DescriptionCell({ text }: { text: string }) {
+// Small hover-triggered card showing the full task description plus the
+// Created Date / Assigned Date that used to have their own columns.
+function DescriptionCell({ task, regional }: { task: Task; regional: { locale: string; timeZone: string } }) {
   return (
     <HoverPanel
-      trigger={<p className="max-w-[220px] cursor-default truncate">{text}</p>}
-      panel={text}
+      trigger={<p className="max-w-[220px] cursor-default truncate">{task.description}</p>}
+      panel={
+        <div className="space-y-2">
+          <p className="whitespace-pre-wrap">{task.description}</p>
+          <div className="space-y-1 border-t pt-2">
+            <p><span className="font-semibold">Created Date:</span> {formatDate(task.createdAt, regional)}</p>
+            <p><span className="font-semibold">Assigned Date:</span> {formatDate(task.assignedAt, regional)}</p>
+          </div>
+        </div>
+      }
+      panelClassName="w-72"
     />
   );
 }
@@ -270,17 +293,60 @@ export default function TasksPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
+  // Task Source -> Task Vertical -> Task Type -> Sub-Task Type cascading
+  // filter bar. Task Source is multi-select; a Vertical dropdown only
+  // appears once exactly one Task Source is picked (and that source has
+  // verticals) - when multiple sources are selected, Vertical is skipped and
+  // Task Type filters straight off the selected sources.
+  const [taskSourceFilter, setTaskSourceFilter] = useState<string[]>([]);
+  const [taskVerticalFilter, setTaskVerticalFilter] = useState("");
+  const [taskTypeFilter, setTaskTypeFilter] = useState("");
+  const [subTaskTypeFilter, setSubTaskTypeFilter] = useState("");
+  const [filterOptions, setFilterOptions] = useState<TaskFilterOptions>(EMPTY_FILTER_OPTIONS);
+
+  // Small searchable fields under the Project No / Work-Order No / Tender No
+  // headers. *Search holds what's being typed; *Query is the debounced value
+  // actually sent to the API (same split pattern as the main search box).
+  const [projectNoSearch, setProjectNoSearch] = useState("");
+  const [projectNoQuery, setProjectNoQuery] = useState("");
+  const [workOrderNoSearch, setWorkOrderNoSearch] = useState("");
+  const [workOrderNoQuery, setWorkOrderNoQuery] = useState("");
+  const [tenderNoSearch, setTenderNoSearch] = useState("");
+  const [tenderNoQuery, setTenderNoQuery] = useState("");
+
   // Tick the "now" reference every minute so open tasks' Age keeps incrementing live.
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
 
+  // Debounce the three column search boxes so we're not firing a request on
+  // every keystroke.
+  useEffect(() => {
+    const timer = window.setTimeout(() => { setProjectNoQuery(projectNoSearch); setPage(1); }, 350);
+    return () => window.clearTimeout(timer);
+  }, [projectNoSearch]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { setWorkOrderNoQuery(workOrderNoSearch); setPage(1); }, 350);
+    return () => window.clearTimeout(timer);
+  }, [workOrderNoSearch]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { setTenderNoQuery(tenderNoSearch); setPage(1); }, 350);
+    return () => window.clearTimeout(timer);
+  }, [tenderNoSearch]);
+
   const loadTasks = useCallback(async () => {
     setLoading(true);
     setError("");
     const params = new URLSearchParams({ page: String(page), limit: String(size) });
     if (query) params.set("search", query);
+    taskSourceFilter.forEach((source) => params.append("taskSource", source));
+    if (taskVerticalFilter) params.set("taskVertical", taskVerticalFilter);
+    if (taskTypeFilter) params.set("taskType", taskTypeFilter);
+    if (subTaskTypeFilter) params.set("subTaskType", subTaskTypeFilter);
+    if (projectNoQuery) params.set("projectNo", projectNoQuery);
+    if (workOrderNoQuery) params.set("workOrderNo", workOrderNoQuery);
+    if (tenderNoQuery) params.set("tenderNo", tenderNoQuery);
     try {
       const response = await fetch(`/api/tasks?${params}`, { cache: "no-store" });
       const result = await response.json();
@@ -293,7 +359,99 @@ export default function TasksPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, size, query]);
+  }, [
+    page,
+    size,
+    query,
+    taskSourceFilter,
+    taskVerticalFilter,
+    taskTypeFilter,
+    subTaskTypeFilter,
+    projectNoQuery,
+    workOrderNoQuery,
+    tenderNoQuery,
+  ]);
+
+  // Loads the cascading dropdown options, scoped to the caller's visible
+  // tasks and narrowed by whatever's already selected upstream.
+  const loadFilterOptions = useCallback(async () => {
+    const params = new URLSearchParams();
+    taskSourceFilter.forEach((source) => params.append("taskSource", source));
+    if (taskVerticalFilter) params.set("taskVertical", taskVerticalFilter);
+    if (taskTypeFilter) params.set("taskType", taskTypeFilter);
+    try {
+      const response = await fetch(`/api/tasks/filters?${params}`, { cache: "no-store" });
+      if (response.ok) setFilterOptions(await response.json());
+    } catch {
+      // Non-fatal — filter dropdowns will just show fewer options.
+    }
+  }, [taskSourceFilter, taskVerticalFilter, taskTypeFilter]);
+
+  useEffect(() => { void loadFilterOptions(); }, [loadFilterOptions]);
+
+  // Task Source changed -> Vertical/Type/Sub-Type all reset (their scope no
+  // longer applies).
+  const handleTaskSourceFilterChange = useCallback((values: string[]) => {
+    setTaskSourceFilter(values);
+    setTaskVerticalFilter("");
+    setTaskTypeFilter("");
+    setSubTaskTypeFilter("");
+    setPage(1);
+  }, []);
+
+  const handleVerticalFilterChange = useCallback((value: string) => {
+    setTaskVerticalFilter(value);
+    setTaskTypeFilter("");
+    setSubTaskTypeFilter("");
+    setPage(1);
+  }, []);
+
+  const handleTaskTypeFilterChange = useCallback((value: string) => {
+    setTaskTypeFilter(value);
+    setSubTaskTypeFilter("");
+    setPage(1);
+  }, []);
+
+  const handleSubTaskTypeFilterChange = useCallback((value: string) => {
+    setSubTaskTypeFilter(value);
+    setPage(1);
+  }, []);
+
+  const clearTaskFilters = useCallback(() => {
+    setTaskSourceFilter([]);
+    setTaskVerticalFilter("");
+    setTaskTypeFilter("");
+    setSubTaskTypeFilter("");
+    setPage(1);
+  }, []);
+
+  // All four dropdowns are always visible; each one is simply disabled (with
+  // an explanatory placeholder) until its parent's selection resolves its
+  // scope - Vertical needs exactly one Task Source (that actually has
+  // verticals, e.g. "Project"); Task Type needs a Source (and a Vertical if
+  // one applies); Sub-Task Type needs a Task Type.
+  const verticalHasOptions = taskSourceFilter.length === 1 && filterOptions.taskVerticals.length > 0;
+  const verticalEnabled = verticalHasOptions;
+  const verticalResolved = !verticalEnabled || Boolean(taskVerticalFilter);
+  const taskTypeEnabled = taskSourceFilter.length > 0 && verticalResolved;
+  const subTaskTypeEnabled = taskTypeEnabled && Boolean(taskTypeFilter);
+
+  const verticalPlaceholder =
+    taskSourceFilter.length !== 1
+      ? "Select a single Task Source"
+      : filterOptions.taskVerticals.length === 0
+        ? "No verticals for this source"
+        : "All Verticals";
+  const taskTypePlaceholder =
+    taskSourceFilter.length === 0
+      ? "Select a Task Source first"
+      : verticalEnabled && !taskVerticalFilter
+        ? "Select a Vertical first"
+        : "All Task Types";
+  const subTaskTypePlaceholder = !taskTypeFilter ? "Select a Task Type first" : "All Sub-Task Types";
+
+  const hasActiveTaskFilters =
+    taskSourceFilter.length > 0 || Boolean(taskVerticalFilter) || Boolean(taskTypeFilter) || Boolean(subTaskTypeFilter);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadTasks(), 0);
@@ -354,6 +512,69 @@ export default function TasksPage() {
       {error ? <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
 
       <div className="overflow-x-auto rounded-xl border bg-white shadow">
+        {/* Task Source -> Vertical -> Task Type -> Sub-Task Type cascading
+            filter bar, sitting just above the table's header row. */}
+        <div className="flex flex-wrap items-end gap-3 border-b bg-slate-50 px-4 py-3">
+          <MultiSelectDropdown
+            label="Task Source"
+            options={filterOptions.taskSources}
+            selected={taskSourceFilter}
+            onChange={handleTaskSourceFilterChange}
+            placeholder="All Sources"
+          />
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-muted-foreground">Vertical</label>
+            <select
+              className="h-9 min-w-[190px] rounded-md border bg-white px-3 text-sm outline-none focus:border-cyan-600 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-muted-foreground"
+              value={taskVerticalFilter}
+              disabled={!verticalEnabled}
+              onChange={(e) => handleVerticalFilterChange(e.target.value)}
+            >
+              <option value="">{verticalPlaceholder}</option>
+              {filterOptions.taskVerticals.map((vertical) => (
+                <option key={vertical} value={vertical}>{vertical}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-muted-foreground">Task Type</label>
+            <select
+              className="h-9 min-w-[190px] rounded-md border bg-white px-3 text-sm outline-none focus:border-cyan-600 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-muted-foreground"
+              value={taskTypeFilter}
+              disabled={!taskTypeEnabled}
+              onChange={(e) => handleTaskTypeFilterChange(e.target.value)}
+            >
+              <option value="">{taskTypePlaceholder}</option>
+              {filterOptions.taskTypes.map((type) => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-muted-foreground">Sub-Task Type</label>
+            <select
+              className="h-9 min-w-[190px] rounded-md border bg-white px-3 text-sm outline-none focus:border-cyan-600 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-muted-foreground"
+              value={subTaskTypeFilter}
+              disabled={!subTaskTypeEnabled}
+              onChange={(e) => handleSubTaskTypeFilterChange(e.target.value)}
+            >
+              <option value="">{subTaskTypePlaceholder}</option>
+              {filterOptions.subTaskTypes.map((subType) => (
+                <option key={subType} value={subType}>{subType}</option>
+              ))}
+            </select>
+          </div>
+
+          {hasActiveTaskFilters && (
+            <Button variant="outline" size="sm" className="h-9" onClick={clearTaskFilters}>
+              Clear Filters
+            </Button>
+          )}
+        </div>
+
         <Table>
           <TableHeader className="sticky top-0 z-10 bg-cyan-200 shadow-sm">
             <TableRow>
@@ -363,23 +584,60 @@ export default function TasksPage() {
               <TableHead className="font-bold whitespace-nowrap">Task Status</TableHead>
               <TableHead className="font-bold whitespace-nowrap">Task Type</TableHead>
               <TableHead className="font-bold whitespace-nowrap">Created By</TableHead>
-              <TableHead className="font-bold whitespace-nowrap">Created Date</TableHead>
               <TableHead className="font-bold whitespace-nowrap">Age</TableHead>
               <TableHead className="font-bold whitespace-nowrap">Assigned To</TableHead>
               <TableHead className="font-bold whitespace-nowrap">Assigned By</TableHead>
-              <TableHead className="font-bold whitespace-nowrap">Assigned Date</TableHead>
               <TableHead className="font-bold whitespace-nowrap">Project No</TableHead>
               <TableHead className="font-bold whitespace-nowrap">Work-Order No</TableHead>
               <TableHead className="font-bold whitespace-nowrap">Tender No</TableHead>
-              <TableHead className="font-bold whitespace-nowrap">Internal</TableHead>
               <TableHead className="font-bold whitespace-nowrap">Completed Date</TableHead>
+            </TableRow>
+            {/* Small searchable fields under Project No / Work-Order No / Tender No. */}
+            <TableRow className="bg-cyan-100/60">
+              <TableHead />
+              <TableHead />
+              <TableHead />
+              <TableHead />
+              <TableHead />
+              <TableHead />
+              <TableHead />
+              <TableHead />
+              <TableHead />
+              <TableHead className="py-1.5">
+                <input
+                  type="text"
+                  value={projectNoSearch}
+                  onChange={(e) => setProjectNoSearch(e.target.value)}
+                  placeholder="Search..."
+                  className="h-7 w-full min-w-[110px] rounded border bg-white px-2 text-xs font-normal outline-none focus:border-cyan-600"
+                />
+              </TableHead>
+              <TableHead className="py-1.5">
+                <input
+                  type="text"
+                  value={workOrderNoSearch}
+                  onChange={(e) => setWorkOrderNoSearch(e.target.value)}
+                  placeholder="Search..."
+                  className="h-7 w-full min-w-[110px] rounded border bg-white px-2 text-xs font-normal outline-none focus:border-cyan-600"
+                />
+              </TableHead>
+              <TableHead className="py-1.5">
+                <input
+                  type="text"
+                  value={tenderNoSearch}
+                  onChange={(e) => setTenderNoSearch(e.target.value)}
+                  placeholder="Search..."
+                  className="h-7 w-full min-w-[110px] rounded border bg-white px-2 text-xs font-normal outline-none focus:border-cyan-600"
+                />
+              </TableHead>
+              <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={16} className="py-8 text-center text-muted-foreground">Loading tasks...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={13} className="py-8 text-center text-muted-foreground">Loading tasks...</TableCell></TableRow>
             ) : tasks.length === 0 ? (
-              <TableRow><TableCell colSpan={16} className="py-10 text-center text-muted-foreground">No tasks found.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={13} className="py-10 text-center text-muted-foreground">No tasks found.</TableCell></TableRow>
             ) : (
               tasks.map((task) => (
                 <TableRow key={task._id} className="hover:bg-gray-50">
@@ -389,7 +647,7 @@ export default function TasksPage() {
                     </Link>
                   </TableCell>
                   <TableCell className="whitespace-nowrap font-medium">{task.taskId}</TableCell>
-                  <TableCell><DescriptionCell text={task.description} /></TableCell>
+                  <TableCell><DescriptionCell task={task} regional={regional} /></TableCell>
                   <TableCell>
                     <StatusCell
                       task={task}
@@ -404,15 +662,12 @@ export default function TasksPage() {
                   </TableCell>
                   <TableCell className="whitespace-nowrap">{task.taskType || "-"}</TableCell>
                   <TableCell className="whitespace-nowrap">{task.createdByName || task.createdByEmpId}</TableCell>
-                  <TableCell className="whitespace-nowrap">{formatDate(task.createdAt, regional)}</TableCell>
                   <TableCell className="whitespace-nowrap">{ageLabel(task.createdAt, task.closedAt, now)}</TableCell>
                   <TableCell><AssignedToCell assignedToNames={task.assignedToNames} /></TableCell>
                   <TableCell className="whitespace-nowrap">{task.assignedByName || "-"}</TableCell>
-                  <TableCell className="whitespace-nowrap">{formatDate(task.assignedAt, regional)}</TableCell>
                   <TableCell><ReferenceCell reference={task.projectNo} /></TableCell>
                   <TableCell><ReferenceCell reference={task.workOrderNo} /></TableCell>
                   <TableCell><ReferenceCell reference={task.tenderNo} /></TableCell>
-                  <TableCell className="whitespace-nowrap">{isInternal(task) ? "Internal" : ""}</TableCell>
                   <TableCell className="whitespace-nowrap">{task.status === "Done" ? formatDate(task.completedDate, regional) : ""}</TableCell>
                 </TableRow>
               ))

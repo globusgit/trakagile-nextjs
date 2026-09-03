@@ -1,37 +1,18 @@
-import mongoose from "mongoose";
 import { connectDB } from "@/lib/mongoose";
-import Task, { TASK_STATUSES } from "@/models/Task";
+import { TASK_STATUSES } from "@/models/Task";
 import User from "@/models/User";
-import { visibleEmployeeIds } from "@/lib/access";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
 import {
   TASK_MANAGE_ROLES,
-  TASK_ORG_WIDE_ROLES,
   normalizeReference,
   notifyTask,
+  scopedTask,
   withEmployeeNames,
 } from "../_lib/tasks";
 
 // Statuses an assignee can move a task to via the in-progress dropdown,
 // once they've clicked "Start Working".
 const EMPLOYEE_WORK_STATUSES = ["In Progress", "Done", "Suspended", "Rejected"];
-
-async function scopedTask(id, identity) {
-  if (!mongoose.isValidObjectId(id)) throw new AttendanceError("Invalid task.");
-  const task = await Task.findOne({ _id: id, orgId: identity.orgId });
-  if (!task) throw new AttendanceError("Task not found.", 404);
-
-  if (TASK_ORG_WIDE_ROLES.includes(identity.role)) return task;
-  if (task.createdByEmpId === identity.empId || (task.assignedToEmpIds || []).includes(identity.empId)) return task;
-  if (identity.role === "MANAGER") {
-    const teamIds = await visibleEmployeeIds(identity, true);
-    const assignedToEmpIds = task.assignedToEmpIds || [];
-    if (teamIds.some((empId) => assignedToEmpIds.includes(empId)) || teamIds.includes(task.createdByEmpId)) {
-      return task;
-    }
-  }
-  throw new AttendanceError("You are not allowed to access this task.", 403);
-}
 
 export async function GET(_request, { params }) {
   try {

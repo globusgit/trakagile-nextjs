@@ -11,6 +11,7 @@ import ReferenceFieldGroup, { EMPTY_REFERENCE, ReferenceValue } from "@/app/_com
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 // Roles allowed to edit tasks — keep in sync with TASK_MANAGE_ROLES
 // in app/api/tasks/_lib/tasks.js
@@ -27,6 +28,15 @@ type Reference = {
 };
 
 type AssignedEmployee = { empId: string; name: string };
+
+// A single entry in the task's append-only notes log.
+type Note = {
+  _id?: string;
+  text: string;
+  authorEmpId: string;
+  authorName?: string;
+  createdAt: string;
+};
 
 type Task = {
   _id: string;
@@ -48,6 +58,7 @@ type Task = {
   workOrderNo?: Reference;
   tenderNo?: Reference;
   completedDate?: string;
+  notes?: Note[];
 };
 
 type Employee = { _id: string; empId: string; name: string };
@@ -56,6 +67,17 @@ type TaskTypeEntry = { name: string; subTypes: string[] };
 function formatDate(value?: string) {
   if (!value) return "-";
   return new Date(value).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return "-";
+  return new Date(value).toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function toReferenceValue(reference?: Reference): ReferenceValue {
@@ -117,6 +139,14 @@ export default function EditTaskPage() {
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
 
+  // Notes log - anyone who can view this task can add a note. New notes are
+  // appended to the end of the underlying list (see handleAddNote), but the
+  // panel below displays them newest-first via the displayNotes memo.
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [noteText, setNoteText] = useState("");
+  const [addingNote, setAddingNote] = useState(false);
+  const [notesError, setNotesError] = useState("");
+
   useEffect(() => {
     if (!id) return;
     (async () => {
@@ -134,6 +164,7 @@ export default function EditTaskPage() {
         setSubTaskType(result.subTaskType || "");
         setTaskStatus(result.status);
         setAssignedToEmpIds(result.assignedToEmpIds || []);
+        setNotes(result.notes || []);
       } catch (error) {
         setLoadError(error instanceof Error ? error.message : "Unable to load task.");
       } finally {
@@ -183,6 +214,11 @@ export default function EditTaskPage() {
     [taskTypes, taskType],
   );
 
+  // Notes are stored/saved in chronological order (each new note is appended
+  // to the end - see handleAddNote), but displayed newest-first so the most
+  // recent note is immediately visible at the top of the panel.
+  const displayNotes = useMemo(() => [...notes].reverse(), [notes]);
+
   const handleTaskTypeChange = (nextValue: string) => {
     setTaskType(nextValue);
     setSubTaskType("");
@@ -218,6 +254,22 @@ export default function EditTaskPage() {
       toast.success("Sub-task type added.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to add sub-task type.");
+    }
+  };
+
+  const handleAddNote = async () => {
+    const text = noteText.trim();
+    if (!text) return;
+    setNotesError("");
+    setAddingNote(true);
+    try {
+      const result = await postJson(`/api/tasks/${id}/notes`, { text });
+      setNotes((prev) => [...prev, result.note]);
+      setNoteText("");
+    } catch (error) {
+      setNotesError(error instanceof Error ? error.message : "Unable to add note.");
+    } finally {
+      setAddingNote(false);
     }
   };
 
@@ -277,138 +329,195 @@ export default function EditTaskPage() {
           )}
         </CardHeader>
 
-        <CardContent className="space-y-8">
+        <CardContent>
           {loadingTask ? (
             <p className="text-sm text-muted-foreground">Loading task...</p>
           ) : loadError ? (
             <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</div>
           ) : task ? (
-            <>
-              {serverError && (
-                <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {serverError}
-                </div>
-              )}
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+              {/* Left: all the editable/read-only task fields. */}
+              <div className="space-y-8 lg:col-span-2">
+                {serverError && (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {serverError}
+                  </div>
+                )}
 
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                <ReadOnlyField label="Task ID" value={task.taskId} />
-                <ReadOnlyField label="Created By" value={task.createdByName || task.createdByEmpId} />
-              </div>
-
-              <ReadOnlyField label="Description" value={task.description} />
-
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                <ReadOnlyField label="Task Source" value={task.taskSource || ""} />
-                {task.taskSource === "Project" && <ReadOnlyField label="Task Vertical" value={task.taskVertical || ""} />}
-              </div>
-
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-                <ReadOnlyField label="Created Date" value={formatDate(task.createdAt)} />
-                <ReadOnlyField label="Assigned By" value={task.assignedByName || ""} />
-                <ReadOnlyField label="Assigned Date" value={formatDate(task.assignedAt)} />
-              </div>
-
-              {!canManage && (
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                  <ReadOnlyField label="Task Type" value={[task.taskType, task.subTaskType].filter(Boolean).join(" / ")} />
-                  <ReadOnlyField label="Assigned To" value={assignedToDisplay} />
+                  <ReadOnlyField label="Task ID" value={task.taskId} />
+                  <ReadOnlyField label="Created By" value={task.createdByName || task.createdByEmpId} />
                 </div>
-              )}
 
-              {canManage ? (
-                <>
-                  <div className="grid grid-cols-1 gap-6 border-t border-gray-100 pt-6 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label>Task Type</Label>
-                      <SearchableSelect
-                        options={taskTypes.map((entry) => entry.name)}
-                        value={taskType}
-                        onChange={handleTaskTypeChange}
-                        onAddNew={handleAddTaskType}
-                        placeholder="Search or add a task type..."
-                        disabled={!scopeReady}
-                        disabledMessage={!scopeReady ? "This task has no task source set." : undefined}
-                      />
+                <ReadOnlyField label="Description" value={task.description} />
+
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                  <ReadOnlyField label="Task Source" value={task.taskSource || ""} />
+                  {task.taskSource === "Project" && <ReadOnlyField label="Task Vertical" value={task.taskVertical || ""} />}
+                </div>
+
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+                  <ReadOnlyField label="Created Date" value={formatDate(task.createdAt)} />
+                  <ReadOnlyField label="Assigned By" value={task.assignedByName || ""} />
+                  <ReadOnlyField label="Assigned Date" value={formatDate(task.assignedAt)} />
+                </div>
+
+                {!canManage && (
+                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                    <ReadOnlyField label="Task Type" value={[task.taskType, task.subTaskType].filter(Boolean).join(" / ")} />
+                    <ReadOnlyField label="Assigned To" value={assignedToDisplay} />
+                  </div>
+                )}
+
+                {canManage ? (
+                  <>
+                    <div className="grid grid-cols-1 gap-6 border-t border-gray-100 pt-6 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label>Task Type</Label>
+                        <SearchableSelect
+                          options={taskTypes.map((entry) => entry.name)}
+                          value={taskType}
+                          onChange={handleTaskTypeChange}
+                          onAddNew={handleAddTaskType}
+                          placeholder="Search or add a task type..."
+                          disabled={!scopeReady}
+                          disabledMessage={!scopeReady ? "This task has no task source set." : undefined}
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Sub-Task Type</Label>
+                        <SearchableSelect
+                          options={subTypeOptions}
+                          value={subTaskType}
+                          onChange={setSubTaskType}
+                          onAddNew={handleAddSubTaskType}
+                          placeholder="Search or add a sub-task type..."
+                          disabled={!taskType}
+                          disabledMessage={!taskType ? "Select a task type first." : undefined}
+                        />
+                      </div>
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Sub-Task Type</Label>
-                      <SearchableSelect
-                        options={subTypeOptions}
-                        value={subTaskType}
-                        onChange={setSubTaskType}
-                        onAddNew={handleAddSubTaskType}
-                        placeholder="Search or add a sub-task type..."
-                        disabled={!taskType}
-                        disabledMessage={!taskType ? "Select a task type first." : undefined}
+                      <Label>Assigned To</Label>
+                      <EmployeeMultiSelect
+                        employees={employees}
+                        selectedEmpIds={assignedToEmpIds}
+                        onChange={setAssignedToEmpIds}
+                        placeholder="Unassigned"
                       />
+                      <p className="text-xs text-muted-foreground">Select multiple employees to assign this task to a team - the Tasks list will show &quot;Team&quot; for it.</p>
                     </div>
+
+                    <div className="grid grid-cols-1 gap-4 border-t border-gray-100 pt-6 md:grid-cols-3">
+                      <ReferenceFieldGroup label="Project No" value={projectNo} onChange={setProjectNo} />
+                      <ReferenceFieldGroup label="Work-Order No" value={workOrderNo} onChange={setWorkOrderNo} />
+                      <ReferenceFieldGroup label="Tender No" value={tenderNo} onChange={setTenderNo} />
+                    </div>
+                    <p className="-mt-4 text-xs text-muted-foreground">Leave all three blank to mark this as an internal task.</p>
+
+                    <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+                      <div className="space-y-2">
+                        <Label>Task Status</Label>
+                        <select
+                          className="h-10 w-full rounded-md border bg-transparent px-3 text-sm"
+                          value={taskStatus}
+                          onChange={(e) => setTaskStatus(e.target.value)}
+                        >
+                          {TASK_STATUSES.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <ReadOnlyField label="Completed Date" value={task.status === "Done" ? formatDate(task.completedDate) : ""} />
+                    </div>
+
+                    <div className="flex justify-end gap-4 border-t border-gray-100 pt-6">
+                      <Button
+                        variant="outline"
+                        onClick={() => router.push("/tasks")}
+                        className="bg-orange-700 text-white hover:bg-orange-500"
+                      >
+                        Cancel
+                      </Button>
+                      <Button onClick={handleSubmit} disabled={saving} className="bg-cyan-900 hover:bg-cyan-700">
+                        {saving ? "Saving..." : "Save Changes"}
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 gap-6 border-t border-gray-100 pt-6 md:grid-cols-3">
+                      <ReadOnlyField label="Project No" value={task.projectNo?.number || ""} />
+                      <ReadOnlyField label="Work-Order No" value={task.workOrderNo?.number || ""} />
+                      <ReadOnlyField label="Tender No" value={task.tenderNo?.number || ""} />
+                    </div>
+                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                      <ReadOnlyField label="Task Status" value={task.status} />
+                      <ReadOnlyField label="Completed Date" value={task.status === "Done" ? formatDate(task.completedDate) : ""} />
+                    </div>
+                    <div className="flex justify-end border-t border-gray-100 pt-6">
+                      <Button variant="outline" onClick={() => router.push("/tasks")}>Back</Button>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Right: Notes, pinned from the top of the card and sticky while
+                  the left column scrolls past it on larger screens. */}
+              <div className="lg:col-span-1">
+                <div className="space-y-4 rounded-lg border bg-slate-50 p-4 lg:sticky lg:top-4">
+                  <div>
+                    <h3 className="text-base font-semibold">Notes</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Anyone with access to this task can add a note. Newest notes appear at the top.
+                    </p>
+                  </div>
+
+                  {notesError && (
+                    <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                      {notesError}
+                    </div>
+                  )}
+
+                  <div className="max-h-[420px] space-y-3 overflow-y-auto rounded-md border bg-white p-3">
+                    {displayNotes.length === 0 ? (
+                      <p className="py-6 text-center text-sm text-muted-foreground">No notes yet. Be the first to add one.</p>
+                    ) : (
+                      displayNotes.map((note, index) => (
+                        <div key={note._id || index} className="rounded-md border bg-slate-50 p-3 text-sm shadow-sm">
+                          <div className="mb-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                            <span className="font-semibold">{note.authorName || note.authorEmpId}</span>
+                            <span className="text-xs text-muted-foreground">{formatDateTime(note.createdAt)}</span>
+                          </div>
+                          <p className="whitespace-pre-wrap">{note.text}</p>
+                        </div>
+                      ))
+                    )}
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Assigned To</Label>
-                    <EmployeeMultiSelect
-                      employees={employees}
-                      selectedEmpIds={assignedToEmpIds}
-                      onChange={setAssignedToEmpIds}
-                      placeholder="Unassigned"
+                    <Label>Add a Note</Label>
+                    <Textarea
+                      value={noteText}
+                      onChange={(e) => setNoteText(e.target.value)}
+                      placeholder="Write a note for this task..."
+                      rows={3}
                     />
-                    <p className="text-xs text-muted-foreground">Select multiple employees to assign this task to a team - the Tasks list will show &quot;Team&quot; for it.</p>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-4 border-t border-gray-100 pt-6 md:grid-cols-3">
-                    <ReferenceFieldGroup label="Project No" value={projectNo} onChange={setProjectNo} />
-                    <ReferenceFieldGroup label="Work-Order No" value={workOrderNo} onChange={setWorkOrderNo} />
-                    <ReferenceFieldGroup label="Tender No" value={tenderNo} onChange={setTenderNo} />
-                  </div>
-                  <p className="-mt-4 text-xs text-muted-foreground">Leave all three blank to mark this as an internal task.</p>
-
-                  <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-                    <div className="space-y-2">
-                      <Label>Task Status</Label>
-                      <select
-                        className="h-10 w-full rounded-md border bg-transparent px-3 text-sm"
-                        value={taskStatus}
-                        onChange={(e) => setTaskStatus(e.target.value)}
+                    <div className="flex justify-end">
+                      <Button
+                        onClick={handleAddNote}
+                        disabled={addingNote || !noteText.trim()}
+                        className="bg-cyan-900 hover:bg-cyan-700"
                       >
-                        {TASK_STATUSES.map((option) => (
-                          <option key={option} value={option}>{option}</option>
-                        ))}
-                      </select>
+                        {addingNote ? "Adding..." : "Add Note"}
+                      </Button>
                     </div>
-                    <ReadOnlyField label="Completed Date" value={task.status === "Done" ? formatDate(task.completedDate) : ""} />
                   </div>
-
-                  <div className="flex justify-end gap-4 border-t border-gray-100 pt-6">
-                    <Button
-                      variant="outline"
-                      onClick={() => router.push("/tasks")}
-                      className="bg-orange-700 text-white hover:bg-orange-500"
-                    >
-                      Cancel
-                    </Button>
-                    <Button onClick={handleSubmit} disabled={saving} className="bg-cyan-900 hover:bg-cyan-700">
-                      {saving ? "Saving..." : "Save Changes"}
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="grid grid-cols-1 gap-6 border-t border-gray-100 pt-6 md:grid-cols-3">
-                    <ReadOnlyField label="Project No" value={task.projectNo?.number || ""} />
-                    <ReadOnlyField label="Work-Order No" value={task.workOrderNo?.number || ""} />
-                    <ReadOnlyField label="Tender No" value={task.tenderNo?.number || ""} />
-                  </div>
-                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                    <ReadOnlyField label="Task Status" value={task.status} />
-                    <ReadOnlyField label="Completed Date" value={task.status === "Done" ? formatDate(task.completedDate) : ""} />
-                  </div>
-                  <div className="flex justify-end border-t border-gray-100 pt-6">
-                    <Button variant="outline" onClick={() => router.push("/tasks")}>Back</Button>
-                  </div>
-                </>
-              )}
-            </>
+                </div>
+              </div>
+            </div>
           ) : null}
         </CardContent>
       </Card>

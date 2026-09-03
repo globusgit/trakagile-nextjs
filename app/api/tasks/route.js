@@ -1,15 +1,13 @@
 import { connectDB } from "@/lib/mongoose";
 import Task, { TASK_SOURCES } from "@/models/Task";
 import User from "@/models/User";
-import { visibleEmployeeIds } from "@/lib/access";
-import { tenantFilter } from "@/lib/tenantScope.mjs";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../attendance/_lib/attendance";
 import {
   TASK_MANAGE_ROLES,
-  TASK_ORG_WIDE_ROLES,
   nextTaskId,
   normalizeReference,
   notifyTask,
+  scopedTaskQuery,
   withEmployeeNames,
 } from "./_lib/tasks";
 
@@ -27,22 +25,30 @@ export async function GET(request) {
     const status = searchParams.get("status")?.trim() || "";
     const search = searchParams.get("search")?.trim() || "";
 
-    const query = tenantFilter(identity);
+    // Task Source -> Task Vertical -> Task Type -> Sub-Task Type cascading
+    // filters, driven by the dropdowns above the Tasks table. Task Source is
+    // multi-select (repeated ?taskSource= params); the rest are single-select
+    // and only meaningful once their parent narrows the scope enough.
+    const taskSources = searchParams.getAll("taskSource").map((value) => value.trim()).filter(Boolean);
+    const taskVertical = searchParams.get("taskVertical")?.trim() || "";
+    const taskType = searchParams.get("taskType")?.trim() || "";
+    const subTaskType = searchParams.get("subTaskType")?.trim() || "";
 
-    if (!TASK_ORG_WIDE_ROLES.includes(identity.role)) {
-      // Managers see their team's tasks; everyone else sees only tasks
-      // they created or are assigned to (individually or as part of a team).
-      const scopedEmpIds =
-        identity.role === "MANAGER"
-          ? await visibleEmployeeIds(identity, true)
-          : [identity.empId];
-      query.$or = [
-        { assignedToEmpIds: { $in: scopedEmpIds } },
-        { createdByEmpId: { $in: scopedEmpIds } },
-      ];
-    }
+    // Small per-column search boxes under Project No / Work-Order No / Tender No.
+    const projectNoSearch = searchParams.get("projectNo")?.trim() || "";
+    const workOrderNoSearch = searchParams.get("workOrderNo")?.trim() || "";
+    const tenderNoSearch = searchParams.get("tenderNo")?.trim() || "";
+
+    const query = await scopedTaskQuery(identity);
 
     if (status) query.status = status;
+    if (taskSources.length) query.taskSource = { $in: taskSources };
+    if (taskVertical) query.taskVertical = taskVertical;
+    if (taskType) query.taskType = taskType;
+    if (subTaskType) query.subTaskType = subTaskType;
+    if (projectNoSearch) query["projectNo.number"] = new RegExp(escapeRegex(projectNoSearch), "i");
+    if (workOrderNoSearch) query["workOrderNo.number"] = new RegExp(escapeRegex(workOrderNoSearch), "i");
+    if (tenderNoSearch) query["tenderNo.number"] = new RegExp(escapeRegex(tenderNoSearch), "i");
     if (search) {
       const pattern = new RegExp(escapeRegex(search), "i");
       const searchClause = [

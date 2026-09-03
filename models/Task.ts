@@ -37,6 +37,20 @@ const referenceSchema = new mongoose.Schema(
   { _id: false },
 );
 
+// Append-only note log shown on the Edit Task page. Anyone with access to the
+// task may add a note; existing notes are never edited or removed via the API.
+// authorName is captured at write time (not re-derived later) so the log stays
+// a stable historical record even if the author's display name changes.
+const noteSchema = new mongoose.Schema(
+  {
+    text: { type: String, required: true, trim: true },
+    authorEmpId: { type: String, required: true },
+    authorName: { type: String, trim: true },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { _id: true },
+);
+
 const taskSchema = new mongoose.Schema(
   {
     taskId: { type: String, required: true, trim: true }, // e.g. TSK-00001
@@ -64,7 +78,8 @@ const taskSchema = new mongoose.Schema(
     assignedAt: { type: Date },
 
     // Optional reference numbers - shown only when present. A task with all
-    // three left empty is considered "Internal" (see Internal column).
+    // three left empty is considered "Internal" (used for filtering/reporting;
+    // the Tasks list no longer shows a dedicated Internal column).
     projectNo: { type: referenceSchema, default: undefined },
     workOrderNo: { type: referenceSchema, default: undefined },
     tenderNo: { type: referenceSchema, default: undefined },
@@ -73,6 +88,10 @@ const taskSchema = new mongoose.Schema(
     completedDate: { type: Date },
     // Captured automatically when status becomes "Done" or "Rejected" - freezes the Age column.
     closedAt: { type: Date },
+
+    // Append-only notes log - see noteSchema above. Displayed oldest-first on
+    // the Edit Task page; new notes are always pushed to the end.
+    notes: { type: [noteSchema], default: [] },
 
     orgId: { type: String, required: true },
   },
