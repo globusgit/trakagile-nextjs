@@ -15,3 +15,22 @@ The implemented structure includes the dark team rail, active/freshness indicato
 `final result: blocked`
 
 Connect an Android device or start an emulator, install build 28, sign in with a supervisor account, and capture the Live Tracking screen at a comparable viewport before final visual acceptance.
+
+---
+
+# Dashboard Team Live Map design QA
+
+- Reference: selected desktop Fleet Constellation concept (`exec-4994aaaf-4b57-4ce3-8e03-972a20680e0e.png`)
+- Implementation: director/admin dashboard `EmployeeLocationMap`
+- Source review: passed
+- ESLint: passed
+- Next.js production build: passed
+- Runtime screenshot comparison: blocked because no in-app browser is available in this session
+
+The implementation includes dark CARTO map tiles, simultaneous color-coded employee routes, glowing photo markers, direction indicators, a selected-employee operations panel, live duration/distance/speed data, GPS freshness, a bottom employee dock, and functional map-style and refocus controls.
+
+## Final result
+
+`final result: blocked`
+
+Open the dashboard with live employee data at a desktop viewport and compare it with the selected reference before final visual acceptance.

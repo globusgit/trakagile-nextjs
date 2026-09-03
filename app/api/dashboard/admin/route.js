@@ -23,7 +23,7 @@ export async function GET() {
     const empIds = employees.map((employee) => employee.empId);
     const attendance = empIds.length
       ? await Attendance.find({ orgId: identity.orgId, empId: { $in: empIds } })
-          .select("empId attendanceDate status lastKnownLocation lastKnownLocationName lastLocationReceivedAt markIn markOut updatedAt")
+          .select("empId attendanceDate status trackingStatus totalDistanceMeters lastKnownLocation lastKnownLocationName lastLocationReceivedAt markIn markOut updatedAt")
           .sort({ attendanceDate: -1, updatedAt: -1 })
           .lean()
       : [];
@@ -41,7 +41,7 @@ export async function GET() {
     const todayAttendance = [...todayByEmployee.values()];
     const trackingPoints = todayAttendance.length
       ? await TrackingLocation.find({ orgId: identity.orgId, attendanceId: { $in: todayAttendance.map((item) => item._id) } })
-          .select("attendanceId latitude longitude capturedAt receivedAt locationName locationNameRefreshed speed heading")
+          .select("attendanceId latitude longitude accuracy capturedAt receivedAt locationName locationNameRefreshed speed heading")
           .sort({ capturedAt: 1 })
           .limit(5000)
           .lean()
@@ -68,6 +68,7 @@ export async function GET() {
         locationName: routePoint.locationName || null,
         speed: routePoint.speed,
         heading: routePoint.heading,
+        accuracy: routePoint.accuracy,
         type: index === 0 ? "MARK_IN" : index === sampled.length - 1 ? (item.status === "OUT" ? "MARK_OUT" : "LIVE") : routePoint.locationNameRefreshed ? "TRIGGER" : "TRACK",
       }));
       return [{
@@ -83,6 +84,8 @@ export async function GET() {
         markInAt: item.markIn?.time || null,
         markOutAt: item.markOut?.time || null,
         attendanceStatus: item.status,
+        trackingStatus: item.trackingStatus || "ACTIVE",
+        totalDistanceMeters: item.totalDistanceMeters || 0,
         presentToday: presentIds.has(employee.empId),
         route,
       }];

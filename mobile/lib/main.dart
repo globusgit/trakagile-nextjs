@@ -310,6 +310,13 @@ class _LoginPageState extends State<LoginPage> {
   bool _submitting = false;
   String? _error;
 
+  @override
+  void dispose() {
+    _empId.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
   Future<void> _login() async {
     if (_empId.text.trim().isEmpty || _password.text.isEmpty) {
       setState(() => _error = 'Enter employee ID and password.');
@@ -324,12 +331,10 @@ class _LoginPageState extends State<LoginPage> {
         'API_BASE_URL',
         defaultValue: 'http://10.0.2.2:3000',
       );
-      const organizationCode = String.fromEnvironment('ORGANIZATION_CODE');
       final response = await http.post(
         Uri.parse('$baseUrl/api/mobile/auth/login'),
         headers: {'content-type': 'application/json'},
         body: jsonEncode({
-          'organizationCode': organizationCode,
           'empId': _empId.text.trim(),
           'password': _password.text,
         }),
@@ -2996,151 +3001,157 @@ class _ModuleScreenState extends State<ModuleScreen> {
       builder: (context, constraints) => Stack(
         children: [
           Positioned.fill(
-            bottom: 104,
+            bottom: constraints.maxWidth < 600 ? 186 : 104,
             child: Row(
               children: [
-                Container(
-                  width: 112,
-                  color: const Color(0xFF073552),
-                  padding: const EdgeInsets.fromLTRB(8, 12, 8, 6),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'TEAM (${employees.length})',
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
+                if (constraints.maxWidth >= 600)
+                  Container(
+                    width: 112,
+                    color: const Color(0xFF073552),
+                    padding: const EdgeInsets.fromLTRB(8, 12, 8, 6),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'TEAM (${employees.length})',
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
-                          ),
-                          InkWell(
-                            onTap: () => _load(silent: true),
-                            child: const Icon(
-                              Icons.refresh,
-                              color: Colors.white,
-                              size: 18,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Expanded(
-                        child: ListView.separated(
-                          itemCount: employees.length,
-                          separatorBuilder: (_, _) => const SizedBox(height: 8),
-                          itemBuilder: (context, index) {
-                            final item = employees[index];
-                            final employee = item['employee'] is Map
-                                ? item['employee'] as Map
-                                : const {};
-                            final empId = '${employee['empId'] ?? '-'}';
-                            final name = '${employee['name'] ?? 'Employee'}';
-                            final isSelected =
-                                empId == '${selectedEmployee['empId']}';
-                            final location = item['location'];
-                            final receivedAt = location is Map
-                                ? DateTime.tryParse('${location['receivedAt']}')
-                                : null;
-                            final fresh =
-                                receivedAt != null &&
-                                DateTime.now().difference(
-                                      receivedAt.toLocal(),
-                                    ) <
-                                    const Duration(minutes: 5);
-                            return InkWell(
-                              borderRadius: BorderRadius.circular(10),
-                              onTap: () => setState(
-                                () => _selectedLiveEmployeeId = empId,
+                            InkWell(
+                              onTap: () => _load(silent: true),
+                              child: const Icon(
+                                Icons.refresh,
+                                color: Colors.white,
+                                size: 18,
                               ),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 5,
-                                  vertical: 8,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Expanded(
+                          child: ListView.separated(
+                            itemCount: employees.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: 8),
+                            itemBuilder: (context, index) {
+                              final item = employees[index];
+                              final employee = item['employee'] is Map
+                                  ? item['employee'] as Map
+                                  : const {};
+                              final empId = '${employee['empId'] ?? '-'}';
+                              final name = '${employee['name'] ?? 'Employee'}';
+                              final isSelected =
+                                  empId == '${selectedEmployee['empId']}';
+                              final location = item['location'];
+                              final receivedAt = location is Map
+                                  ? DateTime.tryParse(
+                                      '${location['receivedAt']}',
+                                    )
+                                  : null;
+                              final fresh =
+                                  receivedAt != null &&
+                                  DateTime.now().difference(
+                                        receivedAt.toLocal(),
+                                      ) <
+                                      const Duration(minutes: 5);
+                              return InkWell(
+                                borderRadius: BorderRadius.circular(10),
+                                onTap: () => setState(
+                                  () => _selectedLiveEmployeeId = empId,
                                 ),
-                                decoration: BoxDecoration(
-                                  color: isSelected
-                                      ? const Color(0xFF07517A)
-                                      : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: isSelected
-                                      ? Border.all(
-                                          color: const Color(0xFF16C7F3),
-                                        )
-                                      : null,
-                                ),
-                                child: Column(
-                                  children: [
-                                    Stack(
-                                      clipBehavior: Clip.none,
-                                      children: [
-                                        CircleAvatar(
-                                          radius: 22,
-                                          backgroundColor: const Color(
-                                            0xFF14BCEB,
-                                          ),
-                                          child: Text(
-                                            _mobileInitials(name),
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.w700,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isSelected
+                                        ? const Color(0xFF07517A)
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: isSelected
+                                        ? Border.all(
+                                            color: const Color(0xFF16C7F3),
+                                          )
+                                        : null,
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Stack(
+                                        clipBehavior: Clip.none,
+                                        children: [
+                                          CircleAvatar(
+                                            radius: 22,
+                                            backgroundColor: const Color(
+                                              0xFF14BCEB,
                                             ),
-                                          ),
-                                        ),
-                                        Positioned(
-                                          right: -2,
-                                          bottom: 1,
-                                          child: Container(
-                                            width: 12,
-                                            height: 12,
-                                            decoration: BoxDecoration(
-                                              color: fresh
-                                                  ? const Color(0xFF35D05B)
-                                                  : const Color(0xFFFFB020),
-                                              shape: BoxShape.circle,
-                                              border: Border.all(
-                                                color: const Color(0xFF073552),
-                                                width: 2,
+                                            child: Text(
+                                              _mobileInitials(name),
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.w700,
                                               ),
                                             ),
                                           ),
+                                          Positioned(
+                                            right: -2,
+                                            bottom: 1,
+                                            child: Container(
+                                              width: 12,
+                                              height: 12,
+                                              decoration: BoxDecoration(
+                                                color: fresh
+                                                    ? const Color(0xFF35D05B)
+                                                    : const Color(0xFFFFB020),
+                                                shape: BoxShape.circle,
+                                                border: Border.all(
+                                                  color: const Color(
+                                                    0xFF073552,
+                                                  ),
+                                                  width: 2,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 5),
+                                      Text(
+                                        name,
+                                        maxLines: 2,
+                                        textAlign: TextAlign.center,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 11,
                                         ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 5),
-                                    Text(
-                                      name,
-                                      maxLines: 2,
-                                      textAlign: TextAlign.center,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 11,
                                       ),
-                                    ),
-                                    Text(
-                                      _mobileTime(
-                                        (item['schedule']
-                                            as Map?)?['dispatchedAt'],
+                                      Text(
+                                        _mobileTime(
+                                          (item['schedule']
+                                              as Map?)?['dispatchedAt'],
+                                        ),
+                                        style: const TextStyle(
+                                          color: Colors.white60,
+                                          fontSize: 10,
+                                        ),
                                       ),
-                                      style: const TextStyle(
-                                        color: Colors.white60,
-                                        fontSize: 10,
-                                      ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
                 Expanded(
                   child: latest == null
                       ? const Center(child: Text('No GPS location received.'))
@@ -3157,6 +3168,128 @@ class _ModuleScreenState extends State<ModuleScreen> {
               ],
             ),
           ),
+          if (constraints.maxWidth < 600)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 104,
+              height: 82,
+              child: Container(
+                color: const Color(0xF2071524),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: employees.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 7),
+                  itemBuilder: (context, index) {
+                    final item = employees[index];
+                    final employee = item['employee'] is Map
+                        ? item['employee'] as Map
+                        : const {};
+                    final empId = '${employee['empId'] ?? '-'}';
+                    final name = '${employee['name'] ?? 'Employee'}';
+                    final isSelected = empId == '${selectedEmployee['empId']}';
+                    final receivedAt = item['location'] is Map
+                        ? DateTime.tryParse(
+                            '${(item['location'] as Map)['receivedAt']}',
+                          )
+                        : null;
+                    final fresh =
+                        receivedAt != null &&
+                        DateTime.now().difference(receivedAt.toLocal()) <
+                            const Duration(minutes: 5);
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () =>
+                          setState(() => _selectedLiveEmployeeId = empId),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: 142,
+                        padding: const EdgeInsets.symmetric(horizontal: 9),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? const Color(0x3322D3EE)
+                              : const Color(0x11FFFFFF),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSelected
+                                ? const Color(0xFF22D3EE)
+                                : const Color(0x2238BDF8),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                CircleAvatar(
+                                  radius: 18,
+                                  backgroundColor: const Color(0xFF073552),
+                                  child: Text(
+                                    _mobileInitials(name),
+                                    style: const TextStyle(
+                                      color: Color(0xFF67E8F9),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  right: -1,
+                                  bottom: 0,
+                                  child: Container(
+                                    width: 9,
+                                    height: 9,
+                                    decoration: BoxDecoration(
+                                      color: fresh
+                                          ? const Color(0xFF35D05B)
+                                          : const Color(0xFFFFB020),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: const Color(0xFF071524),
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  Text(
+                                    fresh ? 'On duty' : 'Signal delayed',
+                                    style: TextStyle(
+                                      color: fresh
+                                          ? const Color(0xFF86EFAC)
+                                          : const Color(0xFFFCD34D),
+                                      fontSize: 9,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
           Positioned(
             left: 0,
             right: 0,
@@ -3845,12 +3978,31 @@ class _LiveTrackingMap extends StatelessWidget {
       latestCoordinate,
     ];
     final teamGroups = <String, List<(Map, LatLng)>>{};
-    for (final item in teamItems.whereType<Map>()) {
+    final teamRoutes = <(List<LatLng>, Color)>[];
+    const routeColors = [
+      Color(0xFF22D3EE),
+      Color(0xFFA855F7),
+      Color(0xFFF59E0B),
+      Color(0xFF84CC16),
+      Color(0xFF3B82F6),
+      Color(0xFFF43F5E),
+    ];
+    for (final entry in teamItems.whereType<Map>().indexed) {
+      final item = entry.$2;
       final coordinate = _coordinate(item['location']);
       if (coordinate == null) continue;
       final key =
           '${coordinate.latitude.toStringAsFixed(4)},${coordinate.longitude.toStringAsFixed(4)}';
       teamGroups.putIfAbsent(key, () => []).add((item, coordinate));
+      final route = item['movementPoints'] is List
+          ? (item['movementPoints'] as List)
+                .map(_coordinate)
+                .whereType<LatLng>()
+                .toList()
+          : <LatLng>[];
+      if (route.length > 1) {
+        teamRoutes.add((route, routeColors[entry.$1 % routeColors.length]));
+      }
     }
 
     return Column(
@@ -3877,41 +4029,71 @@ class _LiveTrackingMap extends StatelessWidget {
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'com.trakagile.trakagile_mobile',
                 ),
+                if (teamRoutes.isNotEmpty)
+                  PolylineLayer(
+                    polylines: [
+                      for (final route in teamRoutes)
+                        Polyline(
+                          points: route.$1,
+                          strokeWidth: 3,
+                          color: route.$2.withValues(alpha: 0.48),
+                        ),
+                    ],
+                  ),
                 if (movementCoordinates.length > 1)
                   PolylineLayer(
                     polylines: [
                       Polyline(
                         points: movementCoordinates,
+                        strokeWidth: 11,
+                        color: const Color(0xFF22D3EE).withValues(alpha: 0.16),
+                      ),
+                      Polyline(
+                        points: movementCoordinates,
                         strokeWidth: 5,
-                        color: Theme.of(context).colorScheme.primary,
+                        color: const Color(0xFF22D3EE),
                       ),
                     ],
                   ),
                 MarkerLayer(
                   markers: [
-                    for (final group in teamGroups.values)
+                    for (final markerEntry in teamGroups.values.indexed)
                       Marker(
-                        point: group.first.$2,
-                        width: 48,
-                        height: 48,
+                        point: markerEntry.$2.first.$2,
+                        width: 58,
+                        height: 58,
                         child: Container(
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF073552),
+                            color: const Color(0xFF071524),
                             shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2),
-                            boxShadow: const [
-                              BoxShadow(blurRadius: 5, color: Colors.black38),
+                            border: Border.all(
+                              color:
+                                  routeColors[markerEntry.$1 %
+                                      routeColors.length],
+                              width: 3,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                blurRadius: 18,
+                                spreadRadius: 4,
+                                color:
+                                    routeColors[markerEntry.$1 %
+                                            routeColors.length]
+                                        .withValues(alpha: 0.42),
+                              ),
                             ],
                           ),
                           child: Text(
-                            group.length > 1
-                                ? '${group.length}'
+                            markerEntry.$2.length > 1
+                                ? '${markerEntry.$2.length}'
                                 : _mobileInitials(
-                                    '${(group.first.$1['employee'] as Map?)?['name'] ?? ''}',
+                                    '${(markerEntry.$2.first.$1['employee'] as Map?)?['name'] ?? ''}',
                                   ),
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color:
+                                  routeColors[markerEntry.$1 %
+                                      routeColors.length],
                               fontWeight: FontWeight.w800,
                             ),
                           ),
@@ -3931,7 +4113,10 @@ class _LiveTrackingMap extends StatelessWidget {
                                 vertical: 3,
                               ),
                               decoration: BoxDecoration(
-                                color: Colors.white,
+                                color: const Color(0xE6071524),
+                                border: Border.all(
+                                  color: const Color(0x5522D3EE),
+                                ),
                                 borderRadius: BorderRadius.circular(6),
                                 boxShadow: const [
                                   BoxShadow(
@@ -3945,6 +4130,7 @@ class _LiveTrackingMap extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
+                                  color: Colors.white,
                                   fontSize: 10,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -3971,7 +4157,10 @@ class _LiveTrackingMap extends StatelessWidget {
                               vertical: 3,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.amber.shade100,
+                              color: const Color(0xEE071524),
+                              border: Border.all(
+                                color: const Color(0xFF22D3EE),
+                              ),
                               borderRadius: BorderRadius.circular(6),
                               boxShadow: const [
                                 BoxShadow(blurRadius: 3, color: Colors.black26),
@@ -3982,6 +4171,7 @@ class _LiveTrackingMap extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
+                                color: Color(0xFF67E8F9),
                                 fontSize: 10,
                                 fontWeight: FontWeight.w800,
                               ),
