@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
-import mongoose from "mongoose";
 import { verifyMobileToken } from "@/lib/mobileAuth";
+import { organizationIdentityFilter } from "@/lib/organization";
 import Attendance from "@/models/Attendance";
 import AttendancePolicy from "@/models/AttendancePolicy";
 import Employee from "@/models/Employee";
@@ -95,13 +95,9 @@ export async function requireAttendanceUser(allowedRoles, options = {}) {
 }
 
 export async function getAttendancePolicy(orgId) {
-  const normalizedOrgId = String(orgId || "").trim();
-  const organizationQuery = mongoose.isValidObjectId(normalizedOrgId)
-    ? Organization.findById(normalizedOrgId)
-    : Organization.findOne({ code: normalizedOrgId.toUpperCase() });
   const [policy, organization] = await Promise.all([
     AttendancePolicy.findOne({ orgId }).lean(),
-    organizationQuery.select("timeZone").lean(),
+    Organization.findOne(organizationIdentityFilter(orgId)).select("timeZone").lean(),
   ]);
   return {
     ...DEFAULT_ATTENDANCE_POLICY,

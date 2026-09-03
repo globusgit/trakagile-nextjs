@@ -1,6 +1,6 @@
 import connectDB from "@/lib/mongoose";
 import { auth } from "@/lib/auth";
-import { normalizeOrganizationCode } from "@/lib/organization";
+import { normalizeOrganizationCode, organizationIdentityFilter } from "@/lib/organization";
 import Organization from "@/models/Organization";
 import Employee from "@/models/Employee";
 import User from "@/models/User";
@@ -20,7 +20,7 @@ export async function GET(request) {
   }
   const session = await auth();
   if (!session?.user?.orgId) return Response.json({ message: "Unauthorized." }, { status: 401 });
-  const organization = await Organization.findById(session.user.orgId).lean();
+  const organization = await Organization.findOne(organizationIdentityFilter(session.user.orgId)).lean();
   return Response.json({ organizations: organization ? [organization] : [] });
 }
 

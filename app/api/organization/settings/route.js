@@ -1,5 +1,6 @@
 import { connectDB } from "@/lib/mongoose";
 import { normalizeInternationalSettings } from "@/lib/internationalSettings.mjs";
+import { organizationIdentityFilter } from "@/lib/organization";
 import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 import Organization from "@/models/Organization";
 import AttendancePolicy from "@/models/AttendancePolicy";
@@ -9,7 +10,7 @@ export async function GET() {
   try {
     await connectDB();
     const identity = await requireAttendanceUser();
-    const organization = await Organization.findOne({ _id: identity.orgId }).select("timeZone locale currency countryCode weekStartsOn").lean();
+    const organization = await Organization.findOne(organizationIdentityFilter(identity.orgId)).select("timeZone locale currency countryCode weekStartsOn").lean();
     if (!organization) throw new AttendanceError("Organization not found.", 404);
     return Response.json({ settings: normalizeInternationalSettings(organization) });
   } catch (error) { return errorResponse(error, "Unable to load organization settings."); }
@@ -22,7 +23,7 @@ export async function PUT(request) {
     let settings;
     try { settings = normalizeInternationalSettings(await request.json()); }
     catch (error) { throw new AttendanceError(error.message); }
-    const organization = await Organization.findOneAndUpdate({ _id: identity.orgId }, { $set: settings }, { new: true }).lean();
+    const organization = await Organization.findOneAndUpdate(organizationIdentityFilter(identity.orgId), { $set: settings }, { new: true }).lean();
     if (!organization) throw new AttendanceError("Organization not found.", 404);
     await AttendancePolicy.updateOne({ orgId: identity.orgId }, { $set: { timeZone: settings.timeZone } }, { upsert: true });
     return Response.json({ message: "International settings saved.", settings });
