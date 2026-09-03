@@ -161,3 +161,45 @@
 
 .employee-location-cluster strong { font-size: 20px; line-height: 1; }
 .employee-location-cluster span { margin-top: 3px; font-size: 9px; font-weight: 600; }
+
+.team-live-map .leaflet-tile-pane { filter: saturate(1.12) contrast(1.05); }
+.team-live-marker, .employee-direction-marker, .team-live-cluster { background: transparent; border: 0; }
+
+.team-live-marker__pulse {
+  --marker-color: #22d3ee;
+  position: relative;
+  display: grid;
+  width: 60px;
+  height: 60px;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--marker-color) 18%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--marker-color) 55%, transparent), 0 0 22px color-mix(in srgb, var(--marker-color) 45%, transparent);
+}
+
+.team-live-marker__pulse.is-selected { box-shadow: 0 0 0 5px color-mix(in srgb, var(--marker-color) 18%, transparent), 0 0 28px color-mix(in srgb, var(--marker-color) 70%, transparent); }
+.team-live-marker__pulse > span { position: absolute; inset: -7px; border: 1px solid var(--marker-color); border-radius: inherit; opacity: 0; animation: team-marker-pulse 2.4s ease-out infinite; }
+.team-live-marker__photo { z-index: 1; width: 46px; height: 46px; overflow: hidden; border: 3px solid var(--marker-color); border-radius: 999px; background: #0f172a; box-shadow: 0 8px 22px rgb(2 8 23 / 0.55); }
+.team-live-marker__photo img { width: 100%; height: 100%; object-fit: cover; }
+
+@keyframes team-marker-pulse {
+  0% { opacity: 0.8; transform: scale(0.75); }
+  85%, 100% { opacity: 0; transform: scale(1.18); }
+}
+
+.team-live-cluster div { display: grid; width: 62px; height: 62px; place-content: center; border: 2px solid rgb(103 232 249 / 0.75); border-radius: 999px; color: white; text-align: center; background: rgb(2 8 23 / 0.9); box-shadow: 0 0 24px rgb(34 211 238 / 0.4); backdrop-filter: blur(10px); }
+.team-live-cluster strong { font-size: 18px; line-height: 1; }
+.team-live-cluster span { margin-top: 3px; color: #a5f3fc; font-size: 9px; }
+.leaflet-tooltip.team-live-tooltip { border: 1px solid rgb(103 232 249 / 0.2); border-radius: 9px; color: white; background: rgb(2 8 23 / 0.9); box-shadow: 0 12px 28px rgb(2 8 23 / 0.5); }
+.leaflet-tooltip-top.team-live-tooltip::before { border-top-color: rgb(2 8 23 / 0.9); }
+
+.team-map-control { display: inline-flex; height: 38px; align-items: center; gap: 8px; border: 1px solid rgb(103 232 249 / 0.2); border-radius: 10px; padding: 0 12px; color: #e0f2fe; background: rgb(2 8 23 / 0.86); box-shadow: 0 10px 24px rgb(2 8 23 / 0.4); backdrop-filter: blur(10px); }
+.team-map-control:hover { border-color: rgb(103 232 249 / 0.6); background: rgb(8 47 73 / 0.92); }
+.team-map-stat { display: flex; min-width: 0; flex-direction: column; align-items: center; border: 1px solid rgb(255 255 255 / 0.08); border-radius: 12px; padding: 12px 8px; background: rgb(255 255 255 / 0.04); }
+.team-map-stat svg { width: 17px; height: 17px; color: #67e8f9; }
+.team-map-stat strong { margin-top: 7px; font-size: 13px; }
+.team-map-stat span { margin-top: 2px; color: #94a3b8; font-size: 10px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .team-live-marker__pulse > span { animation: none; }
+}
