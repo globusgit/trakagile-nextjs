@@ -162,7 +162,8 @@
 .employee-location-cluster strong { font-size: 20px; line-height: 1; }
 .employee-location-cluster span { margin-top: 3px; font-size: 9px; font-weight: 600; }
 
-.team-live-map .leaflet-tile-pane { filter: saturate(1.12) contrast(1.05); }
+.team-live-map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.58) contrast(1.28) saturate(0.72); }
+.team-live-map.is-light-map .leaflet-tile-pane { filter: none; }
 .team-live-marker, .employee-direction-marker, .team-live-cluster { background: transparent; border: 0; }
 
 .team-live-marker__pulse {

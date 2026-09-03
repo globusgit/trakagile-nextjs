@@ -108,15 +108,15 @@ function latestSpeed(employee: EmployeeLocation) {
 }
 
 export default function EmployeeLocationMap({ locations, fullScreen = false, selectedEmpId, onSelectEmployee }: { locations: EmployeeLocation[]; fullScreen?: boolean; selectedEmpId?: string | null; onSelectEmployee?: (empId: string) => void }) {
-  const [satelliteStyle, setSatelliteStyle] = useState(false);
+  const [lightMap, setLightMap] = useState(false);
   const [focusKey, setFocusKey] = useState(0);
   const selectedEmployee = locations.find((employee) => employee.empId === selectedEmpId) || locations[0];
   const selectedStatus = selectedEmployee ? statusFor(selectedEmployee) : null;
   if (!locations.length) return <div className={`grid place-items-center bg-slate-950 text-slate-400 ${fullScreen ? "h-[calc(100vh-110px)]" : "h-[620px]"}`}>No employee location has been received yet.</div>;
 
-  return <div className={`team-live-map relative overflow-hidden bg-[#071524] ${fullScreen ? "h-[calc(100vh-110px)]" : "h-[620px]"}`}>
+  return <div className={`team-live-map ${lightMap ? "is-light-map" : ""} relative overflow-hidden bg-[#071524] ${fullScreen ? "h-[calc(100vh-110px)]" : "h-[620px]"}`}>
     <MapContainer center={[locations[0].latitude, locations[0].longitude]} zoom={12} scrollWheelZoom zoomControl={false} className="size-full">
-      <TileLayer attribution='&copy; OpenStreetMap contributors &copy; CARTO' url={satelliteStyle ? "https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png" : "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"} />
+      <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />
       <FitLocations locations={locations} />
       <ResizeMap fullScreen={fullScreen} />
       <FocusEmployee employee={selectedEmployee} focusKey={`${selectedEmpId || selectedEmployee.empId}-${focusKey}`} />
@@ -141,7 +141,7 @@ export default function EmployeeLocationMap({ locations, fullScreen = false, sel
       </MarkerClusterGroup>
     </MapContainer>
     <div className="pointer-events-none absolute inset-0 z-[500] bg-[linear-gradient(90deg,rgba(2,8,23,.16),transparent_30%,transparent_70%,rgba(2,8,23,.28))]" />
-    <div className="absolute left-4 top-4 z-[600] flex gap-2"><button type="button" className="team-map-control" onClick={() => setSatelliteStyle((value) => !value)}><Satellite className="size-4" />{satelliteStyle ? "Dark map" : "Light map"}</button><button type="button" className="team-map-control" aria-label="Center selected employee" onClick={() => setFocusKey((value) => value + 1)}><Crosshair className="size-4" /></button></div>
+    <div className="absolute left-4 top-4 z-[600] flex gap-2"><button type="button" className="team-map-control" onClick={() => setLightMap((value) => !value)}><Satellite className="size-4" />{lightMap ? "Dark map" : "Light map"}</button><button type="button" className="team-map-control" aria-label="Center selected employee" onClick={() => setFocusKey((value) => value + 1)}><Crosshair className="size-4" /></button></div>
     {selectedEmployee && selectedStatus && <aside className="absolute bottom-24 right-4 top-4 z-[600] hidden w-[290px] overflow-y-auto rounded-2xl border border-cyan-300/20 bg-slate-950/90 p-4 text-white shadow-2xl backdrop-blur-xl lg:block">
       <div className="flex items-center gap-3"><Image src={selectedEmployee.photo ? `/api/files/employees/${encodeURIComponent(selectedEmployee.photo)}` : "/default-avatar.jpg"} alt={selectedEmployee.name} width={48} height={48} unoptimized className="size-12 rounded-full border-2 border-cyan-300 object-cover" /><div className="min-w-0 flex-1"><p className="truncate font-semibold">{selectedEmployee.name}</p><p className={`mt-0.5 flex items-center gap-1.5 text-xs ${selectedStatus.tone}`}><span className={`size-2 rounded-full ${selectedStatus.dot}`} />{selectedStatus.label}</p></div></div>
       <div className="mt-5 rounded-xl border border-cyan-300/15 bg-cyan-400/5 p-4 text-center"><Clock3 className="mx-auto size-5 text-cyan-300" /><p className="mt-2 text-3xl font-semibold tracking-tight">{elapsedTime(selectedEmployee)}</p><p className="mt-1 text-xs text-cyan-200/70">Today on duty</p></div>
