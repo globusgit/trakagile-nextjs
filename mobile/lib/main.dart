@@ -305,12 +305,6 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  static const _configuredOrganizationCode = String.fromEnvironment(
-    'ORGANIZATION_CODE',
-  );
-  late final TextEditingController _organizationCode = TextEditingController(
-    text: _configuredOrganizationCode,
-  );
   final _empId = TextEditingController();
   final _password = TextEditingController();
   bool _submitting = false;
@@ -318,7 +312,6 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   void dispose() {
-    _organizationCode.dispose();
     _empId.dispose();
     _password.dispose();
     super.dispose();
@@ -342,7 +335,6 @@ class _LoginPageState extends State<LoginPage> {
         Uri.parse('$baseUrl/api/mobile/auth/login'),
         headers: {'content-type': 'application/json'},
         body: jsonEncode({
-          'organizationCode': _organizationCode.text.trim().toUpperCase(),
           'empId': _empId.text.trim(),
           'password': _password.text,
         }),
@@ -406,17 +398,6 @@ class _LoginPageState extends State<LoginPage> {
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 28),
-                      TextField(
-                        controller: _organizationCode,
-                        textCapitalization: TextCapitalization.characters,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(
-                          labelText: 'Organization code (optional)',
-                          prefixIcon: Icon(Icons.business_outlined),
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
                       TextField(
                         controller: _empId,
                         textInputAction: TextInputAction.next,
