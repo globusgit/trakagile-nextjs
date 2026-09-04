@@ -90,7 +90,10 @@ class AttendanceTrackingService {
               notificationTitle: 'TrakAgile attendance tracking',
               notificationText:
                   'Location tracking is active until you mark out.',
+              notificationChannelName: 'Attendance location tracking',
               enableWakeLock: true,
+              enableWifiLock: true,
+              setOngoing: true,
             ),
           )
         : const LocationSettings(
