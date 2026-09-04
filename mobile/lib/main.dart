@@ -796,6 +796,29 @@ class _ModuleScreenState extends State<ModuleScreen> {
   Future<void> _attendanceAction() async {
     final attendance = _data?['attendance'];
     final isMarkedIn = attendance is Map && attendance['status'] == 'IN';
+    if (isMarkedIn) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          icon: const Icon(Icons.logout),
+          title: const Text('Confirm Mark Out'),
+          content: const Text(
+            'Your current GPS location will be recorded and today\'s attendance tracking will stop.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Mark Out'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
     setState(() {
       _submitting = true;
       _error = null;
@@ -4219,12 +4242,48 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _index = 0;
+  Map<String, dynamic>? _todayAttendance;
+  bool _attendanceLoading = true;
   static const destinations = [
     (Icons.dashboard_outlined, 'Dashboard'),
     (Icons.fingerprint, 'Attendance'),
     (Icons.event_note_outlined, 'Leaves'),
     (Icons.more_horiz, 'More'),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAttendanceSummary();
+  }
+
+  Future<void> _loadAttendanceSummary() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      if (token == null) return;
+      const baseUrl = String.fromEnvironment(
+        'API_BASE_URL',
+        defaultValue: 'http://10.0.2.2:3000',
+      );
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/attendance/today'),
+        headers: {'authorization': 'Bearer $token'},
+      );
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        if (mounted && body is Map) {
+          setState(() => _todayAttendance = body['attendance'] is Map
+              ? Map<String, dynamic>.from(body['attendance'] as Map)
+              : null);
+        }
+      }
+    } catch (_) {
+      // The full Attendance screen displays actionable network errors.
+    } finally {
+      if (mounted) setState(() => _attendanceLoading = false);
+    }
+  }
 
   List<AppModule> get _modules {
     const employeeModules = [
@@ -4328,7 +4387,10 @@ class _HomePageState extends State<HomePage> {
       },
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        onDestinationSelected: (value) => setState(() => _index = value),
+        onDestinationSelected: (value) {
+          setState(() => _index = value);
+          if (value == 0) _loadAttendanceSummary();
+        },
         destinations: [
           for (final item in destinations)
             NavigationDestination(icon: Icon(item.$1), label: item.$2),
@@ -4372,6 +4434,8 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
         ),
+        const SizedBox(height: 12),
+        _dashboardAttendanceCard(context),
         const SizedBox(height: 22),
         GridView.count(
           shrinkWrap: true,
@@ -4426,6 +4490,107 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
       ],
+    );
+  }
+
+  Widget _dashboardAttendanceCard(BuildContext context) {
+    final attendance = _todayAttendance;
+    final active = attendance?['status'] == 'IN';
+    final completed = attendance?['status'] == 'OUT';
+    final markIn = attendance?['markIn'];
+    final markOut = attendance?['markOut'];
+    String eventTime(dynamic event) {
+      if (event is! Map || event['time'] == null) return '--';
+      final value = DateTime.tryParse('${event['time']}')?.toLocal();
+      if (value == null) return '--';
+      final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
+      return '$hour:${value.minute.toString().padLeft(2, '0')} ${value.hour < 12 ? 'AM' : 'PM'}';
+    }
+    return Card(
+      elevation: 0,
+      color: active
+          ? const Color(0xFFECFDF5)
+          : completed
+          ? const Color(0xFFF0F9FF)
+          : Theme.of(context).colorScheme.surface,
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: _attendanceLoading
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: active
+                            ? const Color(0xFF059669)
+                            : Theme.of(context).colorScheme.primaryContainer,
+                        child: Icon(
+                          active
+                              ? Icons.location_on
+                              : completed
+                              ? Icons.check_circle_outline
+                              : Icons.fingerprint,
+                          color: active
+                              ? Colors.white
+                              : Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "TODAY'S ATTENDANCE",
+                              style: Theme.of(context).textTheme.labelSmall,
+                            ),
+                            Text(
+                              active
+                                  ? 'You are on duty'
+                                  : completed
+                                  ? 'Workday completed'
+                                  : 'Ready to start your workday',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    active
+                        ? 'Marked in at ${eventTime(markIn)} · GPS tracking active'
+                        : completed
+                        ? 'Mark in ${eventTime(markIn)} · Mark out ${eventTime(markOut)}'
+                        : 'Your GPS location will be captured securely.',
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      style: active
+                          ? FilledButton.styleFrom(
+                              backgroundColor: Theme.of(context).colorScheme.error,
+                            )
+                          : null,
+                      onPressed: () => setState(() => _index = 1),
+                      icon: Icon(active ? Icons.logout : Icons.login),
+                      label: Text(
+                        active
+                            ? 'Mark Out'
+                            : completed
+                            ? 'View Attendance Summary'
+                            : 'Mark In',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+      ),
     );
   }
 
