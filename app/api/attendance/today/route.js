@@ -3,7 +3,7 @@ import Attendance from "@/models/Attendance";
 import EmployeeVisit from "@/models/EmployeeVisit";
 // Register the populate target before EmployeeVisit.clientSiteId is resolved.
 import "@/models/VisitedSite";
-import { dayKey, errorResponse, getAttendancePolicy, requireAttendanceUser } from "../_lib/attendance";
+import { attendanceExpectedEndAt, dayKey, errorResponse, getAttendancePolicy, requireAttendanceUser } from "../_lib/attendance";
 import { workStatusFor } from "../_lib/work-status";
 import { reverseGeocode } from "../_lib/notifications";
 
@@ -41,7 +41,15 @@ export async function GET() {
           .lean()
       : [];
 
-    return Response.json({ attendance, visits, workStatus: workStatusFor(attendance, null) });
+    return Response.json({
+      attendance,
+      visits,
+      policy,
+      expectedMarkOutAt: attendance?.status === "IN"
+        ? attendanceExpectedEndAt(attendance, policy).toISOString()
+        : null,
+      workStatus: workStatusFor(attendance, null),
+    });
   } catch (error) {
     return errorResponse(error, "Unable to load today's attendance.");
   }

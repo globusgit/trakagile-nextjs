@@ -804,7 +804,102 @@ class _ModuleScreenState extends State<ModuleScreen> {
     final attendance = _data?['attendance'];
     final isMarkedIn = attendance is Map && attendance['status'] == 'IN';
     if (isMarkedIn) {
-      final confirmed = await showDialog<bool>(
+      final visits = _data?['visits'];
+      Map<dynamic, dynamic>? activeVisit;
+      if (visits is List) {
+        for (final visit in visits) {
+          if (visit is Map && visit['status'] == 'IN_PROGRESS') {
+            activeVisit = visit;
+            break;
+          }
+        }
+      }
+
+      if (activeVisit != null) {
+        final site = activeVisit['clientSiteId'];
+        final siteName = site is Map
+            ? [
+                site['clientName'],
+                site['siteName'],
+              ].where((value) => '${value ?? ''}'.trim().isNotEmpty).join(' / ')
+            : 'client/site';
+        final completeVisit = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            icon: const Icon(Icons.location_on_outlined),
+            title: const Text('Complete active visit'),
+            content: Text(
+              'Complete the active visit${siteName.isEmpty ? '' : ' at $siteName'} before marking out. Your current GPS location will be saved as the visit end point.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text('Complete Visit'),
+              ),
+            ],
+          ),
+        );
+        if (completeVisit != true || !mounted) return;
+
+        setState(() {
+          _submitting = true;
+          _error = null;
+        });
+        try {
+          if (!await Geolocator.isLocationServiceEnabled()) {
+            throw Exception('Turn on Location/GPS and try again.');
+          }
+          var permission = await Geolocator.checkPermission();
+          if (permission == LocationPermission.denied) {
+            permission = await Geolocator.requestPermission();
+          }
+          if (permission == LocationPermission.denied ||
+              permission == LocationPermission.deniedForever) {
+            throw Exception(
+              'Location permission is required to complete the visit.',
+            );
+          }
+          final position = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              timeLimit: Duration(seconds: 20),
+            ),
+          );
+          await _sendJson('/api/attendance/visits/end', {
+            'latitude': position.latitude,
+            'longitude': position.longitude,
+            'accuracy': position.accuracy,
+            'capturedAt': position.timestamp.toIso8601String(),
+            'remarks': 'Completed before marking out from mobile',
+          });
+          await _load();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Visit completed. You can now mark out.'),
+            ),
+          );
+        } catch (error) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(error.toString().replaceFirst('Exception: ', '')),
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
+            );
+          }
+          return;
+        } finally {
+          if (mounted) setState(() => _submitting = false);
+        }
+      }
+
+      final action = await showDialog<String>(
         context: context,
         builder: (dialogContext) => AlertDialog(
           icon: const Icon(Icons.logout),
@@ -814,17 +909,25 @@ class _ModuleScreenState extends State<ModuleScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
+              onPressed: () => Navigator.pop(dialogContext, 'cancel'),
               child: const Text('Cancel'),
             ),
+            OutlinedButton(
+              onPressed: () => Navigator.pop(dialogContext, 'continue'),
+              child: const Text('Continue Working'),
+            ),
             FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
+              onPressed: () => Navigator.pop(dialogContext, 'mark-out'),
               child: const Text('Mark Out'),
             ),
           ],
         ),
       );
-      if (confirmed != true || !mounted) return;
+      if (action == 'continue') {
+        await _continueWorking();
+        return;
+      }
+      if (action != 'mark-out' || !mounted) return;
     }
     setState(() {
       _submitting = true;
@@ -951,6 +1054,96 @@ class _ModuleScreenState extends State<ModuleScreen> {
         );
       }
     } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  Future<void> _continueWorking() async {
+    final reason = TextEditingController();
+    var hours = 1;
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          icon: const Icon(Icons.more_time),
+          title: const Text('Continue Working'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: reason,
+                decoration: const InputDecoration(
+                  labelText: 'Reason',
+                  hintText: 'Client support, deployment...',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<int>(
+                initialValue: hours,
+                decoration: const InputDecoration(
+                  labelText: 'Additional working time',
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  for (var value = 1; value <= 8; value++)
+                    DropdownMenuItem(
+                      value: value,
+                      child: Text('$value hour${value == 1 ? '' : 's'}'),
+                    ),
+                ],
+                onChanged: (value) => setDialogState(() => hours = value ?? 1),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (reason.text.trim().isEmpty) return;
+                Navigator.pop(dialogContext, true);
+              },
+              child: const Text('Confirm'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (submitted != true || !mounted) {
+      reason.dispose();
+      return;
+    }
+    setState(() => _submitting = true);
+    try {
+      final expectedEndAt = DateTime.now().add(Duration(hours: hours));
+      await _sendJson('/api/attendance/continue-working', {
+        'reason': reason.text.trim(),
+        'expectedEndAt': expectedEndAt.toUtc().toIso8601String(),
+      });
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Continue Working enabled for $hours hour${hours == 1 ? '' : 's'}.',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', '')),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } finally {
+      reason.dispose();
       if (mounted) setState(() => _submitting = false);
     }
   }
@@ -2567,6 +2760,24 @@ class _ModuleScreenState extends State<ModuleScreen> {
                       ),
                     ),
                   ),
+                  if (isMarkedIn && _data?['expectedMarkOutAt'] != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      'Expected Mark Out: ${_formatTimestamp('${_data?['expectedMarkOutAt']}')}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                      textAlign: TextAlign.center,
+                    ),
+                    if (attendance['overtime'] is Map &&
+                        attendance['overtime']['active'] == true)
+                      Text(
+                        'Continue Working remaining: ${_mobileRemaining(attendance['overtime']['expectedEndAt'])}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                  ],
                 ],
               ),
             ),
@@ -3675,6 +3886,21 @@ class _ModuleScreenState extends State<ModuleScreen> {
                   onTap:
                       widget.module.title == 'Live Tracking' && entry.$2 is Map
                       ? () => _showAdvancedLiveTrackingDetails(entry.$2 as Map)
+                      : widget.module.title == 'Notifications' &&
+                            entry.$2 is Map &&
+                            entry.$2['type'] == 'POSSIBLE_DELAY'
+                      ? () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (context) => ModuleScreen(
+                              module: const AppModule(
+                                Icons.fingerprint,
+                                'Attendance',
+                                'Mark out or continue working',
+                              ),
+                              user: widget.user,
+                            ),
+                          ),
+                        )
                       : widget.module.title == 'Tasks' && entry.$2 is Map
                       ? () => _showTaskActions(entry.$2 as Map)
                       : widget.module.title == 'Work From Home' &&
@@ -4309,9 +4535,11 @@ class _HomePageState extends State<HomePage> {
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
         if (mounted && body is Map) {
-          setState(() => _todayAttendance = body['attendance'] is Map
-              ? Map<String, dynamic>.from(body['attendance'] as Map)
-              : null);
+          setState(
+            () => _todayAttendance = body['attendance'] is Map
+                ? Map<String, dynamic>.from(body['attendance'] as Map)
+                : null,
+          );
         }
       }
     } catch (_) {
@@ -4542,6 +4770,7 @@ class _HomePageState extends State<HomePage> {
       final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
       return '$hour:${value.minute.toString().padLeft(2, '0')} ${value.hour < 12 ? 'AM' : 'PM'}';
     }
+
     return Card(
       elevation: 0,
       color: active
@@ -4610,7 +4839,9 @@ class _HomePageState extends State<HomePage> {
                     child: FilledButton.icon(
                       style: active
                           ? FilledButton.styleFrom(
-                              backgroundColor: Theme.of(context).colorScheme.error,
+                              backgroundColor: Theme.of(context)
+                                  .colorScheme
+                                  .error,
                             )
                           : null,
                       onPressed: () => setState(() => _index = 1),

@@ -17,6 +17,7 @@ export const DEFAULT_ATTENDANCE_POLICY = {
   reminderAfterMinutes: [15, 30],
   autoCloseMinutes: 1200,
   overtimeGraceMinutes: 30,
+  markOutResponseMinutes: 15,
   officeGeofence: {
     enabled: false,
     name: "Main Office",
@@ -148,6 +149,29 @@ export function dateAtZonedMinutes(dateKey, minutes, timeZone) {
   }
 
   return result;
+}
+
+export function attendanceExpectedEndAt(attendance, policy) {
+  if (attendance?.overtime?.active && attendance.overtime.expectedEndAt) {
+    return new Date(attendance.overtime.expectedEndAt);
+  }
+  if (attendance?.attendanceType === "FIELD_VISIT" && attendance.expectedWorkEndAt) {
+    return new Date(attendance.expectedWorkEndAt);
+  }
+
+  const scheduledStart = dateAtZonedMinutes(
+    attendance.attendanceDate,
+    policy.shiftStartMinutes,
+    policy.timeZone,
+  );
+  const scheduledEnd = dateAtZonedMinutes(
+    attendance.attendanceDate,
+    policy.shiftEndMinutes,
+    policy.timeZone,
+  );
+  const markIn = new Date(attendance.markIn.time);
+  const lateByMs = Math.max(0, markIn.getTime() - scheduledStart.getTime());
+  return new Date(scheduledEnd.getTime() + lateByMs);
 }
 
 export function locationFrom(body, now = new Date(), options = {}) {

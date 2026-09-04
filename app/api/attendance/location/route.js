@@ -4,15 +4,18 @@ import EmployeeVisit from "@/models/EmployeeVisit";
 import TrackingLocation from "@/models/TrackingLocation";
 import {
   AttendanceError,
+  attendanceExpectedEndAt,
   distanceBetween,
   errorResponse,
   getActiveAttendance,
+  getAttendancePolicy,
   locationFrom,
   movementFrom,
   reliableDistance,
   requireAttendanceUser,
 } from "../_lib/attendance";
 import { notifyAttendance, reverseGeocode } from "../_lib/notifications";
+import { closeAttendanceAfterNoResponse } from "../_lib/auto-close";
 
 export async function POST(request) {
   try {
@@ -155,6 +158,27 @@ export async function POST(request) {
       });
     }
 
+    const policy = await getAttendancePolicy(identity.orgId);
+    const expectedEndAt = attendanceExpectedEndAt(updatedAttendance || attendance, policy);
+    const responseMinutes = Number(policy.markOutResponseMinutes) || 15;
+    let autoMarkedOut = false;
+    if (now >= expectedEndAt) {
+      await notifyAttendance({
+        ...notificationBase,
+        type: "POSSIBLE_DELAY",
+        title: "Your Mark Out time has arrived",
+        message: `Mark Out now or choose Continue Working. With no response, attendance closes automatically after ${responseMinutes} minutes.`,
+        dedupeKey: `${attendance._id}:mark-out-response:${expectedEndAt.toISOString()}`,
+      });
+      if (now >= new Date(expectedEndAt.getTime() + responseMinutes * 60000)) {
+        autoMarkedOut = await closeAttendanceAfterNoResponse(
+          updatedAttendance || attendance,
+          now,
+          `No response within ${responseMinutes} minutes after the expected Mark Out time.`,
+        );
+      }
+    }
+
     return Response.json({
       message: "Location updated.",
       accepted: true,
@@ -163,6 +187,7 @@ export async function POST(request) {
       distanceAddedMeters: distanceMeters,
       totalDistanceMeters: updatedAttendance?.totalDistanceMeters || 0,
       locationName,
+      autoMarkedOut,
     });
   } catch (error) {
     return errorResponse(error, "Unable to update location.");
