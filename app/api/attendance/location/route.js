@@ -44,8 +44,8 @@ export async function POST(request) {
       }
     }
     const distanceMeters = reliableDistance(attendance.lastKnownLocation, location);
-    if (location.accuracy != null && location.accuracy > 100) {
-      return Response.json({ accepted: false, reason: "LOW_ACCURACY", message: "GPS point ignored because accuracy exceeded 100 metres." });
+    if (location.accuracy != null && location.accuracy > 60) {
+      return Response.json({ accepted: false, reason: "LOW_ACCURACY", message: "GPS point ignored because accuracy exceeded 60 metres." });
     }
     if (attendance.lastKnownLocation) {
       const previousTime = new Date(attendance.lastKnownLocation.capturedAt || attendance.lastLocationReceivedAt || now);

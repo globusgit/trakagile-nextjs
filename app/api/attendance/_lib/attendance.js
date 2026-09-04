@@ -213,10 +213,13 @@ export function distanceBetween(from, to) {
 
 export function reliableDistance(from, to) {
   const distance = distanceBetween(from, to);
+  const fromAccuracy = Number(from?.accuracy) || 0;
+  const toAccuracy = Number(to?.accuracy) || 0;
+  // GPS errors exist at both ends of a segment. Combining their uncertainty
+  // prevents a stationary employee's normal GPS drift from becoming travel.
   const accuracyThreshold = Math.max(
-    10,
-    Number(from?.accuracy) || 0,
-    Number(to?.accuracy) || 0,
+    12,
+    Math.hypot(fromAccuracy, toAccuracy) * 1.25,
   );
 
   return distance >= accuracyThreshold ? Math.round(distance) : 0;
