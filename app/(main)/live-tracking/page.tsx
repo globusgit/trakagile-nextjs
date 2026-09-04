@@ -64,8 +64,15 @@ function toMapLocation(item: LiveEmployee): EmployeeLocation | null {
     heading: point.heading,
     type: point.type === "MARK_IN" ? "MARK_IN" as const : "TRIGGER" as const,
   }));
-  const route: EmployeeLocation["route"] = [...movement, ...triggers]
-    .sort((first, second) => new Date(first.capturedAt).getTime() - new Date(second.capturedAt).getTime());
+  // Named trigger records are also present in movementPoints. Replace their
+  // display type in-place so the route does not double back over duplicate data.
+  const triggerKey = (point: { latitude: number; longitude: number; capturedAt: string }) =>
+    `${point.latitude.toFixed(6)}:${point.longitude.toFixed(6)}:${new Date(point.capturedAt).getTime()}`;
+  const triggerByKey = new Map(triggers.map((point) => [triggerKey(point), point]));
+  const route: EmployeeLocation["route"] = movement.map((point) => triggerByKey.get(triggerKey(point)) || point);
+  const movementKeys = new Set(movement.map(triggerKey));
+  route.push(...triggers.filter((point) => !movementKeys.has(triggerKey(point))));
+  route.sort((first, second) => new Date(first.capturedAt).getTime() - new Date(second.capturedAt).getTime());
   route.push({
     latitude: latest.latitude,
     longitude: latest.longitude,

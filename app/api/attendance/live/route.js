@@ -32,10 +32,11 @@ export async function GET() {
       : [];
     const histories = attendanceIds.length
       ? await TrackingLocation.aggregate([
-          { $match: { orgId: identity.orgId, attendanceId: { $in: attendanceIds } } },
+          // A trigger represents a newly resolved locality, not every GPS heartbeat.
+          { $match: { orgId: identity.orgId, attendanceId: { $in: attendanceIds }, locationNameRefreshed: true } },
           { $sort: { capturedAt: -1 } },
           { $group: { _id: "$attendanceId", points: { $push: { latitude: "$latitude", longitude: "$longitude", accuracy: "$accuracy", speed: "$speed", capturedAt: "$capturedAt", receivedAt: "$receivedAt", locationName: "$locationName", locationNameRefreshed: "$locationNameRefreshed" } } } },
-          { $project: { points: { $slice: ["$points", 50] } } },
+          { $project: { points: { $slice: ["$points", 250] } } },
         ])
       : [];
     const movements = attendanceIds.length
@@ -43,7 +44,9 @@ export async function GET() {
           { $match: { orgId: identity.orgId, attendanceId: { $in: attendanceIds } } },
           { $sort: { receivedAt: -1 } },
           { $group: { _id: "$attendanceId", points: { $push: { latitude: "$latitude", longitude: "$longitude", accuracy: "$accuracy", speed: "$speed", capturedAt: "$capturedAt", receivedAt: "$receivedAt", locationName: "$locationName", locationNameRefreshed: "$locationNameRefreshed" } } } },
-          { $project: { points: { $slice: ["$points", 100] } } },
+          // One point every ~45 seconds is about 960 points for a 12-hour shift.
+          // Keep the full working-day trail while retaining a defensive ceiling.
+          { $project: { points: { $slice: ["$points", 1200] } } },
         ])
       : [];
     const locationByAttendance = new Map(locations.map((item) => [String(item._id), item.location]));
@@ -85,13 +88,14 @@ export async function GET() {
         triggerPoints: (() => {
           const namedTriggers = historyByAttendance.get(String(attendance._id)) || [];
           const start = attendance.markIn?.location;
-          const startAlreadyIncluded = start && namedTriggers.some((point) =>
+          const isMarkInPoint = (point) => start &&
             Math.abs(point.latitude - start.latitude) < 0.000001 &&
-            Math.abs(point.longitude - start.longitude) < 0.000001,
-          );
+            Math.abs(point.longitude - start.longitude) < 0.000001;
           return [
-            ...(!start || startAlreadyIncluded ? [] : [{ ...start, type: "MARK_IN" }]),
-            ...namedTriggers.map((point) => ({ ...point, type: "LOCATION_TRIGGER" })),
+            ...(start ? [{ ...start, type: "MARK_IN" }] : []),
+            ...namedTriggers
+              .filter((point) => !isMarkInPoint(point))
+              .map((point) => ({ ...point, type: "LOCATION_TRIGGER" })),
           ];
         })(),
         movementPoints: movementByAttendance.get(String(attendance._id)) || [],
