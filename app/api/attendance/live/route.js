@@ -36,7 +36,8 @@ export async function GET() {
           { $match: { orgId: identity.orgId, attendanceId: { $in: attendanceIds }, locationNameRefreshed: true } },
           { $sort: { capturedAt: -1 } },
           { $group: { _id: "$attendanceId", points: { $push: { latitude: "$latitude", longitude: "$longitude", accuracy: "$accuracy", speed: "$speed", capturedAt: "$capturedAt", receivedAt: "$receivedAt", locationName: "$locationName", locationNameRefreshed: "$locationNameRefreshed" } } } },
-          { $project: { points: { $slice: ["$points", 250] } } },
+          // Retain the complete working-day trigger list for each employee.
+          { $project: { points: { $slice: ["$points", 1200] } } },
         ])
       : [];
     const movements = attendanceIds.length
