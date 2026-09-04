@@ -79,6 +79,10 @@ class AttendanceTrackingService {
         permission == LocationPermission.deniedForever) {
       return;
     }
+    if (defaultTargetPlatform == TargetPlatform.android &&
+        permission != LocationPermission.always) {
+      return;
+    }
 
     final LocationSettings settings =
         defaultTargetPlatform == TargetPlatform.android
@@ -846,6 +850,35 @@ class _ModuleScreenState extends State<ModuleScreen> {
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
         throw Exception('Location permission is required for attendance.');
+      }
+      if (!isMarkedIn &&
+          defaultTargetPlatform == TargetPlatform.android &&
+          permission != LocationPermission.always) {
+        if (!mounted) return;
+        final openSettings = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            icon: const Icon(Icons.location_on_outlined),
+            title: const Text('Allow background location'),
+            content: const Text(
+              'Before Mark In, open Permissions > Location and select "Allow all the time". This keeps your route updating when TrakAgile is in the background.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Not now'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Open settings'),
+              ),
+            ],
+          ),
+        );
+        if (openSettings == true) await Geolocator.openAppSettings();
+        throw Exception(
+          'Select "Allow all the time", return to TrakAgile, and tap Mark In again.',
+        );
       }
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
