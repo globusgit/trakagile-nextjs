@@ -1,6 +1,8 @@
 import { connectDB } from "@/lib/mongoose";
 import Attendance from "@/models/Attendance";
 import EmployeeVisit from "@/models/EmployeeVisit";
+// Register the populate target before EmployeeVisit.clientSiteId is resolved.
+import "@/models/VisitedSite";
 import { dayKey, errorResponse, getAttendancePolicy, requireAttendanceUser } from "../_lib/attendance";
 import { workStatusFor } from "../_lib/work-status";
 import { reverseGeocode } from "../_lib/notifications";
