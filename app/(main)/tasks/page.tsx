@@ -105,9 +105,24 @@ function ageLabel(createdAt: string, closedAt: string | undefined, now: number) 
 // Small hover-triggered card showing the full task description plus the
 // Created Date / Assigned Date that used to have their own columns.
 function DescriptionCell({ task, regional }: { task: Task; regional: { locale: string; timeZone: string } }) {
+  const descriptionLines = (task.description.match(/\S+/g) || []).reduce<string[]>((lines, word, index) => {
+    const lineIndex = Math.floor(index / 4);
+    lines[lineIndex] = lines[lineIndex] ? `${lines[lineIndex]} ${word}` : word;
+    return lines;
+  }, []);
+
   return (
     <HoverPanel
-      trigger={<p className="max-w-[220px] cursor-default truncate">{task.description}</p>}
+      trigger={
+        <p className="w-[220px] cursor-default line-clamp-2 whitespace-normal break-all">
+          {descriptionLines.map((line, index) => (
+            <span key={`${index}-${line}`}>
+              {line}
+              {index < descriptionLines.length - 1 && <br />}
+            </span>
+          ))}
+        </p>
+      }
       panel={
         <div className="space-y-2">
           <p className="whitespace-pre-wrap">{task.description}</p>
@@ -511,7 +526,7 @@ export default function TasksPage() {
 
       {error ? <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
 
-      <div className="overflow-x-auto rounded-xl border bg-white shadow">
+      <div className="overflow-visible rounded-xl border bg-white shadow [&_[data-slot=table-container]]:overflow-visible">
         {/* Task Source -> Vertical -> Task Type -> Sub-Task Type cascading
             filter bar, sitting just above the table's header row. */}
         <div className="flex flex-wrap items-end gap-3 border-b bg-slate-50 px-4 py-3">
