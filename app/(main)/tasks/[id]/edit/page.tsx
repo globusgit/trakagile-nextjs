@@ -316,28 +316,41 @@ export default function EditTaskPage() {
   const assignedToDisplay = (task?.assignedToNames || []).map((employee) => employee.name).join(", ");
 
   return (
-    <div className="space-y-4 px-0 md:px-4 lg:px-8">
+    <div className="space-y-4">
       <PageHeader title={canManage ? "Edit Task" : "View Task"} />
 
-      <Card className="shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-2xl">Task Information</CardTitle>
-          {canManage && (
-            <p className="text-sm text-muted-foreground">
-              Project No, Work-Order No, Tender No, Task Type, Sub-Task Type, Assigned To and Task Status can be edited here.
-            </p>
-          )}
-        </CardHeader>
-
-        <CardContent>
-          {loadingTask ? (
+      {loadingTask ? (
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-2xl">Task Information</CardTitle>
+          </CardHeader>
+          <CardContent>
             <p className="text-sm text-muted-foreground">Loading task...</p>
-          ) : loadError ? (
+          </CardContent>
+        </Card>
+      ) : loadError ? (
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-2xl">Task Information</CardTitle>
+          </CardHeader>
+          <CardContent>
             <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</div>
-          ) : task ? (
-            <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-              {/* Left: all the editable/read-only task fields. */}
-              <div className="space-y-8 lg:col-span-2">
+          </CardContent>
+        </Card>
+      ) : task ? (
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+          {/* Left: all the editable/read-only task fields. */}
+          <Card className="shadow-sm lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="text-2xl">Task Information</CardTitle>
+              {canManage && (
+                <p className="text-sm text-muted-foreground">
+                  Project No, Work-Order No, Tender No, Task Type, Sub-Task Type, Assigned To and Task Status can be edited here.
+                </p>
+              )}
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-8">
                 {serverError && (
                   <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                     {serverError}
@@ -463,64 +476,63 @@ export default function EditTaskPage() {
                   </>
                 )}
               </div>
+            </CardContent>
+          </Card>
 
-              {/* Right: Notes, pinned from the top of the card and sticky while
-                  the left column scrolls past it on larger screens. */}
-              <div className="lg:col-span-1">
-                <div className="space-y-4 rounded-lg border bg-slate-50 p-4 lg:sticky lg:top-4">
-                  <div>
-                    <h3 className="text-base font-semibold">Notes</h3>
-                    <p className="text-xs text-muted-foreground">
-                      Anyone with access to this task can add a note. Newest notes appear at the top.
-                    </p>
-                  </div>
-
-                  {notesError && (
-                    <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                      {notesError}
-                    </div>
-                  )}
-
-                  <div className="max-h-[420px] space-y-3 overflow-y-auto rounded-md border bg-white p-3">
-                    {displayNotes.length === 0 ? (
-                      <p className="py-6 text-center text-sm text-muted-foreground">No notes yet. Be the first to add one.</p>
-                    ) : (
-                      displayNotes.map((note, index) => (
-                        <div key={note._id || index} className="rounded-md border bg-slate-50 p-3 text-sm shadow-sm">
-                          <div className="mb-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                            <span className="font-semibold">{note.authorName || note.authorEmpId}</span>
-                            <span className="text-xs text-muted-foreground">{formatDateTime(note.createdAt)}</span>
-                          </div>
-                          <p className="whitespace-pre-wrap">{note.text}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Add a Note</Label>
-                    <Textarea
-                      value={noteText}
-                      onChange={(e) => setNoteText(e.target.value)}
-                      placeholder="Write a note for this task..."
-                      rows={3}
-                    />
-                    <div className="flex justify-end">
-                      <Button
-                        onClick={handleAddNote}
-                        disabled={addingNote || !noteText.trim()}
-                        className="bg-cyan-900 hover:bg-cyan-700"
-                      >
-                        {addingNote ? "Adding..." : "Add Note"}
-                      </Button>
-                    </div>
-                  </div>
+          {/* Right: Notes remain in the existing one-third-width column and
+              stay pinned while the task-information card scrolls. */}
+          <Card className="shadow-sm lg:col-span-1 lg:sticky lg:top-4 lg:self-start">
+            <CardHeader>
+              <CardTitle className="text-2xl">Notes</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Anyone with access to this task can add a note. Newest notes appear at the top.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Add a Note</Label>
+                <Textarea
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  placeholder="Write a note for this task..."
+                  rows={3}
+                />
+                <div className="flex justify-end">
+                  <Button
+                    onClick={handleAddNote}
+                    disabled={addingNote || !noteText.trim()}
+                    className="bg-cyan-900 hover:bg-cyan-700"
+                  >
+                    {addingNote ? "Adding..." : "Add Note"}
+                  </Button>
                 </div>
               </div>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
+
+              {notesError && (
+                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {notesError}
+                </div>
+              )}
+
+              <div className="max-h-[420px] space-y-3 overflow-y-auto rounded-md border bg-white p-3">
+                {displayNotes.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">No notes yet. Be the first to add one.</p>
+                ) : (
+                  displayNotes.map((note, index) => (
+                    <div key={note._id || index} className="rounded-md border bg-slate-50 p-3 text-sm shadow-sm">
+                      <div className="mb-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                        <span className="font-semibold">{note.authorName || note.authorEmpId}</span>
+                        <span className="text-xs text-muted-foreground">{formatDateTime(note.createdAt)}</span>
+                      </div>
+                      <p className="whitespace-pre-wrap">{note.text}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
     </div>
   );
 }
