@@ -6,14 +6,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 
-import PageHeader from "@/app/_components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { EmployeeLocation } from "../dashboard/EmployeeLocationMap";
 
-const EmployeeLocationMap = dynamic(() => import("../dashboard/EmployeeLocationMap"), {
+const EmployeeLocationMap = dynamic(() => import("./LiveEmployeeMap"), {
   ssr: false,
-  loading: () => <div className="h-[calc(100vh-270px)] min-h-[560px] animate-pulse rounded-2xl bg-slate-900" />,
+  loading: () => <div className="h-[calc(100dvh-155px)] min-h-[620px] animate-pulse rounded-2xl bg-slate-200" />,
 });
 
 type Point = {
@@ -139,16 +138,16 @@ export default function LiveTrackingPage() {
     router.replace(`/live-tracking?empId=${encodeURIComponent(empId)}`, { scroll: false });
   };
 
-  return <div className="space-y-4 pb-8">
-    <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-      <div><PageHeader title="Team Live Map" /><p className="mt-1 text-sm text-muted-foreground">Monitor active employee routes, GPS freshness and today&apos;s movement.</p></div>
+  return <div className="space-y-3 pb-4">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div><h1 className="text-xl font-bold tracking-tight text-slate-900">Live tracking</h1><p className="text-sm text-slate-500">Live routes, location triggers and GPS health</p></div>
       <div className="flex gap-2">
-        <div className="relative min-w-0 sm:w-80"><Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search employee or location" className="pl-9" /></div>
-        <Button variant="outline" onClick={() => void load(true)} disabled={loading}><RefreshCw className={loading ? "animate-spin" : ""} /><span className="hidden sm:inline">Refresh</span></Button>
+        <div className="relative min-w-0 sm:w-72"><Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search employee or location" className="bg-white pl-9" /></div>
+        <Button variant="outline" className="bg-white" onClick={() => void load(true)} disabled={loading}><RefreshCw className={loading ? "animate-spin" : ""} /><span className="hidden sm:inline">Refresh</span></Button>
       </div>
     </div>
-    <div className="overflow-hidden rounded-2xl border border-slate-800 shadow-2xl">
-      <EmployeeLocationMap locations={filteredLocations} selectedEmpId={selectedEmpId} onSelectEmployee={chooseEmployee} />
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <EmployeeLocationMap locations={filteredLocations} selectedEmpId={selectedEmpId} onSelectEmployee={chooseEmployee} loading={loading} />
     </div>
   </div>;
 }
