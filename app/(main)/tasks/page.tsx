@@ -643,7 +643,7 @@ export default function TasksPage() {
                 <TableRow key={task._id} className="hover:bg-gray-50">
                   <TableCell>
                     <Link href={`/tasks/${task._id}/edit`}>
-                      <Button size="icon" variant="ghost" className="size-8"><Pencil className="size-4" /></Button>
+                      <Button size="icon" variant="ghost" className="size-8  text-orange-500 hover:text-orange-700"><Pencil className="size-4" /></Button>
                     </Link>
                   </TableCell>
                   <TableCell className="whitespace-nowrap font-medium">{task.taskId}</TableCell>
