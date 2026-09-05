@@ -5,6 +5,7 @@ import TrackingLocation from "@/models/TrackingLocation";
 import WorkFromHomeRequest from "@/models/WorkFromHomeRequest";
 import {
   AttendanceError,
+  attendanceMarkOutAvailableAt,
   dayKey,
   errorResponse,
   distanceBetween,
@@ -34,6 +35,18 @@ export async function POST(request) {
     await dbSession.withTransaction(async () => {
       const attendance = await getActiveAttendance(identity.orgId, identity.empId, dbSession, true);
       if (!attendance) throw new AttendanceError("No active attendance found.", 404);
+
+      const markOutAvailableAt = attendanceMarkOutAvailableAt(attendance, policy);
+      if (now < markOutAvailableAt) {
+        throw new AttendanceError(
+          `Mark Out is available only after ${new Intl.DateTimeFormat("en-IN", {
+            timeZone: policy.timeZone,
+            hour: "numeric",
+            minute: "2-digit",
+          }).format(markOutAvailableAt)}.`,
+          409,
+        );
+      }
 
       const activeVisit = await EmployeeVisit.exists({
         attendanceId: attendance._id,

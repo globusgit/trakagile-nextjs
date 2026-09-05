@@ -46,18 +46,30 @@ export async function POST(request) {
         });
       }
     }
-    const distanceMeters = reliableDistance(attendance.lastKnownLocation, location);
     if (location.accuracy != null && location.accuracy > 60) {
       return Response.json({ accepted: false, reason: "LOW_ACCURACY", message: "GPS point ignored because accuracy exceeded 60 metres." });
     }
+    const distanceMeters = reliableDistance(attendance.lastKnownLocation, location);
     if (attendance.lastKnownLocation) {
       const previousTime = new Date(attendance.lastKnownLocation.capturedAt || attendance.lastLocationReceivedAt || now);
       const elapsedSeconds = Math.max(1, (location.capturedAt.getTime() - previousTime.getTime()) / 1000);
-      if (elapsedSeconds <= 0 || distanceMeters / elapsedSeconds > 55) {
+      const rawDistanceMeters = distanceBetween(attendance.lastKnownLocation, location);
+      if (elapsedSeconds <= 0 || rawDistanceMeters / elapsedSeconds > 45) {
         return Response.json({ accepted: false, reason: "UNREALISTIC_JUMP", message: "GPS point ignored because the movement was not physically plausible." });
       }
-      if (distanceMeters < 5 && elapsedSeconds < 30) {
-        return Response.json({ accepted: false, reason: "DUPLICATE", message: "Duplicate location point ignored." });
+      const reportedStationary = movement.speed != null && movement.speed < 0.5;
+      if (distanceMeters === 0 || (reportedStationary && rawDistanceMeters < 100)) {
+        await Attendance.updateOne(
+          { _id: attendance._id, status: "IN" },
+          { $set: { lastLocationReceivedAt: now, trackingStatus: "ACTIVE" } },
+        );
+        return Response.json({
+          accepted: true,
+          routePoint: false,
+          reason: "STATIONARY",
+          message: "GPS heartbeat received; stationary drift was excluded from the route.",
+          totalDistanceMeters: attendance.totalDistanceMeters || 0,
+        });
       }
     }
     const previousLocation = await TrackingLocation.findOne({

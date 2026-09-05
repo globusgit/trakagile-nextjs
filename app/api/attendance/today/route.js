@@ -3,7 +3,7 @@ import Attendance from "@/models/Attendance";
 import EmployeeVisit from "@/models/EmployeeVisit";
 // Register the populate target before EmployeeVisit.clientSiteId is resolved.
 import "@/models/VisitedSite";
-import { attendanceExpectedEndAt, dayKey, errorResponse, getAttendancePolicy, requireAttendanceUser } from "../_lib/attendance";
+import { attendanceExpectedEndAt, attendanceMarkOutAvailableAt, dayKey, errorResponse, getAttendancePolicy, requireAttendanceUser } from "../_lib/attendance";
 import { workStatusFor } from "../_lib/work-status";
 import { reverseGeocode } from "../_lib/notifications";
 
@@ -47,6 +47,9 @@ export async function GET() {
       policy,
       expectedMarkOutAt: attendance?.status === "IN"
         ? attendanceExpectedEndAt(attendance, policy).toISOString()
+        : null,
+      markOutAvailableAt: attendance?.status === "IN"
+        ? attendanceMarkOutAvailableAt(attendance, policy).toISOString()
         : null,
       workStatus: workStatusFor(attendance, null),
     });

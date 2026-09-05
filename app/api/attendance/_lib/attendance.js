@@ -26,6 +26,8 @@ export const DEFAULT_ATTENDANCE_POLICY = {
   },
 };
 
+export const MARK_OUT_ENABLE_MINUTES = 18 * 60;
+
 export class AttendanceError extends Error {
   constructor(message, status = 400) {
     super(message);
@@ -172,6 +174,14 @@ export function attendanceExpectedEndAt(attendance, policy) {
   const markIn = new Date(attendance.markIn.time);
   const lateByMs = Math.max(0, markIn.getTime() - scheduledStart.getTime());
   return new Date(scheduledEnd.getTime() + lateByMs);
+}
+
+export function attendanceMarkOutAvailableAt(attendance, policy) {
+  return dateAtZonedMinutes(
+    attendance.attendanceDate,
+    MARK_OUT_ENABLE_MINUTES,
+    policy.timeZone,
+  );
 }
 
 export function locationFrom(body, now = new Date(), options = {}) {

@@ -1,54 +1,39 @@
-# Live Tracking design QA
+# Live Tracking Map Design QA
 
-- Reference: selected map-first TrakAgile mobile concept (`exec-6e0f182b-7bcb-417b-9274-259cc7434f8d.png`)
-- Implementation: Flutter mobile Live Tracking screen, version 1.3.7+28
-- Source review: passed
-- Flutter analysis: passed
-- Flutter tests: passed
-- Release APK build: passed
-- Runtime screenshot comparison: blocked because no Android device or emulator is connected
+- Source visual truth: user-provided production screenshot in the conversation (employee T5678, light map, selected-employee panel).
+- Implementation screenshot: unavailable because no controllable in-app browser is connected to this workspace session.
+- Intended viewport: desktop, approximately 1920 × 1080 device pixels.
+- Source pixels: 1920 × 1080.
+- Implementation pixels/CSS size/density: not captured; normalization unavailable.
+- State: authenticated Live Tracking page with employee T5678 selected.
 
-The implemented structure includes the dark team rail, active/freshness indicators, selected employee state, all-team markers with overlap counts, selected route and trigger markers, shortened locality labels, and bottom live summary.
+## Full-view comparison evidence
 
-## Final result
+The source screenshot shows an oversized fixed accuracy circle and a pen-like triangular route produced by GPS drift. Code changes now separate route vertices from trigger overlays, filter low-quality and implausible movement, use rounded route strokes, and hide the accuracy circle until requested. A rendered after-state could not be captured for visual comparison.
 
-`final result: blocked`
+## Focused region comparison evidence
 
-Connect an Android device or start an emulator, install build 28, sign in with a supervisor account, and capture the Live Tracking screen at a comparable viewport before final visual acceptance.
+Blocked: the map route/marker region cannot be compared side-by-side without a browser-rendered implementation capture.
 
----
+## Findings
 
-# Dashboard Team Live Map design QA
+- P1 verification blocker: the corrected authenticated production state could not be rendered and captured in the available browser tooling.
+- P3 expected limitation: this implementation filters noisy GPS geometry but does not perform external road-network map matching; that requires a routing/map-matching service and should not be simulated visually.
 
-- Reference: selected desktop Fleet Constellation concept (`exec-4994aaaf-4b57-4ce3-8e03-972a20680e0e.png`)
-- Implementation: director/admin dashboard `EmployeeLocationMap`
-- Source review: passed
-- ESLint: passed
-- Next.js production build: passed
-- Runtime screenshot comparison: blocked because no in-app browser is available in this session
+## Comparison history
 
-The implementation includes dark CARTO map tiles, simultaneous color-coded employee routes, glowing photo markers, direction indicators, a selected-employee operations panel, live duration/distance/speed data, GPS freshness, a bottom employee dock, and functional map-style and refocus controls.
+- Initial evidence: triangular/double-back line, fixed 90 m accuracy circle, overlapping live/trigger markers.
+- Fixes made: server-side quality filtering and distance recalculation; stationary heartbeat suppression; separate event markers; optional real-accuracy circle; independent trigger numbering; rounded, lighter route stroke.
+- Post-fix visual evidence: blocked because no browser is available.
 
-## Final result
+## Implementation checklist
 
-`final result: blocked`
+- [x] Filter inaccurate, stationary-drift, and physically implausible points.
+- [x] Calculate displayed distance from the cleaned route.
+- [x] Keep trigger markers out of polyline geometry.
+- [x] Number triggers independently from Mark In.
+- [x] Make the actual GPS accuracy circle optional.
+- [x] Verify tests, lint, TypeScript, production build, and Flutter analysis.
+- [ ] Capture the authenticated after-state and compare it with the source screenshot.
 
-Open the dashboard with live employee data at a desktop viewport and compare it with the selected reference before final visual acceptance.
-
----
-
-# Web Live Tracking operations console design QA
-
-- Reference: selected Option 3 Balanced Operations Console concept.
-- Implementation: `/live-tracking` desktop page.
-- Focused ESLint: passed.
-- TypeScript: passed.
-- Runtime screenshot comparison: blocked because no in-app browser is available in this session.
-
-The implementation includes a light OpenStreetMap base, selected live route, animated current position, geofence radius, numbered clickable triggers, mark-in/mark-out markers, team freshness states, KPI summary, employee search, and detailed route timeline.
-
-## Final result
-
-`final result: blocked`
-
-Open `/live-tracking` with live data at a desktop viewport and compare it with the selected Option 3 reference before final visual acceptance.
+final result: blocked

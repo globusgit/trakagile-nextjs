@@ -637,6 +637,7 @@ export default function AttendancePage() {
 
   const [policy, setPolicy] = useState<AttendancePolicy | null>(null);
   const [expectedMarkOutAt, setExpectedMarkOutAt] = useState<string | null>(null);
+  const [markOutAvailableAt, setMarkOutAvailableAt] = useState<string | null>(null);
   const [workStatus, setWorkStatus] = useState<WorkStatus | null>(null);
   const [todayLocations, setTodayLocations] = useState<TrackingPoint[]>([]);
   const [todayRoute, setTodayRoute] = useState<RouteMeta | null>(null);
@@ -794,6 +795,7 @@ export default function AttendancePage() {
         );
         setWorkStatus(today.workStatus || null);
         setExpectedMarkOutAt(today.expectedMarkOutAt || null);
+        setMarkOutAvailableAt(today.markOutAvailableAt || null);
 
         setVisits(
           Array.isArray(
@@ -1130,6 +1132,11 @@ export default function AttendancePage() {
 
   const markOut =
     async (extra: Record<string, unknown> = {}) => {
+      const availableAt = markOutAvailableAt ? new Date(markOutAvailableAt) : null;
+      if (availableAt && currentTime < availableAt) {
+        toast.error(`Mark Out will be enabled at ${time(availableAt.toISOString())}.`);
+        return false;
+      }
       if (
         activeVisit
       ) {
@@ -2136,6 +2143,7 @@ export default function AttendancePage() {
             size="lg"
             disabled={
               busy ||
+              Boolean(markOutAvailableAt && currentTime < new Date(markOutAvailableAt)) ||
               (attendance.attendanceType === "WORK_FROM_HOME" && !wfhDeviceAllowed)
             }
             onClick={() => attendance.attendanceType === "WORK_FROM_HOME" ? setWfhSummaryOpen(true) : void markOut()}
@@ -2146,6 +2154,12 @@ export default function AttendancePage() {
               ? "Getting Final GPS..."
               : "Mark Out with Final GPS"}
           </Button>
+
+          {markOutAvailableAt && currentTime < new Date(markOutAvailableAt) && (
+            <p className="text-sm text-muted-foreground">
+              Mark Out will be enabled at {time(markOutAvailableAt)}.
+            </p>
+          )}
 
           {activeVisit && (
             <div className="flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between">
@@ -2366,7 +2380,7 @@ export default function AttendancePage() {
           <DialogFooter className="gap-2 sm:justify-between">
             <Button
               variant="destructive"
-              disabled={busy || Boolean(activeVisit)}
+              disabled={busy || Boolean(activeVisit) || Boolean(markOutAvailableAt && currentTime < new Date(markOutAvailableAt))}
               onClick={async () => {
                 if (attendance?.attendanceType === "WORK_FROM_HOME") {
                   setShiftDialogOpen(false);

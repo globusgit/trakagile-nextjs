@@ -1,0 +1,47 @@
+name: Mobile internal release
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_name:
+        description: Android version name
+        required: true
+        default: 1.3.10
+      build_number:
+        description: Android version code
+        required: true
+        default: "31"
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - name: Build internal APK
+        run: >-
+          flutter build apk --release
+          --build-name=${{ inputs.build_name }}
+          --build-number=${{ inputs.build_number }}
+          --dart-define=API_BASE_URL=https://trakagile.com
+      - name: Record checksum
+        run: sha256sum build/app/outputs/flutter-apk/app-release.apk > build/app/outputs/flutter-apk/app-release.apk.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TrakAgile-${{ inputs.build_name }}-build${{ inputs.build_number }}-internal
+          path: |
+            mobile/build/app/outputs/flutter-apk/app-release.apk
+            mobile/build/app/outputs/flutter-apk/app-release.apk.sha256
+          retention-days: 14

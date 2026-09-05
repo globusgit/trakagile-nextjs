@@ -11,6 +11,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 type RoutePoint = {
   latitude: number; longitude: number; capturedAt: string; locationName?: string | null;
   speed?: number | null; heading?: number | null; type: "MARK_IN" | "TRACK" | "TRIGGER" | "LIVE" | "MARK_OUT";
+  accuracy?: number | null;
 };
 
 export type EmployeeLocation = {
@@ -18,6 +19,7 @@ export type EmployeeLocation = {
   latitude: number; longitude: number; locationName: string; receivedAt: string; presentToday: boolean;
   attendanceDate: string; markInAt?: string | null; markOutAt?: string | null; attendanceStatus: "IN" | "OUT";
   trackingStatus?: "ACTIVE" | "DELAYED" | "OFFLINE" | "STOPPED"; totalDistanceMeters?: number; route: RoutePoint[];
+  accuracy?: number | null; events?: RoutePoint[];
 };
 
 const routeColors = ["#22d3ee", "#a855f7", "#f59e0b", "#84cc16", "#3b82f6", "#f43f5e"];

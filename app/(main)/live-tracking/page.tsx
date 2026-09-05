@@ -40,6 +40,7 @@ type LiveEmployee = {
   schedule?: { dispatchedAt?: string | null };
   triggerPoints?: Point[];
   movementPoints?: Point[];
+  filteredDistanceMeters?: number;
 };
 
 function toMapLocation(item: LiveEmployee): EmployeeLocation | null {
@@ -47,25 +48,14 @@ function toMapLocation(item: LiveEmployee): EmployeeLocation | null {
   const latest = item.location;
   if (!employee?.empId || latest?.latitude == null || latest?.longitude == null) return null;
 
-  const cleanMovement = (item.movementPoints || []).filter((point, index, points) => {
-    if (point.accuracy != null && point.accuracy > 60) return false;
-    if (index === 0 || index === points.length - 1) return true;
-    const previous = points[index - 1];
-    const latitudeDelta = (point.latitude - previous.latitude) * Math.PI / 180;
-    const longitudeDelta = (point.longitude - previous.longitude) * Math.PI / 180;
-    const latitude = previous.latitude * Math.PI / 180;
-    const haversine = Math.sin(latitudeDelta / 2) ** 2 + Math.cos(latitude) * Math.cos(latitude + latitudeDelta) * Math.sin(longitudeDelta / 2) ** 2;
-    const metres = 12_742_000 * Math.asin(Math.sqrt(haversine));
-    const uncertainty = Math.max(12, Math.hypot(previous.accuracy || 0, point.accuracy || 0) * 1.25);
-    return metres >= uncertainty;
-  });
-  const movement = cleanMovement.map((point) => ({
+  const movement = (item.movementPoints || []).map((point) => ({
     latitude: point.latitude,
     longitude: point.longitude,
     capturedAt: point.capturedAt || point.receivedAt || latest.receivedAt,
     locationName: point.locationName || null,
     speed: point.speed,
     heading: point.heading,
+    accuracy: point.accuracy,
     type: "TRACK" as const,
   }));
   const triggers = (item.triggerPoints || []).map((point) => ({
@@ -75,6 +65,7 @@ function toMapLocation(item: LiveEmployee): EmployeeLocation | null {
     locationName: point.locationName || null,
     speed: point.speed,
     heading: point.heading,
+    accuracy: point.accuracy,
     type: point.type === "MARK_IN" ? "MARK_IN" as const : "TRIGGER" as const,
   }));
   // Named trigger records are also present in movementPoints. Replace their
@@ -83,18 +74,8 @@ function toMapLocation(item: LiveEmployee): EmployeeLocation | null {
     `${point.latitude.toFixed(6)}:${point.longitude.toFixed(6)}:${new Date(point.capturedAt).getTime()}`;
   const triggerByKey = new Map(triggers.map((point) => [triggerKey(point), point]));
   const route: EmployeeLocation["route"] = movement.map((point) => triggerByKey.get(triggerKey(point)) || point);
-  const movementKeys = new Set(movement.map(triggerKey));
-  route.push(...triggers.filter((point) => !movementKeys.has(triggerKey(point))));
+  // Triggers are markers on the movement trail, never extra line vertices.
   route.sort((first, second) => new Date(first.capturedAt).getTime() - new Date(second.capturedAt).getTime());
-  route.push({
-    latitude: latest.latitude,
-    longitude: latest.longitude,
-    capturedAt: latest.capturedAt || latest.receivedAt,
-    locationName: latest.locationName || null,
-    speed: latest.speed,
-    heading: latest.heading,
-    type: "LIVE",
-  });
 
   return {
     empId: employee.empId,
@@ -111,8 +92,10 @@ function toMapLocation(item: LiveEmployee): EmployeeLocation | null {
     markOutAt: null,
     attendanceStatus: "IN",
     trackingStatus: item.attendance.trackingStatus || (item.workStatus.state === "VERIFIED" ? "ACTIVE" : "DELAYED"),
-    totalDistanceMeters: item.attendance.totalDistanceMeters || 0,
+    totalDistanceMeters: item.filteredDistanceMeters ?? item.attendance.totalDistanceMeters ?? 0,
     route,
+    events: triggers,
+    accuracy: latest.accuracy,
   };
 }
 

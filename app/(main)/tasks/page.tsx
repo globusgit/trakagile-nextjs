@@ -402,7 +402,11 @@ export default function TasksPage() {
     }
   }, [taskSourceFilter, taskVerticalFilter, taskTypeFilter]);
 
-  useEffect(() => { void loadFilterOptions(); }, [loadFilterOptions]);
+  useEffect(() => {
+    // Defer the initial state update so the effect only coordinates the async load.
+    const timer = window.setTimeout(() => void loadFilterOptions(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadFilterOptions]);
 
   // Task Source changed -> Vertical/Type/Sub-Type all reset (their scope no
   // longer applies).

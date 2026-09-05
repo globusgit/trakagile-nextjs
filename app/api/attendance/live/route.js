@@ -7,6 +7,7 @@ import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 import { notifyAttendance } from "../_lib/notifications";
 import { workStatusFor } from "../_lib/work-status";
 import { visibleEmployeeIds } from "@/lib/access";
+import { cleanLocationTrack, trackDistanceMeters, trackLengthMeters } from "@/lib/locationTrack.mjs";
 
 export async function GET() {
   try {
@@ -25,7 +26,7 @@ export async function GET() {
     const attendanceIds = attendances.map((attendance) => attendance._id);
     const locations = attendanceIds.length
       ? await TrackingLocation.aggregate([
-          { $match: { orgId: identity.orgId, attendanceId: { $in: attendanceIds } } },
+          { $match: { orgId: identity.orgId, attendanceId: { $in: attendanceIds }, $or: [{ accuracy: { $exists: false } }, { accuracy: { $lte: 50 } }] } },
           { $sort: { receivedAt: -1 } },
           { $group: { _id: "$attendanceId", location: { $first: "$$ROOT" } } },
         ])
@@ -42,7 +43,7 @@ export async function GET() {
       : [];
     const movements = attendanceIds.length
       ? await TrackingLocation.aggregate([
-          { $match: { orgId: identity.orgId, attendanceId: { $in: attendanceIds } } },
+          { $match: { orgId: identity.orgId, attendanceId: { $in: attendanceIds }, $or: [{ accuracy: { $exists: false } }, { accuracy: { $lte: 50 } }] } },
           { $sort: { receivedAt: -1 } },
           { $group: { _id: "$attendanceId", points: { $push: { latitude: "$latitude", longitude: "$longitude", accuracy: "$accuracy", speed: "$speed", capturedAt: "$capturedAt", receivedAt: "$receivedAt", locationName: "$locationName", locationNameRefreshed: "$locationNameRefreshed" } } } },
           // One point every ~45 seconds is about 960 points for a 12-hour shift.
@@ -73,6 +74,9 @@ export async function GET() {
         const expectedEndAt = attendance.overtime?.active
           ? attendance.overtime.expectedEndAt
           : attendance.expectedWorkEndAt;
+        const movementPoints = cleanLocationTrack(
+          movementByAttendance.get(String(attendance._id)) || [],
+        );
         return ({
         employee: employeeById.get(attendance.empId),
         attendance,
@@ -96,10 +100,14 @@ export async function GET() {
             ...(start ? [{ ...start, type: "MARK_IN" }] : []),
             ...namedTriggers
               .filter((point) => !isMarkInPoint(point))
+              .filter((point) => movementPoints.some((routePoint) =>
+                trackDistanceMeters(point, routePoint) <= Math.max(60, Number(point.accuracy) || 0),
+              ))
               .map((point) => ({ ...point, type: "LOCATION_TRIGGER" })),
           ];
         })(),
-        movementPoints: movementByAttendance.get(String(attendance._id)) || [],
+        movementPoints,
+        filteredDistanceMeters: Math.round(trackLengthMeters(movementPoints)),
       });}),
     });
   } catch (error) {

@@ -15,7 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const _apiBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'http://10.0.2.2:3000',
+  defaultValue: 'https://trakagile.com',
 );
 
 String _friendlyNetworkError(Object error) {
@@ -334,12 +334,8 @@ class _LoginPageState extends State<LoginPage> {
       _error = null;
     });
     try {
-      const baseUrl = String.fromEnvironment(
-        'API_BASE_URL',
-        defaultValue: 'http://10.0.2.2:3000',
-      );
       final response = await http.post(
-        Uri.parse('$baseUrl/api/mobile/auth/login'),
+        Uri.parse('$_apiBaseUrl/api/mobile/auth/login'),
         headers: {'content-type': 'application/json'},
         body: jsonEncode({
           'empId': _empId.text.trim(),
@@ -667,7 +663,8 @@ class _ModuleScreenState extends State<ModuleScreen> {
   void initState() {
     super.initState();
     _load();
-    if (widget.module.title == 'Live Tracking') {
+    if (widget.module.title == 'Live Tracking' ||
+        widget.module.title == 'Attendance') {
       _liveRefreshTimer = Timer.periodic(
         const Duration(seconds: 30),
         (_) => _load(silent: true),
@@ -725,12 +722,8 @@ class _ModuleScreenState extends State<ModuleScreen> {
       if (token == null) {
         throw Exception('Your session has expired. Sign in again.');
       }
-      const baseUrl = String.fromEnvironment(
-        'API_BASE_URL',
-        defaultValue: 'http://10.0.2.2:3000',
-      );
       final response = await http.get(
-        Uri.parse('$baseUrl$_endpoint'),
+        Uri.parse('$_apiBaseUrl$_endpoint'),
         headers: {'authorization': 'Bearer $token'},
       );
       final decoded = jsonDecode(response.body);
@@ -745,7 +738,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
       }
       if (widget.module.title == 'Leaves') {
         final leaveInfoResponse = await http.get(
-          Uri.parse('$baseUrl/api/leave/info?year=${DateTime.now().year}'),
+          Uri.parse('$_apiBaseUrl/api/leave/info?year=${DateTime.now().year}'),
           headers: {'authorization': 'Bearer $token'},
         );
         if (leaveInfoResponse.statusCode == 200) {
@@ -760,7 +753,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
           widget.module.title == 'Field Trips' ||
           widget.module.title == 'Group Attendance') {
         final clientsResponse = await http.get(
-          Uri.parse('$baseUrl/api/attendance/clients'),
+          Uri.parse('$_apiBaseUrl/api/attendance/clients'),
           headers: {'authorization': 'Bearer $token'},
         );
         if (clientsResponse.statusCode == 200) {
@@ -774,7 +767,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
       if (widget.module.title == 'Group Attendance' &&
           '${widget.user['role']}'.toUpperCase() == 'MANAGER') {
         final teamResponse = await http.get(
-          Uri.parse('$baseUrl/api/attendance/group?mode=team'),
+          Uri.parse('$_apiBaseUrl/api/attendance/group?mode=team'),
           headers: {'authorization': 'Bearer $token'},
         );
         if (teamResponse.statusCode == 200) {
@@ -804,6 +797,19 @@ class _ModuleScreenState extends State<ModuleScreen> {
     final attendance = _data?['attendance'];
     final isMarkedIn = attendance is Map && attendance['status'] == 'IN';
     if (isMarkedIn) {
+      final availableAt = DateTime.tryParse(
+        '${_data?['markOutAvailableAt'] ?? ''}',
+      )?.toLocal();
+      if (availableAt != null && DateTime.now().isBefore(availableAt)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Mark Out will be enabled at ${_formatTimestamp(availableAt.toIso8601String())}.',
+            ),
+          ),
+        );
+        return;
+      }
       final visits = _data?['visits'];
       Map<dynamic, dynamic>? activeVisit;
       if (visits is List) {
@@ -994,13 +1000,9 @@ class _ModuleScreenState extends State<ModuleScreen> {
       if (token == null) {
         throw Exception('Your session has expired. Sign in again.');
       }
-      const baseUrl = String.fromEnvironment(
-        'API_BASE_URL',
-        defaultValue: 'http://10.0.2.2:3000',
-      );
       final response = await http.post(
         Uri.parse(
-          '$baseUrl/api/attendance/${isMarkedIn ? 'mark-out' : 'mark-in'}',
+          '$_apiBaseUrl/api/attendance/${isMarkedIn ? 'mark-out' : 'mark-in'}',
         ),
         headers: {
           'authorization': 'Bearer $token',
@@ -1158,11 +1160,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
     if (token == null) {
       throw Exception('Your session has expired. Sign in again.');
     }
-    const baseUrl = String.fromEnvironment(
-      'API_BASE_URL',
-      defaultValue: 'http://10.0.2.2:3000',
-    );
-    final uri = Uri.parse('$baseUrl$path');
+    final uri = Uri.parse('$_apiBaseUrl$path');
     final headers = {
       'authorization': 'Bearer $token',
       'content-type': 'application/json',
@@ -1998,12 +1996,8 @@ class _ModuleScreenState extends State<ModuleScreen> {
       if (token == null) {
         throw Exception('Your session has expired. Sign in again.');
       }
-      const baseUrl = String.fromEnvironment(
-        'API_BASE_URL',
-        defaultValue: 'http://10.0.2.2:3000',
-      );
       final request =
-          http.MultipartRequest('POST', Uri.parse('$baseUrl/api/documents'))
+          http.MultipartRequest('POST', Uri.parse('$_apiBaseUrl/api/documents'))
             ..headers['authorization'] = 'Bearer $token'
             ..fields['title'] = title.text.trim()
             ..fields['category'] = category
@@ -2589,6 +2583,12 @@ class _ModuleScreenState extends State<ModuleScreen> {
     final isCompleted = hasAttendance && attendance['status'] == 'OUT';
     final markIn = hasAttendance ? attendance['markIn'] : null;
     final markOut = hasAttendance ? attendance['markOut'] : null;
+    final markOutAvailableAt = DateTime.tryParse(
+      '${_data?['markOutAvailableAt'] ?? ''}',
+    )?.toLocal();
+    final markOutLocked = isMarkedIn &&
+        markOutAvailableAt != null &&
+        DateTime.now().isBefore(markOutAvailableAt);
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -2740,7 +2740,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      onPressed: _submitting || isCompleted
+                      onPressed: _submitting || isCompleted || markOutLocked
                           ? null
                           : _attendanceAction,
                       icon: _submitting
@@ -2760,6 +2760,14 @@ class _ModuleScreenState extends State<ModuleScreen> {
                       ),
                     ),
                   ),
+                  if (markOutLocked) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      'Mark Out will be enabled at ${_formatTimestamp(markOutAvailableAt.toIso8601String())}.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                   if (isMarkedIn && _data?['expectedMarkOutAt'] != null) ...[
                     const SizedBox(height: 10),
                     Text(
@@ -3097,14 +3105,10 @@ class _ModuleScreenState extends State<ModuleScreen> {
       if (token == null) {
         throw Exception('Your session has expired. Sign in again.');
       }
-      const baseUrl = String.fromEnvironment(
-        'API_BASE_URL',
-        defaultValue: 'http://10.0.2.2:3000',
-      );
       final payload = <String, dynamic>{'action': action};
       if (status != null) payload['status'] = status;
       final response = await http.put(
-        Uri.parse('$baseUrl/api/tasks/$id'),
+        Uri.parse('$_apiBaseUrl/api/tasks/$id'),
         headers: {
           'authorization': 'Bearer $token',
           'content-type': 'application/json',
@@ -4524,12 +4528,8 @@ class _HomePageState extends State<HomePage> {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
       if (token == null) return;
-      const baseUrl = String.fromEnvironment(
-        'API_BASE_URL',
-        defaultValue: 'http://10.0.2.2:3000',
-      );
       final response = await http.get(
-        Uri.parse('$baseUrl/api/attendance/today'),
+        Uri.parse('$_apiBaseUrl/api/attendance/today'),
         headers: {'authorization': 'Bearer $token'},
       );
       if (response.statusCode == 200) {

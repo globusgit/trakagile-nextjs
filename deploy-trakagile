@@ -1,0 +1,385 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# TRAKAGILE SAFE DEPLOYMENT V5
+#
+# Source/staging repository : /var/www/staging
+# Live application          : /var/www/trakagile
+# Verified backups          : /var/www/backups
+#
+# The script fetches the latest PreProd commit, builds it away from the live
+# application, displays the source comparison, backs up live, atomically swaps
+# the tested runtime, checks application/database health, and rolls back on any
+# failure after the live switch starts.
+
+SOURCE_DIR="/var/www/staging"
+LIVE_DIR="/var/www/trakagile"
+BACKUP_DIR="/var/www/backups"
+BACKUP_RETENTION_DAYS="${TRAKAGILE_BACKUP_RETENTION_DAYS:-30}"
+BRANCH="${TRAKAGILE_BRANCH:-PreProd}"
+SERVICE="${TRAKAGILE_SERVICE:-trakagile-live.service}"
+DATABASE_BACKUP_SERVICE="${TRAKAGILE_DATABASE_BACKUP_SERVICE:-trakagile-mongodb-backup.service}"
+HEALTH_URL="${TRAKAGILE_HEALTH_URL:-http://127.0.0.1:3100/api/health}"
+AUTH_URL="${TRAKAGILE_AUTH_URL:-http://127.0.0.1:3100/api/auth/session}"
+ACTION_KEY_FILE="/etc/trakagile/server-actions.key"
+DEPLOY_ENV_FILE="/etc/trakagile/deployment.env"
+DEPLOY_MARKER="$LIVE_DIR/.deployment-id"
+
+TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+BACKUP_FILE="$BACKUP_DIR/trakagile-live-$TIMESTAMP.tar.gz"
+BUILD_DIR="/var/www/.trakagile-build-$TIMESTAMP"
+RESTORE_DIR="/var/www/.trakagile-restore-$TIMESTAMP"
+NEW_NEXT="$LIVE_DIR/.next.new-$TIMESTAMP"
+OLD_NEXT="$LIVE_DIR/.next.old-$TIMESTAMP"
+NEW_MODULES="$LIVE_DIR/node_modules.new-$TIMESTAMP"
+OLD_MODULES="$LIVE_DIR/node_modules.old-$TIMESTAMP"
+
+SWITCH_STARTED=0
+PREVIOUS_DEPLOY_ID=""
+DEPLOY_COMMIT=""
+SERVICE_USER=""
+SERVICE_GROUP=""
+SOURCE_USER=""
+
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+CYAN='\033[0;36m'
+RESET='\033[0m'
+
+info() { echo -e "${CYAN}[INFO]${RESET} $*"; }
+success() { echo -e "${GREEN}[OK]${RESET} $*"; }
+warning() { echo -e "${YELLOW}[WARNING]${RESET} $*"; }
+error() { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
+
+confirm() {
+  local answer
+  read -r -p "$1 [y/N]: " answer
+  [[ "$answer" =~ ^([yY]|[yY][eE][sS])$ ]]
+}
+
+source_git() {
+  runuser -u "$SOURCE_USER" -- git -C "$SOURCE_DIR" "$@"
+}
+
+rsync_excludes=(
+  --exclude='.git'
+  --exclude='.next'
+  --exclude='.next.old-*'
+  --exclude='.next.new-*'
+  --exclude='node_modules'
+  --exclude='node_modules.old-*'
+  --exclude='node_modules.new-*'
+  --exclude='.env'
+  --exclude='.env.*'
+  --exclude='.npm'
+  --exclude='.deployment-id'
+  --exclude='backups'
+  --exclude='storage'
+  --exclude='public/uploads'
+  --exclude='public/downloads'
+  --exclude='playwright-report'
+  --exclude='test-results'
+  --exclude='output'
+  --exclude='dist'
+  --exclude='mobile/build'
+  --exclude='*.apk'
+  --exclude='tsconfig.tsbuildinfo'
+)
+
+cleanup_temp() {
+  rm -rf -- "$BUILD_DIR" "$RESTORE_DIR" "$NEW_NEXT" "$NEW_MODULES" 2>/dev/null || true
+}
+
+health_check() {
+  local response
+  response="$(curl -fsS --max-time 8 "$HEALTH_URL")" || return 1
+  [[ "$response" == *'"status":"ok"'* && "$response" == *'"database":"reachable"'* ]] || return 1
+  curl -fsS --max-time 8 -o /dev/null "$AUTH_URL"
+}
+
+wait_for_health() {
+  local attempts="${1:-20}" delay="${2:-2}" attempt
+  for ((attempt = 1; attempt <= attempts; attempt++)); do
+    health_check && return 0
+    warning "Health check $attempt/$attempts failed; retrying..."
+    sleep "$delay"
+  done
+  return 1
+}
+
+run_project_tests() {
+  local test_files=()
+  while IFS= read -r -d '' test_file; do
+    test_files+=("$test_file")
+  done < <(find tests -type f -name '*.test.mjs' -print0)
+
+  [ "${#test_files[@]}" -gt 0 ] || {
+    error "No tests/*.test.mjs files were copied into the isolated build."
+    return 1
+  }
+
+  info "Running ${#test_files[@]} test files..."
+  node --test "${test_files[@]}"
+}
+
+write_deployment_env() {
+  local deployment_id="$1" action_key
+  action_key="$(tr -d '\r\n' < "$ACTION_KEY_FILE")"
+  umask 077
+  printf 'NEXT_DEPLOYMENT_ID=%s\nNEXT_SERVER_ACTIONS_ENCRYPTION_KEY=%s\n' \
+    "$deployment_id" "$action_key" > "$DEPLOY_ENV_FILE"
+  chmod 600 "$DEPLOY_ENV_FILE"
+}
+
+rollback() {
+  trap - ERR
+  set +e
+  error "Deployment failed after the live switch began. Rolling back."
+  systemctl stop "$SERVICE" >/dev/null 2>&1 || true
+
+  rm -rf -- "$LIVE_DIR/.next" "$LIVE_DIR/node_modules"
+  [ -d "$OLD_NEXT" ] && mv "$OLD_NEXT" "$LIVE_DIR/.next"
+  [ -d "$OLD_MODULES" ] && mv "$OLD_MODULES" "$LIVE_DIR/node_modules"
+
+  rm -rf -- "$RESTORE_DIR"
+  mkdir -p "$RESTORE_DIR"
+  tar -xzf "$BACKUP_FILE" -C "$RESTORE_DIR"
+  if [ -d "$RESTORE_DIR/trakagile" ]; then
+    rsync -a --delete "${rsync_excludes[@]}" "$RESTORE_DIR/trakagile/" "$LIVE_DIR/"
+  else
+    error "Backup does not contain trakagile/."
+  fi
+
+  if [ -n "$PREVIOUS_DEPLOY_ID" ]; then
+    printf '%s\n' "$PREVIOUS_DEPLOY_ID" > "$DEPLOY_MARKER"
+    write_deployment_env "$PREVIOUS_DEPLOY_ID"
+  else
+    rm -f -- "$DEPLOY_MARKER"
+    write_deployment_env "rollback-$TIMESTAMP"
+  fi
+
+  chown -R "$SERVICE_USER:$SERVICE_GROUP" "$LIVE_DIR"
+  systemctl daemon-reload
+  systemctl restart "$SERVICE"
+  if wait_for_health 20 2; then
+    success "Rollback succeeded; the previous TrakAgile release is online."
+  else
+    error "Rollback finished, but health checks still fail."
+    systemctl status "$SERVICE" --no-pager -l || true
+    journalctl -u "$SERVICE" -n 100 --no-pager || true
+  fi
+  cleanup_temp
+  exit 1
+}
+
+on_error() {
+  local code=$? line="${1:-unknown}"
+  trap - ERR
+  error "Command failed near line $line (exit $code)."
+  if [ "$SWITCH_STARTED" -eq 1 ]; then
+    rollback
+  fi
+  error "The live runtime was not switched; the current application remains online."
+  cleanup_temp
+  exit "$code"
+}
+
+trap 'on_error $LINENO' ERR
+trap 'if [ "$SWITCH_STARTED" -eq 0 ]; then cleanup_temp; fi' EXIT
+
+echo "============================================================"
+echo "             TRAKAGILE SAFE DEPLOYMENT V5"
+echo "============================================================"
+echo "Production Source : $SOURCE_DIR"
+echo "Live Application  : $LIVE_DIR"
+echo "Backup Directory  : $BACKUP_DIR"
+echo "Git Branch        : $BRANCH"
+echo "Systemd Service   : $SERVICE"
+echo "============================================================"
+
+[ "$EUID" -eq 0 ] || { error "Run this script as root."; exit 1; }
+for cmd in git rsync tar npm node systemctl curl openssl runuser stat find; do
+  command -v "$cmd" >/dev/null 2>&1 || { error "Required command missing: $cmd"; exit 1; }
+done
+
+mkdir -p "$LIVE_DIR" "$BACKUP_DIR" /etc/trakagile
+[ ! -d "$LIVE_DIR/live" ] && [ ! -d "$LIVE_DIR/staging" ] || {
+  error "Legacy nested deployment detected below $LIVE_DIR."
+  error "Migrate the existing live/staging directories to the requested flat layout before running this script."
+  exit 1
+}
+[ -d "$SOURCE_DIR/.git" ] || { error "Not a Git repository: $SOURCE_DIR"; exit 1; }
+SOURCE_USER="$(stat -c '%U' "$SOURCE_DIR")"
+[ -n "$SOURCE_USER" ] && [ "$SOURCE_USER" != "UNKNOWN" ] || {
+  error "Could not determine the owner of $SOURCE_DIR."
+  exit 1
+}
+systemctl cat "$SERVICE" >/dev/null 2>&1 || { error "Missing systemd service: $SERVICE"; exit 1; }
+systemctl cat "$DATABASE_BACKUP_SERVICE" >/dev/null 2>&1 || {
+  error "Missing database backup service: $DATABASE_BACKUP_SERVICE"
+  exit 1
+}
+SERVICE_WORKDIR="$(systemctl show "$SERVICE" --property=WorkingDirectory --value)"
+[ "$SERVICE_WORKDIR" = "$LIVE_DIR" ] || {
+  error "$SERVICE uses WorkingDirectory=$SERVICE_WORKDIR; expected $LIVE_DIR."
+  exit 1
+}
+SERVICE_USER="$(systemctl show "$SERVICE" --property=User --value)"
+SERVICE_GROUP="$(systemctl show "$SERVICE" --property=Group --value)"
+SERVICE_USER="${SERVICE_USER:-root}"
+SERVICE_GROUP="${SERVICE_GROUP:-$SERVICE_USER}"
+
+confirm "Start TrakAgile deployment?" || { warning "Deployment cancelled."; exit 0; }
+
+# Update only the staging/source repository. Live is never used as a Git pull target.
+if [ -n "$(source_git status --porcelain)" ]; then
+  error "$SOURCE_DIR contains uncommitted changes."
+  source_git status --short
+  exit 1
+fi
+source_git switch "$BRANCH"
+info "Fetching GitHub origin/$BRANCH..."
+source_git fetch origin "$BRANCH"
+
+LOCAL_COMMIT="$(source_git rev-parse HEAD)"
+REMOTE_COMMIT="$(source_git rev-parse "origin/$BRANCH")"
+if [ "$LOCAL_COMMIT" != "$REMOTE_COMMIT" ]; then
+  warning "New GitHub code is available:"
+  source_git log -1 --oneline "origin/$BRANCH"
+  confirm "Pull latest GitHub $BRANCH?" || { warning "Deployment cancelled."; exit 0; }
+  source_git merge --ff-only "origin/$BRANCH"
+else
+  success "Staging source is already up to date."
+fi
+
+DEPLOY_COMMIT="$(source_git rev-parse HEAD)"
+DEPLOY_MESSAGE="$(source_git log -1 --pretty=%s)"
+info "Candidate ${DEPLOY_COMMIT:0:12}: $DEPLOY_MESSAGE"
+
+if [ -f "$DEPLOY_MARKER" ] && [ "$(tr -d '\r\n' < "$DEPLOY_MARKER")" = "$DEPLOY_COMMIT" ]; then
+  diff="$(rsync -rcni --delete --out-format='%i %n' "${rsync_excludes[@]}" "$SOURCE_DIR/" "$LIVE_DIR/" || true)"
+  if [ -z "$diff" ]; then
+    success "This commit is already live and source files match."
+    exit 0
+  fi
+  error "Live source differs from the already-deployed commit; possible direct edits detected."
+  printf '%s\n' "$diff"
+  exit 1
+fi
+
+if [ ! -s "$ACTION_KEY_FILE" ]; then
+  info "Creating the persistent Server Actions encryption key."
+  umask 077
+  openssl rand -base64 32 > "$ACTION_KEY_FILE"
+  chmod 600 "$ACTION_KEY_FILE"
+fi
+export NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$(tr -d '\r\n' < "$ACTION_KEY_FILE")"
+export NEXT_DEPLOYMENT_ID="$DEPLOY_COMMIT"
+
+echo "Commit        : ${DEPLOY_COMMIT:0:12}"
+echo "Message       : $DEPLOY_MESSAGE"
+echo "Deployment ID : ${DEPLOY_COMMIT:0:12}"
+confirm "Build and deploy this commit?" || { warning "Deployment cancelled."; exit 0; }
+
+# Build in an isolated directory while live continues serving traffic.
+info "Preparing isolated build directory..."
+mkdir -p "$BUILD_DIR"
+rsync -a "${rsync_excludes[@]}" "$SOURCE_DIR/" "$BUILD_DIR/"
+for envfile in .env .env.local .env.production; do
+  [ -f "$LIVE_DIR/$envfile" ] && cp -p "$LIVE_DIR/$envfile" "$BUILD_DIR/$envfile"
+done
+cd "$BUILD_DIR"
+npm ci
+run_project_tests
+npm run lint
+npm run build
+printf '%s\n' "$DEPLOY_COMMIT" > "$BUILD_DIR/.deployment-id"
+[ "$(tr -d '\r\n' < "$BUILD_DIR/.deployment-id")" = "$DEPLOY_COMMIT" ] || {
+  error "Build deployment ID does not match the Git commit."
+  exit 1
+}
+[ -f "$BUILD_DIR/.next/required-server-files.json" ] || { error "Incomplete Next.js build."; exit 1; }
+[ -f "$BUILD_DIR/.next/BUILD_ID" ] || { error "Missing Next.js BUILD_ID."; exit 1; }
+success "Candidate build and tests passed."
+
+# Back up live before displaying and applying the source delta.
+info "Creating and verifying a fresh MongoDB backup..."
+systemctl start "$DATABASE_BACKUP_SERVICE"
+systemctl is-failed --quiet "$DATABASE_BACKUP_SERVICE" && {
+  error "MongoDB backup failed. Live deployment has not been changed."
+  systemctl status "$DATABASE_BACKUP_SERVICE" --no-pager -l || true
+  exit 1
+}
+success "MongoDB backup completed successfully."
+
+info "Creating verified live backup..."
+cd /var/www
+umask 077
+tar --exclude='trakagile/node_modules' --exclude='trakagile/.next' \
+  --exclude='trakagile/storage' --exclude='trakagile/public/uploads' \
+  --exclude='trakagile/output' --exclude='trakagile/dist' \
+  --exclude='trakagile/mobile/build' --exclude='trakagile/*.apk' \
+  -czf "$BACKUP_FILE" trakagile
+tar -tzf "$BACKUP_FILE" >/dev/null
+chmod 600 "$BACKUP_FILE"
+success "Backup verified: $BACKUP_FILE"
+
+if [[ "$BACKUP_RETENTION_DAYS" =~ ^[0-9]+$ ]]; then
+  find "$BACKUP_DIR" -maxdepth 1 -type f -name 'trakagile-live-*.tar.gz' \
+    -mtime "+$BACKUP_RETENTION_DAYS" -delete
+else
+  error "TRAKAGILE_BACKUP_RETENTION_DAYS must be a non-negative integer."
+  exit 1
+fi
+
+echo "================ SOURCE CHANGES ==================="
+rsync -avnc --delete "${rsync_excludes[@]}" "$SOURCE_DIR/" "$LIVE_DIR/"
+echo "==================================================="
+confirm "Continue with LIVE deployment?" || { warning "Cancelled; backup retained at $BACKUP_FILE"; exit 0; }
+
+# Prepare new runtime beside the current runtime.
+mv "$BUILD_DIR/.next" "$NEW_NEXT"
+mv "$BUILD_DIR/node_modules" "$NEW_MODULES"
+[ -f "$NEW_NEXT/required-server-files.json" ] || { error "Prepared .next runtime is invalid."; exit 1; }
+success "New runtime is ready while the current application remains online."
+warning "The next step causes a brief service restart."
+confirm "Switch to the new release now?" || { warning "Cancelled before live switch."; exit 0; }
+PREVIOUS_DEPLOY_ID="$(cat "$DEPLOY_MARKER" 2>/dev/null || true)"
+SWITCH_STARTED=1
+
+systemctl stop "$SERVICE"
+[ -d "$LIVE_DIR/.next" ] || { error "Current live .next is missing."; rollback; }
+[ -d "$LIVE_DIR/node_modules" ] || { error "Current live node_modules is missing."; rollback; }
+mv "$LIVE_DIR/.next" "$OLD_NEXT"
+mv "$LIVE_DIR/node_modules" "$OLD_MODULES"
+
+rsync -avc --delete "${rsync_excludes[@]}" "$SOURCE_DIR/" "$LIVE_DIR/"
+mv "$NEW_NEXT" "$LIVE_DIR/.next"
+mv "$NEW_MODULES" "$LIVE_DIR/node_modules"
+printf '%s\n' "$DEPLOY_COMMIT" > "$DEPLOY_MARKER"
+write_deployment_env "$DEPLOY_COMMIT"
+chown -R "$SERVICE_USER:$SERVICE_GROUP" "$LIVE_DIR"
+
+# Make the service consume the same deployment ID/key used by the build.
+mkdir -p "/etc/systemd/system/${SERVICE}.d"
+printf '[Service]\nEnvironmentFile=-%s\n' "$DEPLOY_ENV_FILE" \
+  > "/etc/systemd/system/${SERVICE}.d/deployment.conf"
+systemctl daemon-reload
+systemctl restart "$SERVICE"
+
+info "Waiting for application and database health..."
+wait_for_health 20 2 || rollback
+
+SWITCH_STARTED=0
+rm -rf -- "$OLD_NEXT" "$OLD_MODULES" "$BUILD_DIR" "$RESTORE_DIR"
+success "TrakAgile ${DEPLOY_COMMIT:0:12} is live."
+echo "============================================================"
+echo -e "${GREEN}       TRAKAGILE DEPLOYMENT SUCCESSFUL${RESET}"
+echo "============================================================"
+echo "Commit        : ${DEPLOY_COMMIT:0:12}"
+echo "Message       : $DEPLOY_MESSAGE"
+echo "Deployment ID : ${DEPLOY_COMMIT:0:12}"
+echo "Backup        : $BACKUP_FILE"
+echo "============================================================"
+systemctl status "$SERVICE" --no-pager -l
