@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { Building2, LogOut, Plus, RefreshCw, ShieldCheck, Users } from "lucide-react";
+import { Building2, LogOut, Pencil, Plus, RefreshCw, ShieldCheck, Users, X } from "lucide-react";
 
 type Admin = { name: string; username: string };
 type Organization = {
@@ -11,7 +11,13 @@ type Organization = {
   status: "ACTIVE" | "INACTIVE";
   contactPerson?: string;
   contactEmail?: string;
+  contactPhone?: string;
+  address?: string;
   timeZone?: string;
+  locale?: string;
+  currency?: string;
+  countryCode?: string;
+  weekStartsOn?: number;
   createdAt?: string;
 };
 
@@ -27,6 +33,7 @@ export default function SystemAdminPage() {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [checking, setChecking] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState<Organization | null>(null);
   const [message, setMessage] = useState<{ tone: "error" | "success"; text: string } | null>(null);
 
   const loadOrganizations = useCallback(async () => {
@@ -120,7 +127,7 @@ export default function SystemAdminPage() {
       <div className="mx-auto grid max-w-7xl gap-6 p-5 lg:grid-cols-[1fr_420px]">
         <section>
           <div className="mb-5 grid gap-4 sm:grid-cols-2"><div className="rounded-2xl border bg-white p-5 shadow-sm"><Building2 className="size-6 text-cyan-700" /><p className="mt-4 text-3xl font-bold">{organizations.length}</p><p className="text-sm text-slate-500">Total organizations</p></div><div className="rounded-2xl border bg-white p-5 shadow-sm"><Users className="size-6 text-emerald-600" /><p className="mt-4 text-3xl font-bold">{organizations.filter((item) => item.status === "ACTIVE").length}</p><p className="text-sm text-slate-500">Active tenants</p></div></div>
-          <div className="overflow-hidden rounded-2xl border bg-white shadow-sm"><div className="flex items-center justify-between border-b p-5"><div><h2 className="text-lg font-bold">Organizations</h2><p className="text-sm text-slate-500">Each organization has isolated users and business data.</p></div><button onClick={() => void loadOrganizations()} className="rounded-lg border p-2 hover:bg-slate-50" aria-label="Refresh organizations"><RefreshCw className="size-4" /></button></div><div className="divide-y">{organizations.map((item) => <div key={item._id} className="grid gap-3 p-5 sm:grid-cols-[1fr_auto] sm:items-center"><div><div className="flex items-center gap-2"><h3 className="font-bold">{item.name}</h3><span className="rounded-full bg-cyan-50 px-2 py-1 font-mono text-xs font-bold text-cyan-800">{item.code}</span></div><p className="mt-1 text-sm text-slate-500">{item.contactPerson || "No contact"} · {item.contactEmail || "No email"}</p><p className="mt-1 text-xs text-slate-400">{item.timeZone || "Asia/Kolkata"}{item.createdAt ? ` · Created ${new Date(item.createdAt).toLocaleDateString()}` : ""}</p></div><span className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${item.status === "ACTIVE" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{item.status}</span></div>)}{organizations.length === 0 ? <p className="p-8 text-center text-sm text-slate-500">No organizations created.</p> : null}</div></div>
+          <div className="overflow-hidden rounded-2xl border bg-white shadow-sm"><div className="flex items-center justify-between border-b p-5"><div><h2 className="text-lg font-bold">Organizations</h2><p className="text-sm text-slate-500">Each organization has isolated users and business data.</p></div><button onClick={() => void loadOrganizations()} className="rounded-lg border p-2 hover:bg-slate-50" aria-label="Refresh organizations"><RefreshCw className="size-4" /></button></div><div className="divide-y">{organizations.map((item) => <div key={item._id} className="grid gap-3 p-5 sm:grid-cols-[1fr_auto] sm:items-center"><div><div className="flex items-center gap-2"><h3 className="font-bold">{item.name}</h3><span className="rounded-full bg-cyan-50 px-2 py-1 font-mono text-xs font-bold text-cyan-800">{item.code}</span></div><p className="mt-1 text-sm text-slate-500">{item.contactPerson || "No contact"} · {item.contactEmail || "No email"}</p><p className="mt-1 text-xs text-slate-400">{item.timeZone || "Asia/Kolkata"}{item.createdAt ? ` · Created ${new Date(item.createdAt).toLocaleDateString()}` : ""}</p></div><div className="flex items-center gap-2"><span className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${item.status === "ACTIVE" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{item.status}</span><button type="button" onClick={() => setEditing(item)} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-slate-50"><Pencil className="size-3.5" />Edit</button></div></div>)}{organizations.length === 0 ? <p className="p-8 text-center text-sm text-slate-500">No organizations created.</p> : null}</div></div>
         </section>
         <section className="h-fit rounded-2xl border bg-white p-5 shadow-sm lg:sticky lg:top-5"><div className="mb-5 flex items-center gap-3"><div className="rounded-xl bg-cyan-50 p-2 text-cyan-700"><Plus className="size-5" /></div><div><h2 className="font-bold">Create organization</h2><p className="text-xs text-slate-500">Creates the tenant and its first Director.</p></div></div>
           <form onSubmit={createOrganization} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
@@ -131,8 +138,32 @@ export default function SystemAdminPage() {
           </form>
         </section>
       </div>
+      {editing ? <EditOrganizationDialog organization={editing} onClose={() => setEditing(null)} onSaved={async (organization) => { setOrganizations((items) => items.map((item) => item._id === organization._id ? organization : item)); setEditing(null); setMessage({ tone: "success", text: `${organization.name} was updated.` }); }} /> : null}
     </main>
   );
+}
+
+function EditOrganizationDialog({ organization, onClose, onSaved }: { organization: Organization; onClose: () => void; onSaved: (organization: Organization) => Promise<void> }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const result = await jsonRequest(`/api/organizations/${organization._id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))),
+      });
+      await onSaved(result.organization);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to update organization.");
+    } finally {
+      setSaving(false);
+    }
+  }
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/65 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="edit-organization-title"><div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-700">{organization.code}</p><h2 id="edit-organization-title" className="mt-1 text-2xl font-bold">Edit organization</h2><p className="mt-1 text-sm text-slate-500">The organization code is permanent to protect tenant links.</p></div><button type="button" onClick={onClose} className="rounded-lg border p-2 hover:bg-slate-50" aria-label="Close"><X className="size-4" /></button></div><form onSubmit={submit} className="mt-6 grid gap-4 sm:grid-cols-2"><Field name="name" label="Organization name" defaultValue={organization.name} /><Field name="status" label="Status" defaultValue={organization.status} /><Field name="contactPerson" label="Contact person" defaultValue={organization.contactPerson || "Not provided"} /><Field name="contactEmail" label="Contact email" type="email" defaultValue={organization.contactEmail || "not-provided@example.invalid"} /><Field name="contactPhone" label="Contact phone" defaultValue={organization.contactPhone || "Not provided"} /><Field name="address" label="Address" defaultValue={organization.address || "Not provided"} /><Field name="timeZone" label="Timezone" defaultValue={organization.timeZone || "Asia/Kolkata"} /><Field name="locale" label="Locale" defaultValue={organization.locale || "en-IN"} /><Field name="currency" label="Currency" defaultValue={organization.currency || "INR"} /><Field name="countryCode" label="Country code" defaultValue={organization.countryCode || "IN"} /><Field name="weekStartsOn" label="Week starts on (0-6)" defaultValue={String(organization.weekStartsOn ?? 1)} />{error ? <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700 sm:col-span-2">{error}</p> : null}<div className="flex justify-end gap-3 sm:col-span-2"><button type="button" onClick={onClose} className="rounded-xl border px-4 py-2.5 font-semibold hover:bg-slate-50">Cancel</button><button disabled={saving} className="rounded-xl bg-slate-950 px-5 py-2.5 font-semibold text-white hover:bg-cyan-800 disabled:opacity-60">{saving ? "Saving…" : "Save changes"}</button></div></form></div></div>;
 }
 
 function Field({ name, label, type = "text", ...props }: { name: string; label: string; type?: string; placeholder?: string; defaultValue?: string; minLength?: number }) {
