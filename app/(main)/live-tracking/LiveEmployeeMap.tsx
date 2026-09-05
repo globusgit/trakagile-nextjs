@@ -3,12 +3,13 @@
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
 import { AlertTriangle, Clock3, Crosshair, Gauge, MapPin, Navigation, Radio, Route, Search, Users } from "lucide-react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { EmployeeLocation } from "../dashboard/EmployeeLocationMap";
+import { splitLocationTrack } from "@/lib/locationTrack.mjs";
 
 type Props = { locations: EmployeeLocation[]; selectedEmpId?: string | null; onSelectEmployee?: (empId: string) => void; loading?: boolean };
 type TrackStatus = ReturnType<typeof status>;
@@ -60,6 +61,7 @@ export default function LiveEmployeeMap({ locations, selectedEmpId, onSelectEmpl
   const selected = locations.find((employee) => employee.empId === selectedEmpId) || locations[0];
   const visibleTeam = useMemo(() => locations.filter((employee) => `${employee.name} ${employee.empId}`.toLowerCase().includes(teamQuery.toLowerCase())), [locations, teamQuery]);
   const triggerPoints = selected?.events || [];
+  const routeSegments = splitLocationTrack(selected?.route || []);
   const triggerNumber = (index: number) => triggerPoints.slice(0, index + 1).filter((point) => point.type === "TRIGGER").length;
   const latestAccuracy = selected?.accuracy;
   const delayed = locations.filter((employee) => status(employee).label !== "On time").length;
@@ -80,7 +82,7 @@ export default function LiveEmployeeMap({ locations, selectedEmpId, onSelectEmpl
         <MapContainer center={[selected.latitude, selected.longitude]} zoom={14} scrollWheelZoom zoomControl className="size-full">
           <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           <FitRoute employee={selected} focusKey={focusKey} />
-          {selected.route.length > 1 && <><Polyline positions={selected.route.map((point) => [point.latitude, point.longitude])} pathOptions={{ color: "#38bdf8", weight: 8, opacity: .18, lineCap: "round", lineJoin: "round" }} /><Polyline positions={selected.route.map((point) => [point.latitude, point.longitude])} pathOptions={{ color: "#0284c7", weight: 4, opacity: .92, lineCap: "round", lineJoin: "round" }} /></>}
+          {routeSegments.filter((segment) => segment.length > 1).map((segment, index) => <Fragment key={`route-${index}`}><Polyline positions={segment.map((point) => [point.latitude, point.longitude])} pathOptions={{ color: "#38bdf8", weight: 8, opacity: .18, lineCap: "round", lineJoin: "round" }} /><Polyline positions={segment.map((point) => [point.latitude, point.longitude])} pathOptions={{ color: "#0284c7", weight: 4, opacity: .92, lineCap: "round", lineJoin: "round" }} /></Fragment>)}
           {triggerPoints.map((point, index) => { const number = triggerNumber(index); const label = point.type === "MARK_IN" ? "Marked in" : point.type === "MARK_OUT" ? "Marked out" : `Trigger ${number}`; return <Marker key={`${point.capturedAt}-${index}`} position={[point.latitude, point.longitude]} icon={triggerIcon(number, point.type)}><Popup><strong>{label}</strong><br />{point.locationName || "Location change detected"}<br /><span className="font-mono text-xs">{coordinates(point.latitude, point.longitude)}</span><br />{time(point.capturedAt)}{point.accuracy != null ? <><br />Accuracy ±{Math.round(point.accuracy)} m</> : null}</Popup><Tooltip direction="top">{label}</Tooltip></Marker>; })}
           {showAccuracy && latestAccuracy != null && <Circle center={[selected.latitude, selected.longitude]} radius={Math.min(60, Math.max(5, latestAccuracy))} pathOptions={{ color: "#0ea5e9", fillColor: "#38bdf8", fillOpacity: .08, weight: 1 }} />}
           {locations.filter((employee) => employee.empId !== selected.empId).map((employee) => <Marker key={employee.empId} position={[employee.latitude, employee.longitude]} icon={avatarIcon(employee)} eventHandlers={{ click: () => onSelectEmployee?.(employee.empId) }}><Tooltip direction="top">{employee.name}</Tooltip></Marker>)}

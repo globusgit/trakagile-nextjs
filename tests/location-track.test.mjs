@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cleanLocationTrack, trackLengthMeters } from "../lib/locationTrack.mjs";
+import { cleanLocationTrack, splitLocationTrack, trackLengthMeters } from "../lib/locationTrack.mjs";
 
 const point = (latitude, longitude, seconds, extras = {}) => ({
   latitude,
@@ -30,4 +30,18 @@ test("location tracks reject pen-like jumps inconsistent with device speed", () 
   ]);
   assert.equal(cleaned.length, 2);
   assert.ok(trackLengthMeters(cleaned) < 60);
+});
+
+test("location tracks never draw or count straight lines across GPS gaps", () => {
+  const points = [
+    point(17.4219, 78.3845, 0),
+    point(17.4220, 78.3846, 30),
+    { ...point(17.4250, 78.3850, 40), capturedAt: new Date(Date.UTC(2026, 8, 5, 8, 20, 0)).toISOString() },
+    { ...point(17.4251, 78.3851, 50), capturedAt: new Date(Date.UTC(2026, 8, 5, 8, 20, 30)).toISOString() },
+  ];
+  const segments = splitLocationTrack(points);
+  assert.equal(segments.length, 2);
+  assert.equal(segments[0].length, 2);
+  assert.equal(segments[1].length, 2);
+  assert.ok(trackLengthMeters(points) < 40);
 });
