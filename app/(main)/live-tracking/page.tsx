@@ -34,6 +34,7 @@ type LiveEmployee = {
     attendanceDate?: string;
     totalDistanceMeters?: number;
     trackingStatus?: EmployeeLocation["trackingStatus"];
+    lastLocationReceivedAt?: string;
     markIn?: { time?: string };
   };
   location?: Point & { receivedAt: string };
@@ -86,7 +87,9 @@ function toMapLocation(item: LiveEmployee): EmployeeLocation | null {
     latitude: latest.latitude,
     longitude: latest.longitude,
     locationName: latest.locationName || "Location name pending",
-    receivedAt: latest.receivedAt,
+    // Online/offline reflects the newest heartbeat, while the marker keeps the
+    // last reliable coordinates when stationary GPS drift is filtered out.
+    receivedAt: item.attendance.lastLocationReceivedAt || latest.receivedAt,
     presentToday: true,
     attendanceDate: item.attendance.attendanceDate || new Date().toISOString().slice(0, 10),
     markInAt: item.schedule?.dispatchedAt || item.attendance.markIn?.time || null,

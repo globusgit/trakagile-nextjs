@@ -59,7 +59,8 @@ export async function GET() {
     const now = Date.now();
     await Promise.all(attendances.map((attendance) => {
       const location = locationByAttendance.get(String(attendance._id)) || attendance.lastKnownLocation || attendance.markIn?.location;
-      if (location && now - new Date(location.receivedAt).getTime() <= 5 * 60_000) return null;
+      const heartbeatAt = attendance.lastLocationReceivedAt || location?.receivedAt;
+      if (heartbeatAt && now - new Date(heartbeatAt).getTime() <= 5 * 60_000) return null;
       return notifyAttendance({
         orgId: identity.orgId,
         empId: attendance.empId,
