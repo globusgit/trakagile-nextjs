@@ -1435,7 +1435,7 @@ export default function AttendancePage() {
       if (now >= reminderAt && now < expected) {
         notifyOnce(
           "shift-ending",
-          `Your expected Mark Out time is ${time(expectedMarkOutAt)}. Complete active visits and prepare to Mark Out.`
+          `Your expected Mark Out time is ${time(expected.toISOString())}. Complete active visits and prepare to Mark Out.`
         );
       }
 
