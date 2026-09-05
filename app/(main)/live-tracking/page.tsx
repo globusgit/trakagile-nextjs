@@ -24,6 +24,7 @@ type Point = {
   locationName?: string;
   speed?: number | null;
   heading?: number | null;
+  minuteTrigger?: boolean;
   type?: "MARK_IN" | "LOCATION_TRIGGER";
 };
 
@@ -68,7 +69,7 @@ function toMapLocation(item: LiveEmployee): EmployeeLocation | null {
     accuracy: point.accuracy,
     type: point.type === "MARK_IN" ? "MARK_IN" as const : "TRIGGER" as const,
   }));
-  // Named trigger records are also present in movementPoints. Replace their
+  // Minute and named trigger records are also present in movementPoints. Replace their
   // display type in-place so the route does not double back over duplicate data.
   const triggerKey = (point: { latitude: number; longitude: number; capturedAt: string }) =>
     `${point.latitude.toFixed(6)}:${point.longitude.toFixed(6)}:${new Date(point.capturedAt).getTime()}`;

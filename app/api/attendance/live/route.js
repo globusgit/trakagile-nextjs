@@ -33,10 +33,11 @@ export async function GET() {
       : [];
     const histories = attendanceIds.length
       ? await TrackingLocation.aggregate([
-          // A trigger represents a newly resolved locality, not every GPS heartbeat.
-          { $match: { orgId: identity.orgId, attendanceId: { $in: attendanceIds }, locationNameRefreshed: true } },
+          // Keep every scheduled minute heartbeat as a visible trigger. Legacy
+          // locality triggers remain visible for attendance recorded by older apps.
+          { $match: { orgId: identity.orgId, attendanceId: { $in: attendanceIds }, $or: [{ minuteTrigger: true }, { locationNameRefreshed: true }] } },
           { $sort: { capturedAt: -1 } },
-          { $group: { _id: "$attendanceId", points: { $push: { latitude: "$latitude", longitude: "$longitude", accuracy: "$accuracy", speed: "$speed", capturedAt: "$capturedAt", receivedAt: "$receivedAt", locationName: "$locationName", locationNameRefreshed: "$locationNameRefreshed" } } } },
+          { $group: { _id: "$attendanceId", points: { $push: { latitude: "$latitude", longitude: "$longitude", accuracy: "$accuracy", speed: "$speed", capturedAt: "$capturedAt", receivedAt: "$receivedAt", locationName: "$locationName", locationNameRefreshed: "$locationNameRefreshed", minuteTrigger: "$minuteTrigger" } } } },
           // Retain the complete working-day trigger list for each employee.
           { $project: { points: { $slice: ["$points", 1200] } } },
         ])
@@ -99,7 +100,7 @@ export async function GET() {
           return [
             ...(start ? [{ ...start, type: "MARK_IN" }] : []),
             ...namedTriggers
-              .filter((point) => !isMarkInPoint(point))
+              .filter((point) => point.minuteTrigger || !isMarkInPoint(point))
               .filter((point) => movementPoints.some((routePoint) =>
                 trackDistanceMeters(point, routePoint) <= Math.max(60, Number(point.accuracy) || 0),
               ))

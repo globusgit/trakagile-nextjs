@@ -138,13 +138,16 @@ class AttendanceTrackingService {
           timeLimit: Duration(seconds: 20),
         ),
       );
-      await _queuePosition(position);
+      await _queuePosition(position, minuteTrigger: true);
     } catch (_) {
       // The stream and the next minute heartbeat provide automatic recovery.
     }
   }
 
-  Future<void> _queuePosition(Position position) async {
+  Future<void> _queuePosition(
+    Position position, {
+    bool minuteTrigger = false,
+  }) async {
     if (position.accuracy > 100) return;
     final prefs = await SharedPreferences.getInstance();
     final lastRaw = prefs.getString('tracking_last_position');
@@ -157,7 +160,8 @@ class AttendanceTrackingService {
         position.longitude,
       );
       final lastTime = DateTime.tryParse('${last['capturedAt']}');
-      if (distance < 5 &&
+      if (!minuteTrigger &&
+          distance < 5 &&
           lastTime != null &&
           position.timestamp.difference(lastTime).inSeconds < 45) {
         return;
@@ -173,6 +177,7 @@ class AttendanceTrackingService {
       'heading': position.heading < 0 ? null : position.heading,
       'capturedAt': position.timestamp.toUtc().toIso8601String(),
       'offlineQueued': true,
+      'minuteTrigger': minuteTrigger,
     };
     final queue = (prefs.getStringList('tracking_offline_queue') ?? <String>[])
         .toList();
@@ -232,13 +237,69 @@ class TrakAgileApp extends StatefulWidget {
 }
 
 class _TrakAgileAppState extends State<TrakAgileApp> {
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   Map<String, dynamic>? _user;
   bool _loading = true;
+  bool _locationPromptOpen = false;
 
   @override
   void initState() {
     super.initState();
     _restoreSession();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_requestInitialLocationAccess());
+    });
+  }
+
+  Future<void> _requestInitialLocationAccess() async {
+    if (!mounted || kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return;
+    }
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (!mounted || permission == LocationPermission.always) return;
+
+    // Android 11+ does not offer "Allow all the time" in the first runtime
+    // dialog. Guide the employee to the app's Location settings for the
+    // required second step instead of silently disabling background tracking.
+    final promptContext = _navigatorKey.currentContext;
+    if (_locationPromptOpen ||
+        promptContext == null ||
+        !promptContext.mounted) {
+      return;
+    }
+    _locationPromptOpen = true;
+    await showDialog<void>(
+      context: promptContext,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.location_on_outlined, size: 38),
+        title: const Text('Allow background location'),
+        content: const Text(
+          'TrakAgile needs location access while attendance is active, even '
+          'when the app is closed. In Location permissions, select '
+          '"Allow all the time" and keep precise location enabled.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Later'),
+          ),
+          FilledButton.icon(
+            onPressed: () async {
+              Navigator.of(dialogContext).pop();
+              await Geolocator.openAppSettings();
+            },
+            icon: const Icon(Icons.settings_outlined),
+            label: const Text('Open settings'),
+          ),
+        ],
+      ),
+    );
+    _locationPromptOpen = false;
   }
 
   Future<void> _restoreSession() async {
@@ -285,6 +346,7 @@ class _TrakAgileAppState extends State<TrakAgileApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: 'TrakAgile',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
@@ -2586,7 +2648,8 @@ class _ModuleScreenState extends State<ModuleScreen> {
     final markOutAvailableAt = DateTime.tryParse(
       '${_data?['markOutAvailableAt'] ?? ''}',
     )?.toLocal();
-    final markOutLocked = isMarkedIn &&
+    final markOutLocked =
+        isMarkedIn &&
         markOutAvailableAt != null &&
         DateTime.now().isBefore(markOutAvailableAt);
     return RefreshIndicator(

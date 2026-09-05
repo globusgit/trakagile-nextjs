@@ -956,6 +956,9 @@ export default function AttendancePage() {
                     ...gps(
                       position
                     ),
+                    // Persist the scheduled heartbeat as a visible audit point,
+                    // including when the employee has not moved.
+                    minuteTrigger: true,
                   }
                 ),
             }

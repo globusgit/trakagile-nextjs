@@ -19,6 +19,9 @@ const TrackingLocationSchema = new mongoose.Schema(
     heading: { type: Number, min: 0, max: 360, default: null },
     locationName: { type: String, trim: true },
     locationNameRefreshed: { type: Boolean, default: false },
+    // Scheduled mobile heartbeats are retained as the employee's minute-by-minute
+    // audit trail even when GPS reports that the device is stationary.
+    minuteTrigger: { type: Boolean, default: false },
     capturedAt: { type: Date, required: true },
     receivedAt: { type: Date, required: true },
   },

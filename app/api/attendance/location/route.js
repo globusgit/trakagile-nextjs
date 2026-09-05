@@ -27,6 +27,7 @@ export async function POST(request) {
       maxClockDifferenceMs: body.offlineQueued ? 24 * 60 * 60 * 1000 : 5 * 60 * 1000,
     });
     const movement = movementFrom(body);
+    const minuteTrigger = body.minuteTrigger === true;
     const clientPointId =
       typeof body.clientPointId === "string" && body.clientPointId.trim()
         ? body.clientPointId.trim().slice(0, 120)
@@ -46,8 +47,9 @@ export async function POST(request) {
         });
       }
     }
-    if (location.accuracy != null && location.accuracy > 60) {
-      return Response.json({ accepted: false, reason: "LOW_ACCURACY", message: "GPS point ignored because accuracy exceeded 60 metres." });
+    const maximumAcceptedAccuracy = minuteTrigger ? 100 : 60;
+    if (location.accuracy != null && location.accuracy > maximumAcceptedAccuracy) {
+      return Response.json({ accepted: false, reason: "LOW_ACCURACY", message: `GPS point ignored because accuracy exceeded ${maximumAcceptedAccuracy} metres.` });
     }
     const distanceMeters = reliableDistance(attendance.lastKnownLocation, location);
     if (attendance.lastKnownLocation) {
@@ -58,7 +60,7 @@ export async function POST(request) {
         return Response.json({ accepted: false, reason: "UNREALISTIC_JUMP", message: "GPS point ignored because the movement was not physically plausible." });
       }
       const reportedStationary = movement.speed != null && movement.speed < 0.5;
-      if (distanceMeters === 0 || (reportedStationary && rawDistanceMeters < 100)) {
+      if (!minuteTrigger && (distanceMeters === 0 || (reportedStationary && rawDistanceMeters < 100))) {
         await Attendance.updateOne(
           { _id: attendance._id, status: "IN" },
           { $set: { lastLocationReceivedAt: now, trackingStatus: "ACTIVE" } },
@@ -107,6 +109,7 @@ export async function POST(request) {
         ...movement,
         locationName: locationName || undefined,
         locationNameRefreshed: Boolean(refreshedLocationName),
+        minuteTrigger,
       });
     } catch (error) {
       if (error?.code === 11000 && clientPointId) {

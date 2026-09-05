@@ -5,17 +5,12 @@ import Organization from "@/models/Organization";
 import Employee from "@/models/Employee";
 import User from "@/models/User";
 import bcrypt from "bcryptjs";
-import { serverEnvironment } from "@/lib/env.mjs";
 import { normalizeInternationalSettings } from "@/lib/internationalSettings.mjs";
-
-function platformAuthorized(request) {
-  const expected = serverEnvironment().platformAdminKey;
-  return Boolean(expected && request.headers.get("x-platform-admin-key") === expected);
-}
+import { platformRequestAuthorized } from "@/lib/platformAdminAuth";
 
 export async function GET(request) {
   await connectDB();
-  if (platformAuthorized(request)) {
+  if (await platformRequestAuthorized(request)) {
     return Response.json({ organizations: await Organization.find().sort({ name: 1 }).lean() });
   }
   const session = await auth();
@@ -27,7 +22,7 @@ export async function GET(request) {
 export async function POST(request) {
   let organization;
   try {
-    if (!platformAuthorized(request)) {
+    if (!(await platformRequestAuthorized(request))) {
       return Response.json({ message: "Platform administrator access is required." }, { status: 403 });
     }
     await connectDB();
