@@ -1,6 +1,7 @@
 import connectDB from "@/lib/mongoose";
 import { auth } from "@/lib/auth";
-import { normalizeOrganizationCode, organizationIdentityFilter } from "@/lib/organization";
+import { organizationIdentityFilter } from "@/lib/organization";
+import { availableOrganizationCode } from "@/lib/organizationCode.mjs";
 import Organization from "@/models/Organization";
 import Employee from "@/models/Employee";
 import User from "@/models/User";
@@ -27,15 +28,15 @@ export async function POST(request) {
     }
     await connectDB();
     const body = await request.json();
-    const code = normalizeOrganizationCode(body.code);
     const name = String(body.name || "").trim();
     const adminEmpId = String(body.adminEmpId || "").trim();
     const adminName = String(body.adminName || "").trim();
     const adminEmail = String(body.adminEmail || "").trim().toLowerCase();
     const adminPassword = String(body.adminPassword || "");
-    if (!code || !/^[A-Z0-9][A-Z0-9_-]{1,31}$/.test(code) || !name || !adminEmpId || !adminName || !adminEmail || adminPassword.length < 8) {
+    if (!name || !adminEmpId || !adminName || !adminEmail || adminPassword.length < 8) {
       return Response.json({ message: "Organization details and a first Director with an 8+ character password are required." }, { status: 400 });
     }
+    const code = await availableOrganizationCode(name, (candidate) => Organization.exists({ code: candidate }));
     const international = normalizeInternationalSettings(body);
     organization = await Organization.create({
       name,

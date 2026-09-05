@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, InputHTMLAttributes, useCallback, useEffect, useState } from "react";
 import { Building2, LogOut, Pencil, Plus, RefreshCw, ShieldCheck, Users, X } from "lucide-react";
 
 type Admin = { name: string; username: string };
@@ -34,6 +34,7 @@ export default function SystemAdminPage() {
   const [checking, setChecking] = useState(true);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<Organization | null>(null);
+  const [newOrganizationName, setNewOrganizationName] = useState("");
   const [message, setMessage] = useState<{ tone: "error" | "success"; text: string } | null>(null);
 
   const loadOrganizations = useCallback(async () => {
@@ -85,6 +86,7 @@ export default function SystemAdminPage() {
       });
       setMessage({ tone: "success", text: `${result.organization.name} was created with Director ${result.director.empId}.` });
       formElement.reset();
+      setNewOrganizationName("");
       await loadOrganizations();
     } catch (error) {
       setMessage({ tone: "error", text: error instanceof Error ? error.message : "Unable to create organization." });
@@ -131,8 +133,9 @@ export default function SystemAdminPage() {
         </section>
         <section className="h-fit rounded-2xl border bg-white p-5 shadow-sm lg:sticky lg:top-5"><div className="mb-5 flex items-center gap-3"><div className="rounded-xl bg-cyan-50 p-2 text-cyan-700"><Plus className="size-5" /></div><div><h2 className="font-bold">Create organization</h2><p className="text-xs text-slate-500">Creates the tenant and its first Director.</p></div></div>
           <form onSubmit={createOrganization} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
-            <Field name="name" label="Organization name" placeholder="GAAR" /><Field name="code" label="Organization code" placeholder="GAAR" /><Field name="contactPerson" label="Contact person" /><Field name="contactEmail" label="Contact email" type="email" /><Field name="contactPhone" label="Contact phone" /><Field name="address" label="Address" /><Field name="adminName" label="Director name" /><Field name="adminEmpId" label="Director employee ID" /><Field name="adminEmail" label="Director email" type="email" /><Field name="adminPhone" label="Director phone" /><Field name="adminPassword" label="Temporary password" type="password" minLength={8} /><Field name="timeZone" label="Timezone" defaultValue="Asia/Kolkata" />
+            <Field name="name" label="Organization name" placeholder="Frazen Technologies Pvt Ltd" value={newOrganizationName} onChange={(event) => setNewOrganizationName(event.target.value)} /><Field label="Organization code" value={organizationCodePreview(newOrganizationName)} readOnly aria-readonly="true" className="bg-slate-100 font-mono font-bold text-cyan-800" /><Field name="contactPerson" label="Contact person" /><Field name="contactEmail" label="Contact email" type="email" /><Field name="contactPhone" label="Contact phone" /><Field name="address" label="Address" /><Field name="adminName" label="Director name" /><Field name="adminEmpId" label="Director employee ID" /><Field name="adminEmail" label="Director email" type="email" /><Field name="adminPhone" label="Director phone" /><Field name="adminPassword" label="Temporary password" type="password" minLength={8} /><Field name="timeZone" label="Timezone" defaultValue="Asia/Kolkata" />
             <input type="hidden" name="locale" value="en-IN" /><input type="hidden" name="currency" value="INR" /><input type="hidden" name="countryCode" value="IN" /><input type="hidden" name="weekStartsOn" value="1" />
+            <p className="rounded-xl bg-cyan-50 p-3 text-xs leading-5 text-cyan-900 sm:col-span-2">The Director and all employees created inside this workspace are automatically linked to the new organization. Tenant assignment cannot be changed from employee forms.</p>
             {message ? <p role="status" className={`rounded-xl p-3 text-sm sm:col-span-2 ${message.tone === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{message.text}</p> : null}
             <button disabled={busy} className="rounded-xl bg-slate-950 px-4 py-3 font-semibold text-white hover:bg-cyan-800 disabled:opacity-60 sm:col-span-2">{busy ? "Creating…" : "Create organization and Director"}</button>
           </form>
@@ -166,6 +169,13 @@ function EditOrganizationDialog({ organization, onClose, onSaved }: { organizati
   return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/65 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="edit-organization-title"><div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-700">{organization.code}</p><h2 id="edit-organization-title" className="mt-1 text-2xl font-bold">Edit organization</h2><p className="mt-1 text-sm text-slate-500">The organization code is permanent to protect tenant links.</p></div><button type="button" onClick={onClose} className="rounded-lg border p-2 hover:bg-slate-50" aria-label="Close"><X className="size-4" /></button></div><form onSubmit={submit} className="mt-6 grid gap-4 sm:grid-cols-2"><Field name="name" label="Organization name" defaultValue={organization.name} /><Field name="status" label="Status" defaultValue={organization.status} /><Field name="contactPerson" label="Contact person" defaultValue={organization.contactPerson || "Not provided"} /><Field name="contactEmail" label="Contact email" type="email" defaultValue={organization.contactEmail || "not-provided@example.invalid"} /><Field name="contactPhone" label="Contact phone" defaultValue={organization.contactPhone || "Not provided"} /><Field name="address" label="Address" defaultValue={organization.address || "Not provided"} /><Field name="timeZone" label="Timezone" defaultValue={organization.timeZone || "Asia/Kolkata"} /><Field name="locale" label="Locale" defaultValue={organization.locale || "en-IN"} /><Field name="currency" label="Currency" defaultValue={organization.currency || "INR"} /><Field name="countryCode" label="Country code" defaultValue={organization.countryCode || "IN"} /><Field name="weekStartsOn" label="Week starts on (0-6)" defaultValue={String(organization.weekStartsOn ?? 1)} />{error ? <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700 sm:col-span-2">{error}</p> : null}<div className="flex justify-end gap-3 sm:col-span-2"><button type="button" onClick={onClose} className="rounded-xl border px-4 py-2.5 font-semibold hover:bg-slate-50">Cancel</button><button disabled={saving} className="rounded-xl bg-slate-950 px-5 py-2.5 font-semibold text-white hover:bg-cyan-800 disabled:opacity-60">{saving ? "Saving…" : "Save changes"}</button></div></form></div></div>;
 }
 
-function Field({ name, label, type = "text", ...props }: { name: string; label: string; type?: string; placeholder?: string; defaultValue?: string; minLength?: number }) {
-  return <label className="block text-xs font-semibold text-slate-600">{label}<input name={name} type={type} required {...props} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100" /></label>;
+function organizationCodePreview(name: string) {
+  const words = name.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toUpperCase().match(/[A-Z0-9]+/g) || [];
+  if (!words.length) return "Generated automatically";
+  if (words.length === 1) return words[0].slice(0, 12);
+  return words.map((word) => word[0]).join("").slice(0, 10);
+}
+
+function Field({ label, className = "", ...props }: { label: string } & InputHTMLAttributes<HTMLInputElement>) {
+  return <label className="block text-xs font-semibold text-slate-600">{label}<input required={!props.readOnly} {...props} className={`mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100 ${className}`} /></label>;
 }
