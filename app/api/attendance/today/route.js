@@ -1,7 +1,9 @@
 import { connectDB } from "@/lib/mongoose";
 import Attendance from "@/models/Attendance";
 import EmployeeVisit from "@/models/EmployeeVisit";
-import { dayKey, errorResponse, getAttendancePolicy, requireAttendanceUser } from "../_lib/attendance";
+// Register the populate target before EmployeeVisit.clientSiteId is resolved.
+import "@/models/VisitedSite";
+import { attendanceExpectedEndAt, attendanceMarkOutAvailableAt, dayKey, errorResponse, getAttendancePolicy, requireAttendanceUser } from "../_lib/attendance";
 import { workStatusFor } from "../_lib/work-status";
 import { reverseGeocode } from "../_lib/notifications";
 
@@ -39,7 +41,18 @@ export async function GET() {
           .lean()
       : [];
 
-    return Response.json({ attendance, visits, workStatus: workStatusFor(attendance, null) });
+    return Response.json({
+      attendance,
+      visits,
+      policy,
+      expectedMarkOutAt: attendance?.status === "IN"
+        ? attendanceExpectedEndAt(attendance, policy).toISOString()
+        : null,
+      markOutAvailableAt: attendance?.status === "IN"
+        ? attendanceMarkOutAvailableAt(attendance, policy).toISOString()
+        : null,
+      workStatus: workStatusFor(attendance, null),
+    });
   } catch (error) {
     return errorResponse(error, "Unable to load today's attendance.");
   }

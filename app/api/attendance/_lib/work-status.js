@@ -18,7 +18,9 @@ export function workStatusFor(attendance, location, now = new Date()) {
   }
 
   const point = location || attendance.lastKnownLocation;
-  const receivedAt = location?.receivedAt || attendance.lastLocationReceivedAt || point?.receivedAt;
+  // A stationary heartbeat refreshes the attendance without adding GPS drift
+  // to the route. Prefer that heartbeat over the last saved movement point.
+  const receivedAt = attendance.lastLocationReceivedAt || location?.receivedAt || point?.receivedAt;
   if (!point || !receivedAt || now.getTime() - new Date(receivedAt).getTime() > FIVE_MINUTES) {
     return { state: "NEEDS_ATTENTION", confidence: "LOW", label: "GPS update overdue", reason: "No GPS update was received for over five minutes. Ask the employee to open TrakAgile and check mobile data, GPS, location permission, and battery optimization." };
   }

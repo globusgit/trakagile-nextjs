@@ -19,6 +19,7 @@ import PageHeader from "@/app/_components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { auth } from "@/lib/auth";
 import AdminDashboard from "./AdminDashboard";
+import DashboardAttendanceCard from "./DashboardAttendanceCard";
 
 const employeeModules = [
   { title: "Attendance", description: "Mark in and track your workday", href: "/attendance", icon: CalendarCheck2 },
@@ -71,6 +72,7 @@ export default async function Dashboard() {
           {user.empId} · Choose a module to continue your work.
         </p>
       </section>
+      <DashboardAttendanceCard />
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {modules.map((module) => {
           const Icon = module.icon;

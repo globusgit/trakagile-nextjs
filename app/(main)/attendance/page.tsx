@@ -175,6 +175,7 @@ type AttendancePolicy = {
   reminderAfterMinutes: number[];
   autoCloseMinutes: number;
   overtimeGraceMinutes: number;
+  markOutResponseMinutes: number;
 };
 
 /* =========================================================
@@ -380,32 +381,12 @@ function formatDistance(meters?: number) {
   return `${(meters / 1000).toFixed(2)} km`;
 }
 
-function minutesInZone(date: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(date);
-  const value = (type: Intl.DateTimeFormatPartTypes) =>
-    Number(parts.find((part) => part.type === type)?.value || 0);
-  return value("hour") * 60 + value("minute");
-}
-
 function dateKeyInZone(date: Date, timeZone: string) {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(date);
-}
-
-function formatPolicyTime(minutes: number) {
-  const date = new Date(2000, 0, 1, Math.floor(minutes / 60), minutes % 60);
-  return new Intl.DateTimeFormat("en-IN", {
-    hour: "2-digit",
-    minute: "2-digit",
   }).format(date);
 }
 
@@ -655,6 +636,8 @@ export default function AttendancePage() {
     });
 
   const [policy, setPolicy] = useState<AttendancePolicy | null>(null);
+  const [expectedMarkOutAt, setExpectedMarkOutAt] = useState<string | null>(null);
+  const [markOutAvailableAt, setMarkOutAvailableAt] = useState<string | null>(null);
   const [workStatus, setWorkStatus] = useState<WorkStatus | null>(null);
   const [todayLocations, setTodayLocations] = useState<TrackingPoint[]>([]);
   const [todayRoute, setTodayRoute] = useState<RouteMeta | null>(null);
@@ -811,6 +794,8 @@ export default function AttendancePage() {
             null
         );
         setWorkStatus(today.workStatus || null);
+        setExpectedMarkOutAt(today.expectedMarkOutAt || null);
+        setMarkOutAvailableAt(today.markOutAvailableAt || null);
 
         setVisits(
           Array.isArray(
@@ -971,6 +956,9 @@ export default function AttendancePage() {
                     ...gps(
                       position
                     ),
+                    // Persist the scheduled heartbeat as a visible audit point,
+                    // including when the employee has not moved.
+                    minuteTrigger: true,
                   }
                 ),
             }
@@ -1147,12 +1135,21 @@ export default function AttendancePage() {
 
   const markOut =
     async (extra: Record<string, unknown> = {}) => {
+      const availableAt = markOutAvailableAt ? new Date(markOutAvailableAt) : null;
+      if (availableAt && currentTime < availableAt) {
+        toast.error(`Mark Out will be enabled at ${time(availableAt.toISOString())}.`);
+        return false;
+      }
       if (
         activeVisit
       ) {
         toast.error(
-          "Complete the active client visit before marking out."
+          "Complete the active client visit below before marking out."
         );
+
+        document
+          .getElementById("current-visit")
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
 
         return false;
       }
@@ -1399,7 +1396,6 @@ export default function AttendancePage() {
 
     const checkShift = () => {
       const now = new Date();
-      const currentMinutes = minutesInZone(now, policy.timeZone);
       const currentDateKey = dateKeyInZone(now, policy.timeZone);
       const oldAttendance = Boolean(
         attendance.attendanceDate && attendance.attendanceDate !== currentDateKey
@@ -1408,7 +1404,7 @@ export default function AttendancePage() {
       if (attendance.overtime?.active && attendance.overtime.expectedEndAt) {
         const expected = new Date(attendance.overtime.expectedEndAt);
         const graceDeadline = new Date(
-          expected.getTime() + policy.overtimeGraceMinutes * 60000
+          expected.getTime() + policy.markOutResponseMinutes * 60000
         );
         if (now >= expected) {
           if (notifyOnce("overtime-ended", "Your expected overtime completion time has arrived.")) {
@@ -1425,7 +1421,7 @@ export default function AttendancePage() {
           expected.getTime() - policy.reminderBeforeMinutes * 60000
         );
         const graceDeadline = new Date(
-          expected.getTime() + policy.overtimeGraceMinutes * 60000
+          expected.getTime() + policy.markOutResponseMinutes * 60000
         );
         if (now >= reminderAt && now < expected) {
           notifyOnce(
@@ -1442,34 +1438,23 @@ export default function AttendancePage() {
         return;
       }
 
-      if (
-        currentMinutes >= policy.shiftEndMinutes - policy.reminderBeforeMinutes &&
-        currentMinutes < policy.shiftEndMinutes
-      ) {
+      const expected = expectedMarkOutAt ? new Date(expectedMarkOutAt) : null;
+      if (!expected || Number.isNaN(expected.getTime())) return;
+      const reminderAt = new Date(expected.getTime() - policy.reminderBeforeMinutes * 60000);
+      const responseDeadline = new Date(expected.getTime() + policy.markOutResponseMinutes * 60000);
+      if (now >= reminderAt && now < expected) {
         notifyOnce(
           "shift-ending",
-          `Your shift ends at ${formatPolicyTime(policy.shiftEndMinutes)}. Complete active visits and prepare to Mark Out.`
+          `Your expected Mark Out time is ${time(expected.toISOString())}. Complete active visits and prepare to Mark Out.`
         );
       }
 
-      if (currentMinutes >= policy.shiftEndMinutes) {
+      if (now >= expected) {
         if (notifyOnce("shift-ended", "Your shift has ended. Mark Out or choose Continue Working.")) {
           setShiftDialogOpen(true);
         }
       }
-
-      for (const reminder of policy.reminderAfterMinutes) {
-        if (currentMinutes >= policy.shiftEndMinutes + reminder) {
-          if (notifyOnce(
-            `after-${reminder}`,
-            `You are still marked in ${reminder} minutes after shift end.`
-          )) {
-            setShiftDialogOpen(true);
-          }
-        }
-      }
-
-      if (oldAttendance || currentMinutes >= policy.autoCloseMinutes) {
+      if (oldAttendance || now >= responseDeadline) {
         void attemptAutoClose();
       }
     };
@@ -1477,7 +1462,7 @@ export default function AttendancePage() {
     checkShift();
     const interval = window.setInterval(checkShift, 30_000);
     return () => window.clearInterval(interval);
-  }, [attendance, policy, refresh]);
+  }, [attendance, expectedMarkOutAt, policy, refresh]);
 
   /* =========================================================
      SESSION LOADING
@@ -1632,6 +1617,7 @@ export default function AttendancePage() {
           <div className="text-sm sm:text-right">
             <p className="text-blue-700">Expected completion</p>
             <p className="font-semibold">{time(attendance.overtime.expectedEndAt)}</p>
+            <p className="mt-1 text-xs">Worked: {formatMinutes(workingMinutes || 0)}</p>
           </div>
         </div>
       )}
@@ -1840,7 +1826,7 @@ export default function AttendancePage() {
         <div className="grid gap-4 lg:grid-cols-[1fr_1.5fr]">
           {/* CURRENT VISIT */}
 
-          <Card>
+          <Card id="current-visit">
             <CardHeader>
               <CardTitle>
                 Current visit
@@ -1929,7 +1915,7 @@ export default function AttendancePage() {
                   >
                     {busy
                       ? "Ending..."
-                      : "End Visit"}
+                      : "Complete Visit"}
                   </Button>
                 </>
               ) : (
@@ -2160,7 +2146,7 @@ export default function AttendancePage() {
             size="lg"
             disabled={
               busy ||
-              !!activeVisit ||
+              Boolean(markOutAvailableAt && currentTime < new Date(markOutAvailableAt)) ||
               (attendance.attendanceType === "WORK_FROM_HOME" && !wfhDeviceAllowed)
             }
             onClick={() => attendance.attendanceType === "WORK_FROM_HOME" ? setWfhSummaryOpen(true) : void markOut()}
@@ -2172,10 +2158,24 @@ export default function AttendancePage() {
               : "Mark Out with Final GPS"}
           </Button>
 
-          {activeVisit && (
+          {markOutAvailableAt && currentTime < new Date(markOutAvailableAt) && (
             <p className="text-sm text-muted-foreground">
-              End the current client/site visit before marking out.
+              Mark Out will be enabled at {time(markOutAvailableAt)}.
             </p>
+          )}
+
+          {activeVisit && (
+            <div className="flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+              <span>Complete the active client/site visit before marking out.</span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => document.getElementById("current-visit")?.scrollIntoView({ behavior: "smooth", block: "center" })}
+              >
+                Complete Visit
+              </Button>
+            </div>
           )}
         </div>
       )}
@@ -2383,7 +2383,7 @@ export default function AttendancePage() {
           <DialogFooter className="gap-2 sm:justify-between">
             <Button
               variant="destructive"
-              disabled={busy || Boolean(activeVisit)}
+              disabled={busy || Boolean(activeVisit) || Boolean(markOutAvailableAt && currentTime < new Date(markOutAvailableAt))}
               onClick={async () => {
                 if (attendance?.attendanceType === "WORK_FROM_HOME") {
                   setShiftDialogOpen(false);

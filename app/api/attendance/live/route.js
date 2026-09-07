@@ -7,6 +7,7 @@ import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 import { notifyAttendance } from "../_lib/notifications";
 import { workStatusFor } from "../_lib/work-status";
 import { visibleEmployeeIds } from "@/lib/access";
+import { cleanLocationTrack, trackDistanceMeters, trackLengthMeters } from "@/lib/locationTrack.mjs";
 
 export async function GET() {
   try {
@@ -25,25 +26,30 @@ export async function GET() {
     const attendanceIds = attendances.map((attendance) => attendance._id);
     const locations = attendanceIds.length
       ? await TrackingLocation.aggregate([
-          { $match: { orgId: identity.orgId, attendanceId: { $in: attendanceIds } } },
+          { $match: { orgId: identity.orgId, attendanceId: { $in: attendanceIds }, $or: [{ accuracy: { $exists: false } }, { accuracy: { $lte: 50 } }] } },
           { $sort: { receivedAt: -1 } },
           { $group: { _id: "$attendanceId", location: { $first: "$$ROOT" } } },
         ])
       : [];
     const histories = attendanceIds.length
       ? await TrackingLocation.aggregate([
-          { $match: { orgId: identity.orgId, attendanceId: { $in: attendanceIds } } },
+          // Keep every scheduled minute heartbeat as a visible trigger. Legacy
+          // locality triggers remain visible for attendance recorded by older apps.
+          { $match: { orgId: identity.orgId, attendanceId: { $in: attendanceIds }, $or: [{ minuteTrigger: true }, { locationNameRefreshed: true }] } },
           { $sort: { capturedAt: -1 } },
-          { $group: { _id: "$attendanceId", points: { $push: { latitude: "$latitude", longitude: "$longitude", accuracy: "$accuracy", speed: "$speed", capturedAt: "$capturedAt", receivedAt: "$receivedAt", locationName: "$locationName", locationNameRefreshed: "$locationNameRefreshed" } } } },
-          { $project: { points: { $slice: ["$points", 50] } } },
+          { $group: { _id: "$attendanceId", points: { $push: { latitude: "$latitude", longitude: "$longitude", accuracy: "$accuracy", speed: "$speed", capturedAt: "$capturedAt", receivedAt: "$receivedAt", locationName: "$locationName", locationNameRefreshed: "$locationNameRefreshed", minuteTrigger: "$minuteTrigger" } } } },
+          // Retain the complete working-day trigger list for each employee.
+          { $project: { points: { $slice: ["$points", 1200] } } },
         ])
       : [];
     const movements = attendanceIds.length
       ? await TrackingLocation.aggregate([
-          { $match: { orgId: identity.orgId, attendanceId: { $in: attendanceIds } } },
+          { $match: { orgId: identity.orgId, attendanceId: { $in: attendanceIds }, $or: [{ accuracy: { $exists: false } }, { accuracy: { $lte: 50 } }] } },
           { $sort: { receivedAt: -1 } },
           { $group: { _id: "$attendanceId", points: { $push: { latitude: "$latitude", longitude: "$longitude", accuracy: "$accuracy", speed: "$speed", capturedAt: "$capturedAt", receivedAt: "$receivedAt", locationName: "$locationName", locationNameRefreshed: "$locationNameRefreshed" } } } },
-          { $project: { points: { $slice: ["$points", 100] } } },
+          // One point every ~45 seconds is about 960 points for a 12-hour shift.
+          // Keep the full working-day trail while retaining a defensive ceiling.
+          { $project: { points: { $slice: ["$points", 1200] } } },
         ])
       : [];
     const locationByAttendance = new Map(locations.map((item) => [String(item._id), item.location]));
@@ -53,7 +59,8 @@ export async function GET() {
     const now = Date.now();
     await Promise.all(attendances.map((attendance) => {
       const location = locationByAttendance.get(String(attendance._id)) || attendance.lastKnownLocation || attendance.markIn?.location;
-      if (location && now - new Date(location.receivedAt).getTime() <= 5 * 60_000) return null;
+      const heartbeatAt = attendance.lastLocationReceivedAt || location?.receivedAt;
+      if (heartbeatAt && now - new Date(heartbeatAt).getTime() <= 5 * 60_000) return null;
       return notifyAttendance({
         orgId: identity.orgId,
         empId: attendance.empId,
@@ -69,6 +76,9 @@ export async function GET() {
         const expectedEndAt = attendance.overtime?.active
           ? attendance.overtime.expectedEndAt
           : attendance.expectedWorkEndAt;
+        const movementPoints = cleanLocationTrack(
+          movementByAttendance.get(String(attendance._id)) || [],
+        );
         return ({
         employee: employeeById.get(attendance.empId),
         attendance,
@@ -85,16 +95,21 @@ export async function GET() {
         triggerPoints: (() => {
           const namedTriggers = historyByAttendance.get(String(attendance._id)) || [];
           const start = attendance.markIn?.location;
-          const startAlreadyIncluded = start && namedTriggers.some((point) =>
+          const isMarkInPoint = (point) => start &&
             Math.abs(point.latitude - start.latitude) < 0.000001 &&
-            Math.abs(point.longitude - start.longitude) < 0.000001,
-          );
+            Math.abs(point.longitude - start.longitude) < 0.000001;
           return [
-            ...(!start || startAlreadyIncluded ? [] : [{ ...start, type: "MARK_IN" }]),
-            ...namedTriggers.map((point) => ({ ...point, type: "LOCATION_TRIGGER" })),
+            ...(start ? [{ ...start, type: "MARK_IN" }] : []),
+            ...namedTriggers
+              .filter((point) => point.minuteTrigger || !isMarkInPoint(point))
+              .filter((point) => movementPoints.some((routePoint) =>
+                trackDistanceMeters(point, routePoint) <= Math.max(60, Number(point.accuracy) || 0),
+              ))
+              .map((point) => ({ ...point, type: "LOCATION_TRIGGER" })),
           ];
         })(),
-        movementPoints: movementByAttendance.get(String(attendance._id)) || [],
+        movementPoints,
+        filteredDistanceMeters: Math.round(trackLengthMeters(movementPoints)),
       });}),
     });
   } catch (error) {

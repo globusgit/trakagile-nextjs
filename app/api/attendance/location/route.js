@@ -4,15 +4,18 @@ import EmployeeVisit from "@/models/EmployeeVisit";
 import TrackingLocation from "@/models/TrackingLocation";
 import {
   AttendanceError,
+  attendanceExpectedEndAt,
   distanceBetween,
   errorResponse,
   getActiveAttendance,
+  getAttendancePolicy,
   locationFrom,
   movementFrom,
   reliableDistance,
   requireAttendanceUser,
 } from "../_lib/attendance";
 import { notifyAttendance, reverseGeocode } from "../_lib/notifications";
+import { closeAttendanceAfterNoResponse } from "../_lib/auto-close";
 
 export async function POST(request) {
   try {
@@ -24,6 +27,7 @@ export async function POST(request) {
       maxClockDifferenceMs: body.offlineQueued ? 24 * 60 * 60 * 1000 : 5 * 60 * 1000,
     });
     const movement = movementFrom(body);
+    const minuteTrigger = body.minuteTrigger === true;
     const clientPointId =
       typeof body.clientPointId === "string" && body.clientPointId.trim()
         ? body.clientPointId.trim().slice(0, 120)
@@ -43,18 +47,31 @@ export async function POST(request) {
         });
       }
     }
-    const distanceMeters = reliableDistance(attendance.lastKnownLocation, location);
-    if (location.accuracy != null && location.accuracy > 100) {
-      return Response.json({ accepted: false, reason: "LOW_ACCURACY", message: "GPS point ignored because accuracy exceeded 100 metres." });
+    const maximumAcceptedAccuracy = minuteTrigger ? 100 : 60;
+    if (location.accuracy != null && location.accuracy > maximumAcceptedAccuracy) {
+      return Response.json({ accepted: false, reason: "LOW_ACCURACY", message: `GPS point ignored because accuracy exceeded ${maximumAcceptedAccuracy} metres.` });
     }
+    const distanceMeters = reliableDistance(attendance.lastKnownLocation, location);
     if (attendance.lastKnownLocation) {
       const previousTime = new Date(attendance.lastKnownLocation.capturedAt || attendance.lastLocationReceivedAt || now);
       const elapsedSeconds = Math.max(1, (location.capturedAt.getTime() - previousTime.getTime()) / 1000);
-      if (elapsedSeconds <= 0 || distanceMeters / elapsedSeconds > 55) {
+      const rawDistanceMeters = distanceBetween(attendance.lastKnownLocation, location);
+      if (elapsedSeconds <= 0 || rawDistanceMeters / elapsedSeconds > 45) {
         return Response.json({ accepted: false, reason: "UNREALISTIC_JUMP", message: "GPS point ignored because the movement was not physically plausible." });
       }
-      if (distanceMeters < 5 && elapsedSeconds < 30) {
-        return Response.json({ accepted: false, reason: "DUPLICATE", message: "Duplicate location point ignored." });
+      const reportedStationary = movement.speed != null && movement.speed < 0.5;
+      if (!minuteTrigger && (distanceMeters === 0 || (reportedStationary && rawDistanceMeters < 100))) {
+        await Attendance.updateOne(
+          { _id: attendance._id, status: "IN" },
+          { $set: { lastLocationReceivedAt: now, trackingStatus: "ACTIVE" } },
+        );
+        return Response.json({
+          accepted: true,
+          routePoint: false,
+          reason: "STATIONARY",
+          message: "GPS heartbeat received; stationary drift was excluded from the route.",
+          totalDistanceMeters: attendance.totalDistanceMeters || 0,
+        });
       }
     }
     const previousLocation = await TrackingLocation.findOne({
@@ -92,6 +109,7 @@ export async function POST(request) {
         ...movement,
         locationName: locationName || undefined,
         locationNameRefreshed: Boolean(refreshedLocationName),
+        minuteTrigger,
       });
     } catch (error) {
       if (error?.code === 11000 && clientPointId) {
@@ -155,6 +173,27 @@ export async function POST(request) {
       });
     }
 
+    const policy = await getAttendancePolicy(identity.orgId);
+    const expectedEndAt = attendanceExpectedEndAt(updatedAttendance || attendance, policy);
+    const responseMinutes = Number(policy.markOutResponseMinutes) || 15;
+    let autoMarkedOut = false;
+    if (now >= expectedEndAt) {
+      await notifyAttendance({
+        ...notificationBase,
+        type: "POSSIBLE_DELAY",
+        title: "Your Mark Out time has arrived",
+        message: `Mark Out now or choose Continue Working. With no response, attendance closes automatically after ${responseMinutes} minutes.`,
+        dedupeKey: `${attendance._id}:mark-out-response:${expectedEndAt.toISOString()}`,
+      });
+      if (now >= new Date(expectedEndAt.getTime() + responseMinutes * 60000)) {
+        autoMarkedOut = await closeAttendanceAfterNoResponse(
+          updatedAttendance || attendance,
+          now,
+          `No response within ${responseMinutes} minutes after the expected Mark Out time.`,
+        );
+      }
+    }
+
     return Response.json({
       message: "Location updated.",
       accepted: true,
@@ -163,6 +202,7 @@ export async function POST(request) {
       distanceAddedMeters: distanceMeters,
       totalDistanceMeters: updatedAttendance?.totalDistanceMeters || 0,
       locationName,
+      autoMarkedOut,
     });
   } catch (error) {
     return errorResponse(error, "Unable to update location.");

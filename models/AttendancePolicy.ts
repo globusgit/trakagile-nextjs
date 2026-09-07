@@ -10,6 +10,7 @@ const AttendancePolicySchema = new mongoose.Schema(
     reminderAfterMinutes: { type: [Number], default: [15, 30] },
     autoCloseMinutes: { type: Number, min: 0, max: 1439, default: 1200 },
     overtimeGraceMinutes: { type: Number, min: 0, default: 30 },
+    markOutResponseMinutes: { type: Number, min: 1, max: 120, default: 15 },
     officeGeofence: {
       enabled: { type: Boolean, default: false },
       name: { type: String, trim: true, default: "Main Office" },

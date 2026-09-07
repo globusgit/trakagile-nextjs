@@ -17,6 +17,7 @@ export const DEFAULT_ATTENDANCE_POLICY = {
   reminderAfterMinutes: [15, 30],
   autoCloseMinutes: 1200,
   overtimeGraceMinutes: 30,
+  markOutResponseMinutes: 15,
   officeGeofence: {
     enabled: false,
     name: "Main Office",
@@ -24,6 +25,8 @@ export const DEFAULT_ATTENDANCE_POLICY = {
     maximumAccuracyMeters: 100,
   },
 };
+
+export const MARK_OUT_ENABLE_MINUTES = 18 * 60;
 
 export class AttendanceError extends Error {
   constructor(message, status = 400) {
@@ -150,6 +153,37 @@ export function dateAtZonedMinutes(dateKey, minutes, timeZone) {
   return result;
 }
 
+export function attendanceExpectedEndAt(attendance, policy) {
+  if (attendance?.overtime?.active && attendance.overtime.expectedEndAt) {
+    return new Date(attendance.overtime.expectedEndAt);
+  }
+  if (attendance?.attendanceType === "FIELD_VISIT" && attendance.expectedWorkEndAt) {
+    return new Date(attendance.expectedWorkEndAt);
+  }
+
+  const scheduledStart = dateAtZonedMinutes(
+    attendance.attendanceDate,
+    policy.shiftStartMinutes,
+    policy.timeZone,
+  );
+  const scheduledEnd = dateAtZonedMinutes(
+    attendance.attendanceDate,
+    policy.shiftEndMinutes,
+    policy.timeZone,
+  );
+  const markIn = new Date(attendance.markIn.time);
+  const lateByMs = Math.max(0, markIn.getTime() - scheduledStart.getTime());
+  return new Date(scheduledEnd.getTime() + lateByMs);
+}
+
+export function attendanceMarkOutAvailableAt(attendance, policy) {
+  return dateAtZonedMinutes(
+    attendance.attendanceDate,
+    MARK_OUT_ENABLE_MINUTES,
+    policy.timeZone,
+  );
+}
+
 export function locationFrom(body, now = new Date(), options = {}) {
   const latitude = Number(body.latitude);
   const longitude = Number(body.longitude);
@@ -213,10 +247,13 @@ export function distanceBetween(from, to) {
 
 export function reliableDistance(from, to) {
   const distance = distanceBetween(from, to);
+  const fromAccuracy = Number(from?.accuracy) || 0;
+  const toAccuracy = Number(to?.accuracy) || 0;
+  // GPS errors exist at both ends of a segment. Combining their uncertainty
+  // prevents a stationary employee's normal GPS drift from becoming travel.
   const accuracyThreshold = Math.max(
-    10,
-    Number(from?.accuracy) || 0,
-    Number(to?.accuracy) || 0,
+    12,
+    Math.hypot(fromAccuracy, toAccuracy) * 1.25,
   );
 
   return distance >= accuracyThreshold ? Math.round(distance) : 0;

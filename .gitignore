@@ -39,6 +39,13 @@ server.log
 # local mobile builds and test screenshots
 /TrakAgile-*.apk
 /WhatsApp Image *.jpeg
+/backups/
+/output/
+
+# Android signing secrets must never be committed
+/mobile/android/key.properties
+*.jks
+*.keystore
 
 # env files (can opt-in for committing if needed)
 .env*

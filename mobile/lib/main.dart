@@ -15,7 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const _apiBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'http://10.0.2.2:3000',
+  defaultValue: 'https://trakagile.com',
 );
 
 String _friendlyNetworkError(Object error) {
@@ -79,6 +79,10 @@ class AttendanceTrackingService {
         permission == LocationPermission.deniedForever) {
       return;
     }
+    if (defaultTargetPlatform == TargetPlatform.android &&
+        permission != LocationPermission.always) {
+      return;
+    }
 
     final LocationSettings settings =
         defaultTargetPlatform == TargetPlatform.android
@@ -90,7 +94,10 @@ class AttendanceTrackingService {
               notificationTitle: 'TrakAgile attendance tracking',
               notificationText:
                   'Location tracking is active until you mark out.',
+              notificationChannelName: 'Attendance location tracking',
               enableWakeLock: true,
+              enableWifiLock: true,
+              setOngoing: true,
             ),
           )
         : const LocationSettings(
@@ -131,13 +138,16 @@ class AttendanceTrackingService {
           timeLimit: Duration(seconds: 20),
         ),
       );
-      await _queuePosition(position);
+      await _queuePosition(position, minuteTrigger: true);
     } catch (_) {
       // The stream and the next minute heartbeat provide automatic recovery.
     }
   }
 
-  Future<void> _queuePosition(Position position) async {
+  Future<void> _queuePosition(
+    Position position, {
+    bool minuteTrigger = false,
+  }) async {
     if (position.accuracy > 100) return;
     final prefs = await SharedPreferences.getInstance();
     final lastRaw = prefs.getString('tracking_last_position');
@@ -150,7 +160,8 @@ class AttendanceTrackingService {
         position.longitude,
       );
       final lastTime = DateTime.tryParse('${last['capturedAt']}');
-      if (distance < 5 &&
+      if (!minuteTrigger &&
+          distance < 5 &&
           lastTime != null &&
           position.timestamp.difference(lastTime).inSeconds < 45) {
         return;
@@ -166,6 +177,7 @@ class AttendanceTrackingService {
       'heading': position.heading < 0 ? null : position.heading,
       'capturedAt': position.timestamp.toUtc().toIso8601String(),
       'offlineQueued': true,
+      'minuteTrigger': minuteTrigger,
     };
     final queue = (prefs.getStringList('tracking_offline_queue') ?? <String>[])
         .toList();
@@ -225,13 +237,69 @@ class TrakAgileApp extends StatefulWidget {
 }
 
 class _TrakAgileAppState extends State<TrakAgileApp> {
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   Map<String, dynamic>? _user;
   bool _loading = true;
+  bool _locationPromptOpen = false;
 
   @override
   void initState() {
     super.initState();
     _restoreSession();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_requestInitialLocationAccess());
+    });
+  }
+
+  Future<void> _requestInitialLocationAccess() async {
+    if (!mounted || kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return;
+    }
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (!mounted || permission == LocationPermission.always) return;
+
+    // Android 11+ does not offer "Allow all the time" in the first runtime
+    // dialog. Guide the employee to the app's Location settings for the
+    // required second step instead of silently disabling background tracking.
+    final promptContext = _navigatorKey.currentContext;
+    if (_locationPromptOpen ||
+        promptContext == null ||
+        !promptContext.mounted) {
+      return;
+    }
+    _locationPromptOpen = true;
+    await showDialog<void>(
+      context: promptContext,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.location_on_outlined, size: 38),
+        title: const Text('Allow background location'),
+        content: const Text(
+          'TrakAgile needs location access while attendance is active, even '
+          'when the app is closed. In Location permissions, select '
+          '"Allow all the time" and keep precise location enabled.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Later'),
+          ),
+          FilledButton.icon(
+            onPressed: () async {
+              Navigator.of(dialogContext).pop();
+              await Geolocator.openAppSettings();
+            },
+            icon: const Icon(Icons.settings_outlined),
+            label: const Text('Open settings'),
+          ),
+        ],
+      ),
+    );
+    _locationPromptOpen = false;
   }
 
   Future<void> _restoreSession() async {
@@ -278,6 +346,7 @@ class _TrakAgileAppState extends State<TrakAgileApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: 'TrakAgile',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
@@ -327,12 +396,8 @@ class _LoginPageState extends State<LoginPage> {
       _error = null;
     });
     try {
-      const baseUrl = String.fromEnvironment(
-        'API_BASE_URL',
-        defaultValue: 'http://10.0.2.2:3000',
-      );
       final response = await http.post(
-        Uri.parse('$baseUrl/api/mobile/auth/login'),
+        Uri.parse('$_apiBaseUrl/api/mobile/auth/login'),
         headers: {'content-type': 'application/json'},
         body: jsonEncode({
           'empId': _empId.text.trim(),
@@ -660,7 +725,8 @@ class _ModuleScreenState extends State<ModuleScreen> {
   void initState() {
     super.initState();
     _load();
-    if (widget.module.title == 'Live Tracking') {
+    if (widget.module.title == 'Live Tracking' ||
+        widget.module.title == 'Attendance') {
       _liveRefreshTimer = Timer.periodic(
         const Duration(seconds: 30),
         (_) => _load(silent: true),
@@ -718,12 +784,8 @@ class _ModuleScreenState extends State<ModuleScreen> {
       if (token == null) {
         throw Exception('Your session has expired. Sign in again.');
       }
-      const baseUrl = String.fromEnvironment(
-        'API_BASE_URL',
-        defaultValue: 'http://10.0.2.2:3000',
-      );
       final response = await http.get(
-        Uri.parse('$baseUrl$_endpoint'),
+        Uri.parse('$_apiBaseUrl$_endpoint'),
         headers: {'authorization': 'Bearer $token'},
       );
       final decoded = jsonDecode(response.body);
@@ -738,7 +800,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
       }
       if (widget.module.title == 'Leaves') {
         final leaveInfoResponse = await http.get(
-          Uri.parse('$baseUrl/api/leave/info?year=${DateTime.now().year}'),
+          Uri.parse('$_apiBaseUrl/api/leave/info?year=${DateTime.now().year}'),
           headers: {'authorization': 'Bearer $token'},
         );
         if (leaveInfoResponse.statusCode == 200) {
@@ -753,7 +815,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
           widget.module.title == 'Field Trips' ||
           widget.module.title == 'Group Attendance') {
         final clientsResponse = await http.get(
-          Uri.parse('$baseUrl/api/attendance/clients'),
+          Uri.parse('$_apiBaseUrl/api/attendance/clients'),
           headers: {'authorization': 'Bearer $token'},
         );
         if (clientsResponse.statusCode == 200) {
@@ -767,7 +829,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
       if (widget.module.title == 'Group Attendance' &&
           '${widget.user['role']}'.toUpperCase() == 'MANAGER') {
         final teamResponse = await http.get(
-          Uri.parse('$baseUrl/api/attendance/group?mode=team'),
+          Uri.parse('$_apiBaseUrl/api/attendance/group?mode=team'),
           headers: {'authorization': 'Bearer $token'},
         );
         if (teamResponse.statusCode == 200) {
@@ -796,6 +858,145 @@ class _ModuleScreenState extends State<ModuleScreen> {
   Future<void> _attendanceAction() async {
     final attendance = _data?['attendance'];
     final isMarkedIn = attendance is Map && attendance['status'] == 'IN';
+    if (isMarkedIn) {
+      final availableAt = DateTime.tryParse(
+        '${_data?['markOutAvailableAt'] ?? ''}',
+      )?.toLocal();
+      if (availableAt != null && DateTime.now().isBefore(availableAt)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Mark Out will be enabled at ${_formatTimestamp(availableAt.toIso8601String())}.',
+            ),
+          ),
+        );
+        return;
+      }
+      final visits = _data?['visits'];
+      Map<dynamic, dynamic>? activeVisit;
+      if (visits is List) {
+        for (final visit in visits) {
+          if (visit is Map && visit['status'] == 'IN_PROGRESS') {
+            activeVisit = visit;
+            break;
+          }
+        }
+      }
+
+      if (activeVisit != null) {
+        final site = activeVisit['clientSiteId'];
+        final siteName = site is Map
+            ? [
+                site['clientName'],
+                site['siteName'],
+              ].where((value) => '${value ?? ''}'.trim().isNotEmpty).join(' / ')
+            : 'client/site';
+        final completeVisit = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            icon: const Icon(Icons.location_on_outlined),
+            title: const Text('Complete active visit'),
+            content: Text(
+              'Complete the active visit${siteName.isEmpty ? '' : ' at $siteName'} before marking out. Your current GPS location will be saved as the visit end point.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text('Complete Visit'),
+              ),
+            ],
+          ),
+        );
+        if (completeVisit != true || !mounted) return;
+
+        setState(() {
+          _submitting = true;
+          _error = null;
+        });
+        try {
+          if (!await Geolocator.isLocationServiceEnabled()) {
+            throw Exception('Turn on Location/GPS and try again.');
+          }
+          var permission = await Geolocator.checkPermission();
+          if (permission == LocationPermission.denied) {
+            permission = await Geolocator.requestPermission();
+          }
+          if (permission == LocationPermission.denied ||
+              permission == LocationPermission.deniedForever) {
+            throw Exception(
+              'Location permission is required to complete the visit.',
+            );
+          }
+          final position = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              timeLimit: Duration(seconds: 20),
+            ),
+          );
+          await _sendJson('/api/attendance/visits/end', {
+            'latitude': position.latitude,
+            'longitude': position.longitude,
+            'accuracy': position.accuracy,
+            'capturedAt': position.timestamp.toIso8601String(),
+            'remarks': 'Completed before marking out from mobile',
+          });
+          await _load();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Visit completed. You can now mark out.'),
+            ),
+          );
+        } catch (error) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(error.toString().replaceFirst('Exception: ', '')),
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
+            );
+          }
+          return;
+        } finally {
+          if (mounted) setState(() => _submitting = false);
+        }
+      }
+
+      final action = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          icon: const Icon(Icons.logout),
+          title: const Text('Confirm Mark Out'),
+          content: const Text(
+            'Your current GPS location will be recorded and today\'s attendance tracking will stop.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, 'cancel'),
+              child: const Text('Cancel'),
+            ),
+            OutlinedButton(
+              onPressed: () => Navigator.pop(dialogContext, 'continue'),
+              child: const Text('Continue Working'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, 'mark-out'),
+              child: const Text('Mark Out'),
+            ),
+          ],
+        ),
+      );
+      if (action == 'continue') {
+        await _continueWorking();
+        return;
+      }
+      if (action != 'mark-out' || !mounted) return;
+    }
     setState(() {
       _submitting = true;
       _error = null;
@@ -821,6 +1022,35 @@ class _ModuleScreenState extends State<ModuleScreen> {
           permission == LocationPermission.deniedForever) {
         throw Exception('Location permission is required for attendance.');
       }
+      if (!isMarkedIn &&
+          defaultTargetPlatform == TargetPlatform.android &&
+          permission != LocationPermission.always) {
+        if (!mounted) return;
+        final openSettings = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            icon: const Icon(Icons.location_on_outlined),
+            title: const Text('Allow background location'),
+            content: const Text(
+              'Before Mark In, open Permissions > Location and select "Allow all the time". This keeps your route updating when TrakAgile is in the background.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Not now'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Open settings'),
+              ),
+            ],
+          ),
+        );
+        if (openSettings == true) await Geolocator.openAppSettings();
+        throw Exception(
+          'Select "Allow all the time", return to TrakAgile, and tap Mark In again.',
+        );
+      }
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
@@ -832,13 +1062,9 @@ class _ModuleScreenState extends State<ModuleScreen> {
       if (token == null) {
         throw Exception('Your session has expired. Sign in again.');
       }
-      const baseUrl = String.fromEnvironment(
-        'API_BASE_URL',
-        defaultValue: 'http://10.0.2.2:3000',
-      );
       final response = await http.post(
         Uri.parse(
-          '$baseUrl/api/attendance/${isMarkedIn ? 'mark-out' : 'mark-in'}',
+          '$_apiBaseUrl/api/attendance/${isMarkedIn ? 'mark-out' : 'mark-in'}',
         ),
         headers: {
           'authorization': 'Bearer $token',
@@ -896,6 +1122,96 @@ class _ModuleScreenState extends State<ModuleScreen> {
     }
   }
 
+  Future<void> _continueWorking() async {
+    final reason = TextEditingController();
+    var hours = 1;
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          icon: const Icon(Icons.more_time),
+          title: const Text('Continue Working'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: reason,
+                decoration: const InputDecoration(
+                  labelText: 'Reason',
+                  hintText: 'Client support, deployment...',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<int>(
+                initialValue: hours,
+                decoration: const InputDecoration(
+                  labelText: 'Additional working time',
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  for (var value = 1; value <= 8; value++)
+                    DropdownMenuItem(
+                      value: value,
+                      child: Text('$value hour${value == 1 ? '' : 's'}'),
+                    ),
+                ],
+                onChanged: (value) => setDialogState(() => hours = value ?? 1),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (reason.text.trim().isEmpty) return;
+                Navigator.pop(dialogContext, true);
+              },
+              child: const Text('Confirm'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (submitted != true || !mounted) {
+      reason.dispose();
+      return;
+    }
+    setState(() => _submitting = true);
+    try {
+      final expectedEndAt = DateTime.now().add(Duration(hours: hours));
+      await _sendJson('/api/attendance/continue-working', {
+        'reason': reason.text.trim(),
+        'expectedEndAt': expectedEndAt.toUtc().toIso8601String(),
+      });
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Continue Working enabled for $hours hour${hours == 1 ? '' : 's'}.',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', '')),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } finally {
+      reason.dispose();
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
   Future<Map<String, dynamic>> _sendJson(
     String path,
     Map<String, dynamic> body, {
@@ -906,11 +1222,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
     if (token == null) {
       throw Exception('Your session has expired. Sign in again.');
     }
-    const baseUrl = String.fromEnvironment(
-      'API_BASE_URL',
-      defaultValue: 'http://10.0.2.2:3000',
-    );
-    final uri = Uri.parse('$baseUrl$path');
+    final uri = Uri.parse('$_apiBaseUrl$path');
     final headers = {
       'authorization': 'Bearer $token',
       'content-type': 'application/json',
@@ -1746,12 +2058,8 @@ class _ModuleScreenState extends State<ModuleScreen> {
       if (token == null) {
         throw Exception('Your session has expired. Sign in again.');
       }
-      const baseUrl = String.fromEnvironment(
-        'API_BASE_URL',
-        defaultValue: 'http://10.0.2.2:3000',
-      );
       final request =
-          http.MultipartRequest('POST', Uri.parse('$baseUrl/api/documents'))
+          http.MultipartRequest('POST', Uri.parse('$_apiBaseUrl/api/documents'))
             ..headers['authorization'] = 'Bearer $token'
             ..fields['title'] = title.text.trim()
             ..fields['category'] = category
@@ -2337,6 +2645,13 @@ class _ModuleScreenState extends State<ModuleScreen> {
     final isCompleted = hasAttendance && attendance['status'] == 'OUT';
     final markIn = hasAttendance ? attendance['markIn'] : null;
     final markOut = hasAttendance ? attendance['markOut'] : null;
+    final markOutAvailableAt = DateTime.tryParse(
+      '${_data?['markOutAvailableAt'] ?? ''}',
+    )?.toLocal();
+    final markOutLocked =
+        isMarkedIn &&
+        markOutAvailableAt != null &&
+        DateTime.now().isBefore(markOutAvailableAt);
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -2488,7 +2803,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      onPressed: _submitting || isCompleted
+                      onPressed: _submitting || isCompleted || markOutLocked
                           ? null
                           : _attendanceAction,
                       icon: _submitting
@@ -2508,6 +2823,32 @@ class _ModuleScreenState extends State<ModuleScreen> {
                       ),
                     ),
                   ),
+                  if (markOutLocked) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      'Mark Out will be enabled at ${_formatTimestamp(markOutAvailableAt.toIso8601String())}.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                  if (isMarkedIn && _data?['expectedMarkOutAt'] != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      'Expected Mark Out: ${_formatTimestamp('${_data?['expectedMarkOutAt']}')}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                      textAlign: TextAlign.center,
+                    ),
+                    if (attendance['overtime'] is Map &&
+                        attendance['overtime']['active'] == true)
+                      Text(
+                        'Continue Working remaining: ${_mobileRemaining(attendance['overtime']['expectedEndAt'])}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                  ],
                 ],
               ),
             ),
@@ -2827,14 +3168,10 @@ class _ModuleScreenState extends State<ModuleScreen> {
       if (token == null) {
         throw Exception('Your session has expired. Sign in again.');
       }
-      const baseUrl = String.fromEnvironment(
-        'API_BASE_URL',
-        defaultValue: 'http://10.0.2.2:3000',
-      );
       final payload = <String, dynamic>{'action': action};
       if (status != null) payload['status'] = status;
       final response = await http.put(
-        Uri.parse('$baseUrl/api/tasks/$id'),
+        Uri.parse('$_apiBaseUrl/api/tasks/$id'),
         headers: {
           'authorization': 'Bearer $token',
           'content-type': 'application/json',
@@ -3616,6 +3953,21 @@ class _ModuleScreenState extends State<ModuleScreen> {
                   onTap:
                       widget.module.title == 'Live Tracking' && entry.$2 is Map
                       ? () => _showAdvancedLiveTrackingDetails(entry.$2 as Map)
+                      : widget.module.title == 'Notifications' &&
+                            entry.$2 is Map &&
+                            entry.$2['type'] == 'POSSIBLE_DELAY'
+                      ? () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (context) => ModuleScreen(
+                              module: const AppModule(
+                                Icons.fingerprint,
+                                'Attendance',
+                                'Mark out or continue working',
+                              ),
+                              user: widget.user,
+                            ),
+                          ),
+                        )
                       : widget.module.title == 'Tasks' && entry.$2 is Map
                       ? () => _showTaskActions(entry.$2 as Map)
                       : widget.module.title == 'Work From Home' &&
@@ -4219,12 +4571,46 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _index = 0;
+  Map<String, dynamic>? _todayAttendance;
+  bool _attendanceLoading = true;
   static const destinations = [
     (Icons.dashboard_outlined, 'Dashboard'),
     (Icons.fingerprint, 'Attendance'),
     (Icons.event_note_outlined, 'Leaves'),
     (Icons.more_horiz, 'More'),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAttendanceSummary();
+  }
+
+  Future<void> _loadAttendanceSummary() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      if (token == null) return;
+      final response = await http.get(
+        Uri.parse('$_apiBaseUrl/api/attendance/today'),
+        headers: {'authorization': 'Bearer $token'},
+      );
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        if (mounted && body is Map) {
+          setState(
+            () => _todayAttendance = body['attendance'] is Map
+                ? Map<String, dynamic>.from(body['attendance'] as Map)
+                : null,
+          );
+        }
+      }
+    } catch (_) {
+      // The full Attendance screen displays actionable network errors.
+    } finally {
+      if (mounted) setState(() => _attendanceLoading = false);
+    }
+  }
 
   List<AppModule> get _modules {
     const employeeModules = [
@@ -4328,7 +4714,10 @@ class _HomePageState extends State<HomePage> {
       },
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        onDestinationSelected: (value) => setState(() => _index = value),
+        onDestinationSelected: (value) {
+          setState(() => _index = value);
+          if (value == 0) _loadAttendanceSummary();
+        },
         destinations: [
           for (final item in destinations)
             NavigationDestination(icon: Icon(item.$1), label: item.$2),
@@ -4372,6 +4761,8 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
         ),
+        const SizedBox(height: 12),
+        _dashboardAttendanceCard(context),
         const SizedBox(height: 22),
         GridView.count(
           shrinkWrap: true,
@@ -4426,6 +4817,110 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
       ],
+    );
+  }
+
+  Widget _dashboardAttendanceCard(BuildContext context) {
+    final attendance = _todayAttendance;
+    final active = attendance?['status'] == 'IN';
+    final completed = attendance?['status'] == 'OUT';
+    final markIn = attendance?['markIn'];
+    final markOut = attendance?['markOut'];
+    String eventTime(dynamic event) {
+      if (event is! Map || event['time'] == null) return '--';
+      final value = DateTime.tryParse('${event['time']}')?.toLocal();
+      if (value == null) return '--';
+      final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
+      return '$hour:${value.minute.toString().padLeft(2, '0')} ${value.hour < 12 ? 'AM' : 'PM'}';
+    }
+
+    return Card(
+      elevation: 0,
+      color: active
+          ? const Color(0xFFECFDF5)
+          : completed
+          ? const Color(0xFFF0F9FF)
+          : Theme.of(context).colorScheme.surface,
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: _attendanceLoading
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: active
+                            ? const Color(0xFF059669)
+                            : Theme.of(context).colorScheme.primaryContainer,
+                        child: Icon(
+                          active
+                              ? Icons.location_on
+                              : completed
+                              ? Icons.check_circle_outline
+                              : Icons.fingerprint,
+                          color: active
+                              ? Colors.white
+                              : Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "TODAY'S ATTENDANCE",
+                              style: Theme.of(context).textTheme.labelSmall,
+                            ),
+                            Text(
+                              active
+                                  ? 'You are on duty'
+                                  : completed
+                                  ? 'Workday completed'
+                                  : 'Ready to start your workday',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    active
+                        ? 'Marked in at ${eventTime(markIn)} · GPS tracking active'
+                        : completed
+                        ? 'Mark in ${eventTime(markIn)} · Mark out ${eventTime(markOut)}'
+                        : 'Your GPS location will be captured securely.',
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      style: active
+                          ? FilledButton.styleFrom(
+                              backgroundColor: Theme.of(context)
+                                  .colorScheme
+                                  .error,
+                            )
+                          : null,
+                      onPressed: () => setState(() => _index = 1),
+                      icon: Icon(active ? Icons.logout : Icons.login),
+                      label: Text(
+                        active
+                            ? 'Mark Out'
+                            : completed
+                            ? 'View Attendance Summary'
+                            : 'Mark In',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+      ),
     );
   }
 

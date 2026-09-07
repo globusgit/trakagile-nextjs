@@ -27,8 +27,8 @@ const EmployeeSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-EmployeeSchema.index({ email: 1, orgId: 1 }, { unique: true });
-EmployeeSchema.index({ empId: 1, orgId: 1 }, { unique: true });
+EmployeeSchema.index({ orgId: 1, email: 1 }, { unique: true });
+EmployeeSchema.index({ orgId: 1, empId: 1 }, { unique: true });
 
 export default mongoose.models.Employee ||
   mongoose.model("Employee", EmployeeSchema);

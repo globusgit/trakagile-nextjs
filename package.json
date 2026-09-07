@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --test tests",
-    "migrate:multi-tenant": "node scripts/migrate-multi-tenant.mjs"
+    "migrate:multi-tenant": "node scripts/migrate-multi-tenant.mjs",
+    "platform-admin:create": "node scripts/create-platform-admin.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

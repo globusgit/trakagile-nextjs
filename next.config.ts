@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // The deployment script sets this to the Git commit being released. Next.js
+  // uses it to detect version skew between open browser tabs and a new build.
+  deploymentId: process.env.NEXT_DEPLOYMENT_ID,
   async headers() {
     const securityHeaders = [
       { key: "Content-Security-Policy", value: "base-uri 'self'; frame-ancestors 'none'; object-src 'none'" },
