@@ -47,7 +47,7 @@ const adminOnlyItems = [
   { label: "Settings", href: "/settings", icon: <Settings size={20} /> },
 ];
 
-export default function SideNav({ collapsed }: { collapsed: boolean }) {
+export default function SideNav({ collapsed, isMobile }: { collapsed: boolean; isMobile: boolean }) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const [unreadCount, setUnreadCount] = useState(0);
@@ -55,6 +55,10 @@ export default function SideNav({ collapsed }: { collapsed: boolean }) {
   const isTeamRole = ["MANAGER", "ADMIN", "DIRECTOR"].includes(role || "");
   const isAdminRole = ["ADMIN", "DIRECTOR"].includes(role || "");
   const canAccessGroupAttendance = ["MANAGER", "HR", "ADMIN", "DIRECTOR"].includes(role || "");
+  // "collapsed" means two different things depending on viewport: an icon-only
+  // rail on desktop, or an open full-width drawer on mobile. Only the desktop
+  // case should hide labels/shrink the logo.
+  const isIconRail = collapsed && !isMobile;
   const visibleItems = [
     ...employeeItems.slice(0, 3),
     ...(isTeamRole ? teamOnlyItems.slice(0, 1) : []),
@@ -87,7 +91,7 @@ export default function SideNav({ collapsed }: { collapsed: boolean }) {
 
   return (
     <aside className={`${styles.sidebar} ${collapsed ? styles.sidebarCollapsed : ""}`}>
-      <div className={styles.logo}>{collapsed ? "T" : "Trakagile"}</div>
+      <div className={styles.logo}>{isIconRail ? "T" : "Trakagile"}</div>
       <nav className={styles.nav}>
         {visibleItems.map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -100,7 +104,7 @@ export default function SideNav({ collapsed }: { collapsed: boolean }) {
               }`}
             >
               <span className={styles.icon}>{item.icon}</span>
-              {!collapsed && (
+              {!isIconRail && (
                 <span className={`${styles.label} flex min-w-0 flex-1 items-center justify-between gap-2`}>
                   <span>{item.label}</span>
                   {item.href === "/notifications" && unreadCount > 0 && (

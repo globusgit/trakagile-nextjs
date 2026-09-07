@@ -120,32 +120,61 @@
   box-sizing: border-box;
 }
 
+.backdrop {
+  display: none;
+}
+
 @media (max-width: 768px) {
+  /* Below tablet width the sidebar no longer sits permanently in the flex
+     layout (which left only a cramped sliver for page content) - instead it
+     becomes a full-height off-canvas drawer that slides in over the content
+     when opened via the navbar's menu button, with a tap-to-close backdrop. */
   .sidebar {
-    width: 80px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 240px;
+    height: 100dvh;
+    transform: translateX(-100%);
+    z-index: 50;
+    transition: transform 0.25s ease;
+    box-shadow: 2px 0 20px rgba(0, 0, 0, 0.25);
   }
 
+  /* Reused as the "drawer open" state on mobile - on desktop this same class
+     narrows the sidebar to an icon rail instead (see the base rule above). */
   .sidebarCollapsed {
-    width: 0;
+    width: 240px;
+    transform: translateX(0);
   }
 
   .logo {
-    padding: 0 12px;
+    padding: 0 16px;
   }
 
   .nav {
-    padding: 8px;
+    padding: 10px;
   }
 
   .navItem {
-    justify-content: center;
-  }
-
-  .label {
-    display: none;
+    justify-content: flex-start;
   }
 
   .pageContent {
     padding: 14px;
+  }
+
+  .backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 40;
+  }
+}
+
+@media (max-width: 480px) {
+  .pageContent {
+    padding: 10px;
   }
 }
