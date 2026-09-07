@@ -51,14 +51,13 @@ export default function SideNav({ collapsed, isMobile }: { collapsed: boolean; i
   const role = session?.user?.role;
   const isTeamRole = ["MANAGER", "ADMIN", "DIRECTOR"].includes(role || "");
   const isAdminRole = ["ADMIN", "DIRECTOR"].includes(role || "");
-<<<<<<< HEAD
+
   const canAccessGroupAttendance = ["MANAGER", "HR", "ADMIN", "DIRECTOR"].includes(role || "");
   // "collapsed" means two different things depending on viewport: an icon-only
   // rail on desktop, or an open full-width drawer on mobile. Only the desktop
   // case should hide labels/shrink the logo.
   const isIconRail = collapsed && !isMobile;
-=======
->>>>>>> 16c7281700053b78d4f09d71e1b4c96fbb8cd21e
+
   const visibleItems = [
     ...employeeItems.slice(0, 3),
     ...(isTeamRole ? teamOnlyItems.slice(0, 1) : []),
