@@ -16,6 +16,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const pathname = usePathname();
+  const [previousView, setPreviousView] = useState({ pathname, isMobile });
 
   // Lets SideNav tell the two meanings of "collapsed" apart (icon-rail vs.
   // open drawer) so it renders full labels in the mobile drawer instead of
@@ -32,11 +33,12 @@ export default function AppShell({ children }: { children: ReactNode }) {
     setCollapsed((prev) => !prev);
   };
 
-  // Close the mobile drawer after navigating to a new page. Desktop is left
-  // untouched so a user's icon-rail preference persists across navigation.
-  useEffect(() => {
+  // Reset before rendering children when navigation or the breakpoint changes.
+  // Desktop keeps the user's icon-rail preference across navigation.
+  if (previousView.pathname !== pathname || previousView.isMobile !== isMobile) {
+    setPreviousView({ pathname, isMobile });
     if (isMobile) setCollapsed(false);
-  }, [pathname, isMobile]);
+  }
 
   return (
     <div className={styles.layout}>
