@@ -902,119 +902,23 @@ export default function AttendancePage() {
     refresh,
   ]);
 
-  /* =========================================================
-     CONTINUOUS LOCATION TRACKING
-
-     1. Starts when attendance = IN
-     2. Sends immediately
-     3. Sends every 60 seconds
-     4. Automatically starts again after page refresh
-     5. Stops when attendance becomes OUT
-  ========================================================= */
-
+  // The shared layout sends GPS on every page; this page only renders updates.
   useEffect(() => {
-    if (
-      attendance?.status !==
-        "IN" ||
-      attendance.attendanceType === "WORK_FROM_HOME" ||
-      !empId ||
-      !orgId
-    ) {
-      return;
-    }
-
-    let stopped =
-      false;
-
-    const sendLocation =
-      async () => {
-        if (stopped) {
-          return;
-        }
-
-        try {
-          const position =
-            await getPosition();
-
-          if (stopped) {
-            return;
-          }
-
-          const result = await api(
-            "/api/attendance/location",
-            {
-              method: "POST",
-
-              headers: {
-                "Content-Type":
-                  "application/json",
-              },
-
-              body:
-                JSON.stringify(
-                  {
-                    ...gps(
-                      position
-                    ),
-                    // Persist the scheduled heartbeat as a visible audit point,
-                    // including when the employee has not moved.
-                    minuteTrigger: true,
-                  }
-                ),
-            }
-          );
-
-          setAttendance((current) =>
-            current
-              ? {
-                  ...current,
-                  lastKnownLocation: result.location || current.lastKnownLocation,
-                  lastLocationReceivedAt:
-                    result.receivedAt || current.lastLocationReceivedAt,
-                  totalDistanceMeters:
-                    result.totalDistanceMeters ?? current.totalDistanceMeters,
-                  lastKnownLocationName:
-                    result.locationName || current.lastKnownLocationName,
-                  trackingStatus: "ACTIVE",
-                }
-              : current
-          );
-        } catch (error) {
-          console.warn(
-            "Attendance location update skipped:",
-            error
-          );
-        }
-      };
-
-    /*
-     * Send first location immediately.
-     */
-    sendLocation();
-
-    /*
-     * Continue every minute.
-     */
-    const interval =
-      window.setInterval(
-        sendLocation,
-        60_000
-      );
-
-    return () => {
-      stopped = true;
-
-      window.clearInterval(
-        interval
-      );
+    const update = (event: Event) => {
+      const result = (event as CustomEvent).detail;
+      if (result.autoMarkedOut) { void refresh(); return; }
+      setAttendance((current) => current ? {
+        ...current,
+        lastKnownLocation: result.location || current.lastKnownLocation,
+        lastLocationReceivedAt: result.receivedAt || current.lastLocationReceivedAt,
+        totalDistanceMeters: result.totalDistanceMeters ?? current.totalDistanceMeters,
+        lastKnownLocationName: result.locationName || current.lastKnownLocationName,
+        trackingStatus: "ACTIVE",
+      } : current);
     };
-  }, [
-    attendance?.status,
-    attendance?.attendanceType,
-    empId,
-    orgId,
-  ]);
-
+    window.addEventListener("attendance-location-updated", update);
+    return () => window.removeEventListener("attendance-location-updated", update);
+  }, [refresh]);
   /* =========================================================
      COMMON GPS POST ACTION
   ========================================================= */
@@ -1069,6 +973,7 @@ export default function AttendancePage() {
           }
         );
 
+        window.dispatchEvent(new Event("attendance-changed"));
         await refresh();
 
         return true;
@@ -1122,7 +1027,7 @@ export default function AttendancePage() {
             ? "Field work started and the client/site visit is active."
             : attendanceType === "WORK_FROM_HOME"
               ? "WFH attendance started on this approved device. Continuous GPS is paused."
-              : "Marked in successfully. Keep this page open until Mark Out so location tracking can continue.",
+              : "Marked in successfully. Keep TrakAgile open until Mark Out. Tracking continues as you switch pages.",
           { duration: 8000 }
         );
       }

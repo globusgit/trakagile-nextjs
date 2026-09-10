@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 
@@ -111,11 +111,14 @@ export default function LiveTrackingPage() {
   const [query, setQuery] = useState("");
   const [selectedEmpId, setSelectedEmpId] = useState(requestedEmpId);
   const [loading, setLoading] = useState(true);
+  const inFlight = useRef(false);
 
   const load = useCallback(async (notify = false) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setLoading(true);
     try {
-      const response = await fetch("/api/attendance/live", { cache: "no-store" });
+      const response = await fetch("/api/attendance/live", { cache: "no-store", signal: AbortSignal.timeout(20_000) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.message || "Unable to load live tracking.");
       setEmployees(result.employees || []);
@@ -123,13 +126,14 @@ export default function LiveTrackingPage() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to load live tracking.");
     } finally {
+      inFlight.current = false;
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     const initial = window.setTimeout(() => void load(), 0);
-    const timer = window.setInterval(() => void load(), 30_000);
+    const timer = window.setInterval(() => void load(), 15_000);
     return () => { window.clearTimeout(initial); window.clearInterval(timer); };
   }, [load]);
 

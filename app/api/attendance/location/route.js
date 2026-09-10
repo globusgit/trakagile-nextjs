@@ -26,14 +26,17 @@ export async function POST(request) {
     const location = locationFrom(body, now, {
       maxClockDifferenceMs: body.offlineQueued ? 24 * 60 * 60 * 1000 : 5 * 60 * 1000,
     });
+    const heartbeatAt = new Date(Math.min(now.getTime(), location.capturedAt.getTime()));
     const movement = movementFrom(body);
-    const minuteTrigger = body.minuteTrigger === true;
     const clientPointId =
       typeof body.clientPointId === "string" && body.clientPointId.trim()
         ? body.clientPointId.trim().slice(0, 120)
         : undefined;
     const attendance = await getActiveAttendance(identity.orgId, identity.empId);
     if (!attendance) throw new AttendanceError("No active attendance found.", 404);
+    if (attendance.markIn?.time && location.capturedAt < new Date(attendance.markIn.time)) {
+      return Response.json({ accepted: false, reason: "BEFORE_MARK_IN" });
+    }
     if (clientPointId) {
       const duplicate = await TrackingLocation.exists({
         attendanceId: attendance._id,
@@ -47,23 +50,34 @@ export async function POST(request) {
         });
       }
     }
+    // Older clients send stationary fixes without the minuteTrigger flag.
+    // Retain one real GPS capture per minute even for those clients; never
+    // synthesize coordinates for periods when the device did not report.
+    const minuteStart = new Date(Math.floor(location.capturedAt.getTime() / 60_000) * 60_000);
+    const minuteTrigger = body.minuteTrigger === true || !await TrackingLocation.exists({
+      attendanceId: attendance._id,
+      minuteTrigger: true,
+      capturedAt: { $gte: minuteStart, $lt: new Date(minuteStart.getTime() + 60_000) },
+    });
     const maximumAcceptedAccuracy = minuteTrigger ? 100 : 60;
     if (location.accuracy != null && location.accuracy > maximumAcceptedAccuracy) {
       return Response.json({ accepted: false, reason: "LOW_ACCURACY", message: `GPS point ignored because accuracy exceeded ${maximumAcceptedAccuracy} metres.` });
     }
     const distanceMeters = reliableDistance(attendance.lastKnownLocation, location);
-    if (attendance.lastKnownLocation) {
+    const historical = attendance.lastKnownLocation?.capturedAt &&
+      new Date(attendance.lastKnownLocation.capturedAt) >= location.capturedAt;
+    if (attendance.lastKnownLocation && !historical) {
       const previousTime = new Date(attendance.lastKnownLocation.capturedAt || attendance.lastLocationReceivedAt || now);
-      const elapsedSeconds = Math.max(1, (location.capturedAt.getTime() - previousTime.getTime()) / 1000);
+      const elapsedSeconds = (location.capturedAt.getTime() - previousTime.getTime()) / 1000;
       const rawDistanceMeters = distanceBetween(attendance.lastKnownLocation, location);
-      if (elapsedSeconds <= 0 || rawDistanceMeters / elapsedSeconds > 45) {
+      if (elapsedSeconds <= 0 || distanceMeters / elapsedSeconds > 45) {
         return Response.json({ accepted: false, reason: "UNREALISTIC_JUMP", message: "GPS point ignored because the movement was not physically plausible." });
       }
       const reportedStationary = movement.speed != null && movement.speed < 0.5;
       if (!minuteTrigger && (distanceMeters === 0 || (reportedStationary && rawDistanceMeters < 100))) {
         await Attendance.updateOne(
           { _id: attendance._id, status: "IN" },
-          { $set: { lastLocationReceivedAt: now, trackingStatus: "ACTIVE" } },
+          { $set: { lastLocationReceivedAt: heartbeatAt, trackingStatus: "ACTIVE" } },
         );
         return Response.json({
           accepted: true,
@@ -136,12 +150,15 @@ export async function POST(request) {
       });
     }
     const updatedAttendance = await Attendance.findOneAndUpdate(
-      { _id: attendance._id, status: "IN" },
+      { _id: attendance._id, status: "IN", $or: [
+        { "lastKnownLocation.capturedAt": { $lt: location.capturedAt } },
+        { "lastKnownLocation.capturedAt": { $exists: false } },
+      ] },
       {
         $set: {
           lastKnownLocation: location,
           ...(locationName ? { lastKnownLocationName: locationName } : {}),
-          lastLocationReceivedAt: now,
+          lastLocationReceivedAt: heartbeatAt,
           trackingStatus: "ACTIVE",
         },
         $inc: { totalDistanceMeters: distanceMeters },

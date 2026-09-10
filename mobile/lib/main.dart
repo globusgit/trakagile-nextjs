@@ -37,6 +37,18 @@ class AttendanceTrackingService {
   Timer? _retryTimer;
   Timer? _heartbeatTimer;
   bool _sending = false;
+  bool _starting = false;
+  bool _capturingHeartbeat = false;
+  Future<void> _queueWork = Future<void>.value();
+
+  Future<void> _mutateQueue(Future<void> Function(SharedPreferences) action) {
+    final work = _queueWork.then((_) async {
+      await action(await SharedPreferences.getInstance());
+    });
+    _queueWork = work.catchError((Object _) {});
+    return work;
+  }
+
   String? _token;
   final Random _random = Random.secure();
 
@@ -55,8 +67,11 @@ class AttendanceTrackingService {
         final body = jsonDecode(response.body);
         if (body is Map &&
             body['attendance'] is Map &&
-            body['attendance']['status'] == 'IN') {
+            body['attendance']['status'] == 'IN' &&
+            body['attendance']['attendanceType'] != 'WORK_FROM_HOME') {
           await start(token);
+        } else {
+          await stop();
         }
       }
     } catch (_) {
@@ -65,57 +80,78 @@ class AttendanceTrackingService {
   }
 
   Future<void> start(String token) async {
-    _token = token;
-    if (_subscription != null) {
-      await _flushQueue();
-      return;
-    }
-    if (!await Geolocator.isLocationServiceEnabled()) return;
-    var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      return;
-    }
-    if (defaultTargetPlatform == TargetPlatform.android &&
-        permission != LocationPermission.always) {
-      return;
-    }
+    if (_starting) return;
+    _starting = true;
+    try {
+      _token = token;
+      // Install recovery before permission/GPS checks: switching GPS back on
+      // must restart tracking without requiring another Mark In.
+      _retryTimer ??= Timer.periodic(const Duration(minutes: 1), (_) {
+        final activeToken = _token;
+        if (activeToken != null && _subscription == null) {
+          unawaited(start(activeToken));
+        } else {
+          unawaited(_flushQueue());
+        }
+      });
+      if (_subscription != null) {
+        await _flushQueue();
+        return;
+      }
+      if (!await Geolocator.isLocationServiceEnabled()) return;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return;
+      }
+      if (defaultTargetPlatform == TargetPlatform.android &&
+          permission != LocationPermission.always) {
+        return;
+      }
 
-    final LocationSettings settings =
-        defaultTargetPlatform == TargetPlatform.android
-        ? AndroidSettings(
-            accuracy: LocationAccuracy.high,
-            distanceFilter: 50,
-            intervalDuration: const Duration(seconds: 45),
-            foregroundNotificationConfig: const ForegroundNotificationConfig(
-              notificationTitle: 'TrakAgile attendance tracking',
-              notificationText:
-                  'Location tracking is active until you mark out.',
-              notificationChannelName: 'Attendance location tracking',
-              enableWakeLock: true,
-              enableWifiLock: true,
-              setOngoing: true,
-            ),
-          )
-        : const LocationSettings(
-            accuracy: LocationAccuracy.high,
-            distanceFilter: 50,
+      final LocationSettings settings =
+          defaultTargetPlatform == TargetPlatform.android
+          ? AndroidSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 0,
+              intervalDuration: const Duration(seconds: 15),
+              foregroundNotificationConfig: const ForegroundNotificationConfig(
+                notificationTitle: 'TrakAgile attendance tracking',
+                notificationText:
+                    'Location tracking is active until you mark out.',
+                notificationChannelName: 'Attendance location tracking',
+                enableWakeLock: true,
+                enableWifiLock: true,
+                setOngoing: true,
+              ),
+            )
+          : const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 0,
+            );
+      _subscription = Geolocator.getPositionStream(locationSettings: settings)
+          .listen(
+            (position) => unawaited(_queuePosition(position)),
+            onError: (Object _) {
+              final subscription = _subscription;
+              _subscription = null;
+              unawaited(subscription?.cancel());
+            },
+            onDone: () => _subscription = null,
           );
-    await _flushQueue();
-    await _captureHeartbeat();
-    _subscription = Geolocator.getPositionStream(locationSettings: settings)
-        .listen((position) => _queuePosition(position), onError: (_) {});
-    _retryTimer = Timer.periodic(
-      const Duration(minutes: 1),
-      (_) => _flushQueue(),
-    );
-    _heartbeatTimer = Timer.periodic(
-      const Duration(minutes: 1),
-      (_) => _captureHeartbeat(),
-    );
+      _heartbeatTimer?.cancel();
+      _heartbeatTimer = Timer.periodic(
+        const Duration(minutes: 1),
+        (_) => _captureHeartbeat(),
+      );
+      unawaited(_captureHeartbeat());
+      unawaited(_flushQueue());
+    } finally {
+      _starting = false;
+    }
   }
 
   Future<void> stop() async {
@@ -130,8 +166,10 @@ class AttendanceTrackingService {
   }
 
   Future<void> _captureHeartbeat() async {
-    if (_token == null || !await Geolocator.isLocationServiceEnabled()) return;
+    if (_token == null || _capturingHeartbeat) return;
+    _capturingHeartbeat = true;
     try {
+      if (!await Geolocator.isLocationServiceEnabled()) return;
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
@@ -141,6 +179,8 @@ class AttendanceTrackingService {
       await _queuePosition(position, minuteTrigger: true);
     } catch (_) {
       // The stream and the next minute heartbeat provide automatic recovery.
+    } finally {
+      _capturingHeartbeat = false;
     }
   }
 
@@ -148,7 +188,7 @@ class AttendanceTrackingService {
     Position position, {
     bool minuteTrigger = false,
   }) async {
-    if (position.accuracy > 100) return;
+    if (_token == null || position.accuracy > 100) return;
     final prefs = await SharedPreferences.getInstance();
     final lastRaw = prefs.getString('tracking_last_position');
     if (lastRaw != null) {
@@ -179,12 +219,15 @@ class AttendanceTrackingService {
       'offlineQueued': true,
       'minuteTrigger': minuteTrigger,
     };
-    final queue = (prefs.getStringList('tracking_offline_queue') ?? <String>[])
-        .toList();
-    queue.add(jsonEncode(item));
-    if (queue.length > 500) queue.removeRange(0, queue.length - 500);
-    await prefs.setStringList('tracking_offline_queue', queue);
-    await prefs.setString('tracking_last_position', jsonEncode(item));
+    await _mutateQueue((prefs) async {
+      final queue =
+          (prefs.getStringList('tracking_offline_queue') ?? <String>[])
+              .toList();
+      queue.add(jsonEncode(item));
+      if (queue.length > 500) queue.removeRange(0, queue.length - 500);
+      await prefs.setStringList('tracking_offline_queue', queue);
+      await prefs.setString('tracking_last_position', jsonEncode(item));
+    });
     await _flushQueue();
   }
 
@@ -192,11 +235,14 @@ class AttendanceTrackingService {
     if (_sending || _token == null) return;
     _sending = true;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final queue =
-          (prefs.getStringList('tracking_offline_queue') ?? <String>[])
-              .toList();
-      while (queue.isNotEmpty && _token != null) {
+      while (_token != null) {
+        String? pending;
+        await _mutateQueue((prefs) async {
+          final queue =
+              prefs.getStringList('tracking_offline_queue') ?? <String>[];
+          if (queue.isNotEmpty) pending = queue.first;
+        });
+        if (pending == null) break;
         try {
           final response = await http
               .post(
@@ -205,15 +251,28 @@ class AttendanceTrackingService {
                   'authorization': 'Bearer $_token',
                   'content-type': 'application/json',
                 },
-                body: queue.first,
+                body: pending,
               )
               .timeout(const Duration(seconds: 15));
-          if (response.statusCode >= 200 && response.statusCode < 300) {
-            queue.removeAt(0);
-            await prefs.setStringList('tracking_offline_queue', queue);
+          if ((response.statusCode >= 200 && response.statusCode < 300) ||
+              response.statusCode == 400 ||
+              response.statusCode == 422) {
+            // Drop only this acknowledged or invalid point. Captures made while
+            // the request was in flight must remain queued.
+            await _mutateQueue((prefs) async {
+              final queue =
+                  (prefs.getStringList('tracking_offline_queue') ?? <String>[])
+                      .toList();
+              queue.remove(pending);
+              await prefs.setStringList('tracking_offline_queue', queue);
+            });
           } else if (response.statusCode == 404 || response.statusCode == 409) {
-            queue.clear();
-            await prefs.setStringList('tracking_offline_queue', queue);
+            await _mutateQueue((prefs) async {
+              await prefs.remove('tracking_offline_queue');
+              await prefs.remove('tracking_last_position');
+            });
+            await stop();
+            break;
           } else {
             break;
           }
@@ -236,7 +295,8 @@ class TrakAgileApp extends StatefulWidget {
   State<TrakAgileApp> createState() => _TrakAgileAppState();
 }
 
-class _TrakAgileAppState extends State<TrakAgileApp> {
+class _TrakAgileAppState extends State<TrakAgileApp>
+    with WidgetsBindingObserver {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   Map<String, dynamic>? _user;
   bool _loading = true;
@@ -245,10 +305,24 @@ class _TrakAgileAppState extends State<TrakAgileApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _restoreSession();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_requestInitialLocationAccess());
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _user != null) {
+      unawaited(AttendanceTrackingService.instance.restore());
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   Future<void> _requestInitialLocationAccess() async {
@@ -1091,7 +1165,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
             : null;
         throw Exception(message ?? 'Attendance action failed.');
       }
-      if (isMarkedIn) {
+      if (isMarkedIn || _attendanceType == 'WORK_FROM_HOME') {
         await AttendanceTrackingService.instance.stop();
       } else {
         await AttendanceTrackingService.instance.start(token);
