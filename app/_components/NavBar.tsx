@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { Menu, ChevronDown, LogOut } from "lucide-react";
+import Link from "next/link";
+import { Menu, ChevronDown, LogOut, Bell } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import styles from "./NavBar.module.css";
@@ -24,6 +25,7 @@ export default function NavBar({ onToggleSidebar }: NavBarProps) {
 
   const [profile, setProfile] = useState<EmployeeProfile | null>(null);
   const [isOpen, setIsOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Fetch the logged-in employee's own details
@@ -41,6 +43,27 @@ export default function NavBar({ onToggleSidebar }: NavBarProps) {
 
     return () => {
       cancelled = true;
+    };
+  }, [status]);
+
+  // Fetch and periodically refresh the unread notification count for the bell icon.
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/notifications", { cache: "no-store" });
+        if (response.ok) setUnreadCount((await response.json()).unreadCount || 0);
+      } catch {
+        // Retry on the next interval.
+      }
+    };
+    const initial = window.setTimeout(() => void load(), 0);
+    const timer = window.setInterval(() => void load(), 30_000);
+    window.addEventListener("notifications-updated", load);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(timer);
+      window.removeEventListener("notifications-updated", load);
     };
   }, [status]);
 
@@ -72,6 +95,18 @@ export default function NavBar({ onToggleSidebar }: NavBarProps) {
       </button>
 
       <h1 className={styles.title}></h1>
+
+      <Link
+        href="/notifications"
+        className={styles.bellButton}
+        aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
+        title="Notifications"
+      >
+        <Bell size={20} color="white" />
+        {unreadCount > 0 && (
+          <span className={styles.bellBadge}>{unreadCount > 99 ? "99+" : unreadCount}</span>
+        )}
+      </Link>
 
       <div className={styles.userMenu} ref={menuRef}>
         <button
