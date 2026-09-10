@@ -514,7 +514,7 @@ export default function TasksPage() {
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / size)), [total, size]);
 
   return (
-    <div className="space-y-4">
+    <div className="w-full min-w-0 max-w-full space-y-4 overflow-x-hidden" style={{ contain: "inline-size" }}>
       <PageHeader title="Tasks" />
 
        <ListingToolbar
@@ -530,7 +530,7 @@ export default function TasksPage() {
 
       {error ? <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
 
-      <div className="overflow-visible rounded-xl border bg-white shadow [&_[data-slot=table-container]]:overflow-visible">
+      <div className="w-full min-w-0 max-w-full overflow-hidden rounded-xl border bg-white shadow [&>[data-slot=table-container]]:max-w-full [&>[data-slot=table-container]]:overflow-x-auto">
         {/* Task Source -> Vertical -> Task Type -> Sub-Task Type cascading
             filter bar, sitting just above the table's header row. */}
         <div className="flex flex-wrap items-end gap-3 border-b bg-slate-50 px-4 py-3">
@@ -594,7 +594,7 @@ export default function TasksPage() {
           )}
         </div>
 
-        <Table>
+        <Table className="min-w-max">
           <TableHeader className="sticky top-0 z-10 bg-cyan-200 shadow-sm">
             <TableRow>
               <TableHead className="font-bold whitespace-nowrap">Edit</TableHead>

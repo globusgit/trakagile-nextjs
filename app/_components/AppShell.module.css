@@ -113,8 +113,11 @@
 
 .pageContent {
   flex: 1;
+  min-width: 0;
+  max-width: 100%;
   padding: 20px;
   overflow-y: auto;
+  overflow-x: hidden;
   width: 100%;
   min-height: 0;
   box-sizing: border-box;
