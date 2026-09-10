@@ -61,7 +61,7 @@ Server routes are the enforcement boundary. Hiding a control in the web or mobil
 
 Shared role permissions are defined in `lib/permissions.mjs`. Organization and team visibility helpers are in `lib/access.js`. Authenticated API identities are revalidated against active User and Employee records before protected workforce operations proceed.
 
-Web and mobile credential checks share the same persistent account policy. Five failed password attempts lock the account for 15 minutes. Temporary passwords must be replaced with a 12+ character mixed-case password, and changing a password increments the account token version so existing web and mobile sessions are rejected.
+Web and mobile credential checks share the same persistent account policy. Five failed password attempts lock the account for 15 minutes. Temporary passwords must be replaced with an 8+ character mixed-case password, and changing a password increments the account token version so existing web and mobile sessions are rejected.
 
 Every organization-owned query must include `orgId`. An object identifier alone must never retrieve organization data. New privileged operations should receive a named permission in the centralized matrix rather than introduce another inline role array.
 

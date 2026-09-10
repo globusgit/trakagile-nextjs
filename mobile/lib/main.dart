@@ -699,7 +699,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                         obscureText: true,
                         decoration: const InputDecoration(
                           labelText: 'New password',
-                          helperText: '12+ characters with uppercase, lowercase and a number',
+                          helperText: '8+ characters with uppercase, lowercase and a number',
                           border: OutlineInputBorder(),
                         ),
                       ),

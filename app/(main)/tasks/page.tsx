@@ -114,7 +114,7 @@ function DescriptionCell({ task, regional }: { task: Task; regional: { locale: s
   return (
     <HoverPanel
       trigger={
-        <p className="w-[220px] cursor-default line-clamp-2 whitespace-normal break-all">
+        <p className="w-full min-w-0 cursor-default line-clamp-2 whitespace-normal break-words">
           {descriptionLines.map((line, index) => (
             <span key={`${index}-${line}`}>
               {line}
@@ -133,6 +133,7 @@ function DescriptionCell({ task, regional }: { task: Task; regional: { locale: s
         </div>
       }
       panelClassName="w-72"
+      portaled
     />
   );
 }
@@ -530,7 +531,7 @@ export default function TasksPage() {
 
       {error ? <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
 
-      <div className="w-full min-w-0 max-w-full overflow-hidden rounded-xl border bg-white shadow [&>[data-slot=table-container]]:max-w-full [&>[data-slot=table-container]]:overflow-x-auto">
+      <div className="w-full min-w-0 max-w-full overflow-hidden rounded-xl border bg-white shadow [&>[data-slot=table-container]]:max-w-full [&>[data-slot=table-container]]:overflow-hidden">
         {/* Task Source -> Vertical -> Task Type -> Sub-Task Type cascading
             filter bar, sitting just above the table's header row. */}
         <div className="flex flex-wrap items-end gap-3 border-b bg-slate-50 px-4 py-3">
@@ -594,7 +595,7 @@ export default function TasksPage() {
           )}
         </div>
 
-        <Table className="min-w-max">
+        <Table className="w-full table-fixed text-xs xl:text-sm [&_td]:min-w-0 [&_td]:overflow-hidden [&_td]:text-ellipsis [&_th]:min-w-0 [&_th]:whitespace-normal">
           <TableHeader className="sticky top-0 z-10 bg-cyan-200 shadow-sm">
             <TableRow>
               <TableHead className="font-bold whitespace-nowrap">Edit</TableHead>
@@ -628,7 +629,7 @@ export default function TasksPage() {
                   value={projectNoSearch}
                   onChange={(e) => setProjectNoSearch(e.target.value)}
                   placeholder="Search..."
-                  className="h-7 w-full min-w-[110px] rounded border bg-white px-2 text-xs font-normal outline-none focus:border-cyan-600"
+                  className="h-7 w-full min-w-0 rounded border bg-white px-2 text-xs font-normal outline-none focus:border-cyan-600"
                 />
               </TableHead>
               <TableHead className="py-1.5">
@@ -637,7 +638,7 @@ export default function TasksPage() {
                   value={workOrderNoSearch}
                   onChange={(e) => setWorkOrderNoSearch(e.target.value)}
                   placeholder="Search..."
-                  className="h-7 w-full min-w-[110px] rounded border bg-white px-2 text-xs font-normal outline-none focus:border-cyan-600"
+                  className="h-7 w-full min-w-0 rounded border bg-white px-2 text-xs font-normal outline-none focus:border-cyan-600"
                 />
               </TableHead>
               <TableHead className="py-1.5">
@@ -646,7 +647,7 @@ export default function TasksPage() {
                   value={tenderNoSearch}
                   onChange={(e) => setTenderNoSearch(e.target.value)}
                   placeholder="Search..."
-                  className="h-7 w-full min-w-[110px] rounded border bg-white px-2 text-xs font-normal outline-none focus:border-cyan-600"
+                  className="h-7 w-full min-w-0 rounded border bg-white px-2 text-xs font-normal outline-none focus:border-cyan-600"
                 />
               </TableHead>
               <TableHead />
