@@ -1,7 +1,7 @@
 import { connectDB } from "@/lib/mongoose";
 import Attendance from "@/models/Attendance";
 import Employee from "@/models/Employee";
-import TrackingLocation from "@/models/TrackingLocation";
+import { attendanceTracks } from "@/lib/attendanceTracks";
 import { visibleEmployeeIds } from "@/lib/access";
 import { dayKey, errorResponse, getAttendancePolicy, requireAttendanceUser } from "../../attendance/_lib/attendance";
 import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
@@ -39,38 +39,16 @@ export async function GET() {
       }
     }
     const todayAttendance = [...todayByEmployee.values()];
-    const trackingPoints = todayAttendance.length
-      ? await TrackingLocation.find({ orgId: identity.orgId, attendanceId: { $in: todayAttendance.map((item) => item._id) } })
-          .select("attendanceId latitude longitude accuracy capturedAt receivedAt locationName locationNameRefreshed speed heading")
-          .sort({ capturedAt: 1 })
-          .limit(5000)
-          .lean()
-      : [];
-    const pointsByAttendance = new Map();
-    for (const point of trackingPoints) {
-      const key = String(point.attendanceId);
-      if (!pointsByAttendance.has(key)) pointsByAttendance.set(key, []);
-      pointsByAttendance.get(key).push(point);
-    }
+    const tracks = await attendanceTracks(identity.orgId, todayAttendance);
 
     const locations = employees.flatMap((employee) => {
       const item = todayByEmployee.get(employee.empId);
-      const point = item?.lastKnownLocation || item?.markOut?.location || item?.markIn?.location;
+      const track = tracks.get(String(item?._id));
+      const point = track?.location;
       if (!point || !Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)) return [];
-      const rawRoute = pointsByAttendance.get(String(item._id)) || [];
-      const sampleEvery = Math.max(1, Math.ceil(rawRoute.length / 400));
-      const route = rawRoute.filter((routePoint, index) =>
-        index === 0 || index === rawRoute.length - 1 || routePoint.locationNameRefreshed || index % sampleEvery === 0,
-      ).map((routePoint, index, sampled) => ({
-        latitude: routePoint.latitude,
-        longitude: routePoint.longitude,
-        capturedAt: routePoint.capturedAt || routePoint.receivedAt,
-        locationName: routePoint.locationName || null,
-        speed: routePoint.speed,
-        heading: routePoint.heading,
-        accuracy: routePoint.accuracy,
-        type: index === 0 ? "MARK_IN" : index === sampled.length - 1 ? (item.status === "OUT" ? "MARK_OUT" : "LIVE") : routePoint.locationNameRefreshed ? "TRIGGER" : "TRACK",
-      }));
+      const route = track.movementPoints.map((point) => ({ ...point, type: "TRACK" }));
+      const events = track.triggerPoints.map((point) => ({ ...point, type: point.type === "MARK_IN" ? "MARK_IN" : "TRIGGER" }));
+      if (item.markOut?.location) events.push({ ...item.markOut.location, capturedAt: item.markOut.time, type: "MARK_OUT" });
       return [{
         empId: employee.empId,
         name: employee.name,
@@ -79,15 +57,17 @@ export async function GET() {
         latitude: point.latitude,
         longitude: point.longitude,
         locationName: point.locationName || item.lastKnownLocationName || "Location name unavailable",
-        receivedAt: point.receivedAt || point.capturedAt || item.lastLocationReceivedAt || item.updatedAt,
+        receivedAt: item.lastLocationReceivedAt || point.capturedAt || point.receivedAt || item.updatedAt,
         attendanceDate: item.attendanceDate,
         markInAt: item.markIn?.time || null,
         markOutAt: item.markOut?.time || null,
         attendanceStatus: item.status,
         trackingStatus: item.trackingStatus || "ACTIVE",
-        totalDistanceMeters: item.totalDistanceMeters || 0,
+        totalDistanceMeters: track.filteredDistanceMeters,
         presentToday: presentIds.has(employee.empId),
         route,
+        events,
+        accuracy: point.accuracy,
       }];
     });
 

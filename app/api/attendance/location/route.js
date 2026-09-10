@@ -2,6 +2,7 @@ import { connectDB } from "@/lib/mongoose";
 import Attendance from "@/models/Attendance";
 import EmployeeVisit from "@/models/EmployeeVisit";
 import TrackingLocation from "@/models/TrackingLocation";
+import { TRACKING_INTERVAL_MS } from "@/lib/trackingPolicy.mjs";
 import {
   AttendanceError,
   attendanceExpectedEndAt,
@@ -53,12 +54,14 @@ export async function POST(request) {
     // Older clients send stationary fixes without the minuteTrigger flag.
     // Retain one real GPS capture per minute even for those clients; never
     // synthesize coordinates for periods when the device did not report.
-    const minuteStart = new Date(Math.floor(location.capturedAt.getTime() / 60_000) * 60_000);
-    const minuteTrigger = body.minuteTrigger === true || !await TrackingLocation.exists({
+    // Keep the legacy field name for installed clients, but enforce the new
+    // five-minute capture interval even when an older client uploads faster.
+    const minuteTrigger = !await TrackingLocation.exists({
       attendanceId: attendance._id,
       minuteTrigger: true,
-      capturedAt: { $gte: minuteStart, $lt: new Date(minuteStart.getTime() + 60_000) },
+      capturedAt: { $gt: new Date(location.capturedAt.getTime() - TRACKING_INTERVAL_MS), $lte: location.capturedAt },
     });
+    if (!minuteTrigger) return Response.json({ accepted: true, routePoint: false, reason: "INTERVAL_NOT_DUE" });
     const maximumAcceptedAccuracy = minuteTrigger ? 100 : 60;
     if (location.accuracy != null && location.accuracy > maximumAcceptedAccuracy) {
       return Response.json({ accepted: false, reason: "LOW_ACCURACY", message: `GPS point ignored because accuracy exceeded ${maximumAcceptedAccuracy} metres.` });

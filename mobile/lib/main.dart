@@ -18,6 +18,8 @@ const _apiBaseUrl = String.fromEnvironment(
   defaultValue: 'https://trakagile.com',
 );
 
+const _trackingInterval = Duration(minutes: 5);
+
 String _friendlyNetworkError(Object error) {
   final message = error.toString().replaceFirst('Exception: ', '');
   if (message.contains('SocketException') ||
@@ -86,7 +88,7 @@ class AttendanceTrackingService {
       _token = token;
       // Install recovery before permission/GPS checks: switching GPS back on
       // must restart tracking without requiring another Mark In.
-      _retryTimer ??= Timer.periodic(const Duration(minutes: 1), (_) {
+      _retryTimer ??= Timer.periodic(_trackingInterval, (_) {
         final activeToken = _token;
         if (activeToken != null && _subscription == null) {
           unawaited(start(activeToken));
@@ -117,7 +119,7 @@ class AttendanceTrackingService {
           ? AndroidSettings(
               accuracy: LocationAccuracy.high,
               distanceFilter: 0,
-              intervalDuration: const Duration(seconds: 15),
+              intervalDuration: _trackingInterval,
               foregroundNotificationConfig: const ForegroundNotificationConfig(
                 notificationTitle: 'TrakAgile attendance tracking',
                 notificationText:
@@ -144,7 +146,7 @@ class AttendanceTrackingService {
           );
       _heartbeatTimer?.cancel();
       _heartbeatTimer = Timer.periodic(
-        const Duration(minutes: 1),
+        _trackingInterval,
         (_) => _captureHeartbeat(),
       );
       unawaited(_captureHeartbeat());
@@ -178,7 +180,7 @@ class AttendanceTrackingService {
       );
       await _queuePosition(position, minuteTrigger: true);
     } catch (_) {
-      // The stream and the next minute heartbeat provide automatic recovery.
+      // The stream and the next five-minute heartbeat provide recovery.
     } finally {
       _capturingHeartbeat = false;
     }
@@ -193,17 +195,9 @@ class AttendanceTrackingService {
     final lastRaw = prefs.getString('tracking_last_position');
     if (lastRaw != null) {
       final last = jsonDecode(lastRaw) as Map<String, dynamic>;
-      final distance = Geolocator.distanceBetween(
-        (last['latitude'] as num).toDouble(),
-        (last['longitude'] as num).toDouble(),
-        position.latitude,
-        position.longitude,
-      );
       final lastTime = DateTime.tryParse('${last['capturedAt']}');
-      if (!minuteTrigger &&
-          distance < 5 &&
-          lastTime != null &&
-          position.timestamp.difference(lastTime).inSeconds < 45) {
+      if (lastTime != null &&
+          position.timestamp.difference(lastTime) < _trackingInterval) {
         return;
       }
     }
@@ -217,7 +211,8 @@ class AttendanceTrackingService {
       'heading': position.heading < 0 ? null : position.heading,
       'capturedAt': position.timestamp.toUtc().toIso8601String(),
       'offlineQueued': true,
-      'minuteTrigger': minuteTrigger,
+      // Legacy API field; scheduled captures now occur every five minutes.
+      'minuteTrigger': true,
     };
     await _mutateQueue((prefs) async {
       final queue =

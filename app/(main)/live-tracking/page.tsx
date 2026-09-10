@@ -151,7 +151,7 @@ export default function LiveTrackingPage() {
 
   return <div className="space-y-3 pb-4">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div><h1 className="text-xl font-bold tracking-tight text-slate-900">Live tracking</h1><p className="text-sm text-slate-500">Live routes, location triggers and GPS health</p></div>
+      <div><h1 className="text-xl font-bold tracking-tight text-slate-900">Live tracking</h1><p className="text-sm text-slate-500">GPS updates every 5 minutes · Map refreshes every 15 seconds</p></div>
       <div className="flex gap-2">
         <div className="relative min-w-0 sm:w-72"><Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search employee or location" className="bg-white pl-9" /></div>
         <Button variant="outline" className="bg-white" onClick={() => void load(true)} disabled={loading}><RefreshCw className={loading ? "animate-spin" : ""} /><span className="hidden sm:inline">Refresh</span></Button>

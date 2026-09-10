@@ -238,6 +238,7 @@
 .ops-trigger-marker div span { transform: rotate(45deg); }
 .ops-live-marker div { display: grid; width: 48px; height: 48px; place-items: center; border: 1px solid rgb(14 165 233 / .45); border-radius: 999px; background: rgb(14 165 233 / .16); animation: ops-pulse 2s ease-out infinite; }
 .ops-live-marker span { display: grid; width: 32px; height: 32px; place-items: center; border: 3px solid white; border-radius: 999px; color: white; background: #0284c7; box-shadow: 0 6px 18px rgb(2 132 199 / .4); }
+.ops-avatar-tooltip { max-width: 220px; white-space: normal; text-align: left; line-height: 1.35; }
 @keyframes ops-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgb(14 165 233 / .25); } 50% { box-shadow: 0 0 0 10px rgb(14 165 233 / 0); } }
 .ops-panel { min-width: 0; overflow: hidden; background: #fff; }
 .ops-tabs { display: grid; height: 52px; grid-template-columns: 1fr 1fr; border-bottom: 1px solid #e2e8f0; }

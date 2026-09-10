@@ -44,6 +44,7 @@ function fixture({ existingMinute = false, duplicate = false, previousSeconds = 
     },
     "../_lib/notifications": { notifyAttendance: async () => {}, reverseGeocode: async () => null },
     "../_lib/auto-close": { closeAttendanceAfterNoResponse: async () => false },
+    "@/lib/trackingPolicy.mjs": { TRACKING_INTERVAL_MS: 5 * 60_000 },
   };
   const exports = {};
   vm.runInNewContext(compiled, { exports, require: (name) => {
@@ -76,12 +77,12 @@ test("older clients' stationary fixes become minute triggers without requiring t
   assert.equal(f.stored[0].minuteTrigger, true);
 });
 
-test("extra stationary stream fixes within a recorded minute remain heartbeats", async () => {
+test("extra stationary stream fixes within a recorded five-minute window remain heartbeats", async () => {
   const f = fixture({ existingMinute: true });
   const result = await f.post({ accuracy: 8 });
-  assert.equal(result.reason, "STATIONARY");
+  assert.equal(result.reason, "INTERVAL_NOT_DUE");
   assert.equal(f.stored.length, 0);
-  assert.equal(f.updates.length, 1);
+  assert.equal(f.updates.length, 0);
 });
 
 test("unusable accuracy is rejected without advancing the live heartbeat", async () => {

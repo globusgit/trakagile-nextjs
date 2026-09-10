@@ -4,25 +4,23 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import Image from "next/image";
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
+import { Circle, CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
 import { AlertTriangle, Clock3, Crosshair, Gauge, MapPin, Navigation, Radio, Route, Search, Users } from "lucide-react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { EmployeeLocation } from "../dashboard/EmployeeLocationMap";
 import { splitLocationTrack } from "@/lib/locationTrack.mjs";
+import { trackingHealth } from "@/lib/trackingPolicy.mjs";
 
-type Props = { locations: EmployeeLocation[]; selectedEmpId?: string | null; onSelectEmployee?: (empId: string) => void; loading?: boolean };
+type Props = { locations: EmployeeLocation[]; selectedEmpId?: string | null; onSelectEmployee?: (empId: string) => void; loading?: boolean; fullScreen?: boolean };
 type TrackStatus = ReturnType<typeof status>;
 
 const time = (value?: string | null) => value ? new Date(value).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "Pending";
-const ageMinutes = (value: string) => Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 60_000));
 const coordinates = (latitude: number, longitude: number) => `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
 
 function status(employee: EmployeeLocation) {
-  const stale = ageMinutes(employee.receivedAt);
-  if (employee.trackingStatus === "OFFLINE" || employee.trackingStatus === "STOPPED" || stale > 30) return { label: "Offline", badge: "bg-slate-100 text-slate-600" };
-  if (employee.trackingStatus === "DELAYED" || stale > 5) return { label: "Delayed", badge: "bg-amber-50 text-amber-700" };
-  return { label: "On time", badge: "bg-emerald-50 text-emerald-700" };
+  const label = trackingHealth(employee);
+  return { label, badge: label === "On time" ? "bg-emerald-50 text-emerald-700" : label === "Delayed" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600" };
 }
 
 function FitRoute({ employee, focusKey }: { employee: EmployeeLocation; focusKey: number }) {
@@ -53,7 +51,7 @@ function distance(employee: EmployeeLocation) { return `${((employee.totalDistan
 function speed(employee: EmployeeLocation) { const value = [...employee.route].reverse().find((point) => point.speed != null)?.speed; return value == null ? "—" : `${Math.round(value * 3.6)} km/h`; }
 function duration(employee: EmployeeLocation) { if (!employee.markInAt) return "—"; const end = employee.markOutAt ? new Date(employee.markOutAt).getTime() : Date.now(); const mins = Math.max(0, Math.floor((end - new Date(employee.markInAt).getTime()) / 60000)); return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, "0")}m`; }
 
-export default function LiveEmployeeMap({ locations, selectedEmpId, onSelectEmployee, loading }: Props) {
+export default function LiveEmployeeMap({ locations, selectedEmpId, onSelectEmployee, loading, fullScreen = false }: Props) {
   const [teamQuery, setTeamQuery] = useState("");
   const [focusKey, setFocusKey] = useState(0);
   const [panel, setPanel] = useState<"team" | "employee">("team");
@@ -64,15 +62,15 @@ export default function LiveEmployeeMap({ locations, selectedEmpId, onSelectEmpl
   const routeSegments = splitLocationTrack(selected?.route || []);
   const triggerNumber = (index: number) => triggerPoints.slice(0, index + 1).filter((point) => point.type === "TRIGGER").length;
   const latestAccuracy = selected?.accuracy;
-  const delayed = locations.filter((employee) => status(employee).label !== "On time").length;
+  const delayed = locations.filter((employee) => ["Delayed", "Offline"].includes(status(employee).label)).length;
   const totalDistance = locations.reduce((sum, employee) => sum + (employee.totalDistanceMeters || 0), 0) / 1000;
 
   if (!selected) return <div className="grid h-[calc(100dvh-155px)] min-h-[620px] place-items-center bg-slate-50"><div className="text-center"><MapPin className="mx-auto size-9 text-slate-300" /><p className="mt-3 font-medium text-slate-700">No live employee location received</p><p className="mt-1 text-sm text-slate-500">Locations appear after an employee marks in from the mobile app.</p></div></div>;
 
   const selectedStatus = status(selected);
-  return <div className="ops-console h-[calc(100dvh-155px)] min-h-[620px] bg-slate-50">
+  return <div className={`ops-console ${fullScreen ? "h-[calc(100dvh-110px)]" : "h-[calc(100dvh-155px)]"} min-h-[620px] bg-slate-50`}>
     <section className="ops-kpis">
-      <Kpi icon={<Users />} tone="emerald" label="Active now" value={locations.length} note="On duty" />
+      <Kpi icon={<Users />} tone="emerald" label="Active now" value={locations.filter((employee) => employee.attendanceStatus === "IN").length} note="On duty" />
       <Kpi icon={<Clock3 />} tone="amber" label="Delayed" value={delayed} note="GPS needs attention" />
       <Kpi icon={<Route />} tone="blue" label="Distance today" value={`${totalDistance.toFixed(1)} km`} note="Team total" />
       <Kpi icon={<AlertTriangle />} tone="rose" label="Triggers" value={locations.reduce((sum, employee) => sum + (employee.events || []).filter((point) => point.type === "TRIGGER").length, 0)} note="Recorded GPS updates" />
@@ -83,10 +81,17 @@ export default function LiveEmployeeMap({ locations, selectedEmpId, onSelectEmpl
           <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           <FitRoute employee={selected} focusKey={focusKey} />
           {routeSegments.filter((segment) => segment.length > 1).map((segment, index) => <Fragment key={`route-${index}`}><Polyline positions={segment.map((point) => [point.latitude, point.longitude])} pathOptions={{ color: "#38bdf8", weight: 8, opacity: .18, lineCap: "round", lineJoin: "round" }} /><Polyline positions={segment.map((point) => [point.latitude, point.longitude])} pathOptions={{ color: "#0284c7", weight: 4, opacity: .92, lineCap: "round", lineJoin: "round" }} /></Fragment>)}
-          {triggerPoints.map((point, index) => { const number = triggerNumber(index); const label = point.type === "MARK_IN" ? "Marked in" : point.type === "MARK_OUT" ? "Marked out" : `Trigger ${number}`; return <Marker key={`${point.capturedAt}-${index}`} position={[point.latitude, point.longitude]} icon={triggerIcon(number, point.type)}><Popup><strong>{label}</strong><br />{point.locationName || "GPS location recorded"}<br /><span className="font-mono text-xs">{coordinates(point.latitude, point.longitude)}</span><br />{time(point.capturedAt)}{point.accuracy != null ? <><br />Accuracy ±{Math.round(point.accuracy)} m</> : null}</Popup><Tooltip direction="top">{label}</Tooltip></Marker>; })}
+          {triggerPoints.map((point, index) => {
+            const number = triggerNumber(index);
+            const label = point.type === "MARK_IN" ? "Marked in" : point.type === "MARK_OUT" ? "Marked out" : `Trigger ${number}`;
+            const details = <><Popup><strong>{label}</strong><br />{time(point.capturedAt)}<br />{point.locationName || "GPS location recorded"}<br /><span className="font-mono text-xs">{coordinates(point.latitude, point.longitude)}</span>{point.accuracy != null && <><br />Accuracy ±{Math.round(point.accuracy)} m</>}</Popup><Tooltip>{label} · {time(point.capturedAt)}</Tooltip></>;
+            return point.type === "TRIGGER"
+              ? <CircleMarker key={`${point.capturedAt}-${index}`} center={[point.latitude, point.longitude]} radius={4} pathOptions={{ color: "#fff", weight: 1, fillColor: "#0284c7", fillOpacity: 1 }}>{details}</CircleMarker>
+              : <Marker key={`${point.capturedAt}-${index}`} position={[point.latitude, point.longitude]} icon={triggerIcon(number, point.type)}>{details}</Marker>;
+          })}
           {showAccuracy && latestAccuracy != null && <Circle center={[selected.latitude, selected.longitude]} radius={Math.min(60, Math.max(5, latestAccuracy))} pathOptions={{ color: "#0ea5e9", fillColor: "#38bdf8", fillOpacity: .08, weight: 1 }} />}
-          {locations.filter((employee) => employee.empId !== selected.empId).map((employee) => <Marker key={employee.empId} position={[employee.latitude, employee.longitude]} icon={avatarIcon(employee)} eventHandlers={{ click: () => onSelectEmployee?.(employee.empId) }}><Tooltip direction="top">{employee.name}</Tooltip></Marker>)}
-          <Marker position={[selected.latitude, selected.longitude]} icon={liveIcon(selected.route.at(-1)?.heading || 0)}><Popup><strong>{selectedStatus.label === "On time" ? "Live position" : "Last known position"}</strong><br />{selected.locationName}<br /><span className="font-mono text-xs">{coordinates(selected.latitude, selected.longitude)}</span><br />Last sync {time(selected.receivedAt)}</Popup><Tooltip permanent direction="top" offset={[0, -24]}>{selectedStatus.label === "On time" ? "LIVE" : "LAST KNOWN"}</Tooltip></Marker>
+          {locations.filter((employee) => employee.empId !== selected.empId).map((employee) => <Marker key={employee.empId} position={[employee.latitude, employee.longitude]} icon={avatarIcon(employee)} eventHandlers={{ click: () => onSelectEmployee?.(employee.empId) }}><Tooltip direction="top" className="ops-avatar-tooltip">{employee.name}<br />{employee.locationName || ""}</Tooltip></Marker>)}
+          <Marker position={[selected.latitude, selected.longitude]} icon={liveIcon(selected.route.at(-1)?.heading || 0)}><Popup><strong>{selectedStatus.label === "On time" ? "Live position" : "Last known position"}</strong><br />{selected.locationName}<br /><span className="font-mono text-xs">{coordinates(selected.latitude, selected.longitude)}</span><br />Last sync {time(selected.receivedAt)}</Popup><Tooltip permanent direction="top" offset={[0, -24]} className="ops-avatar-tooltip">{selectedStatus.label === "On time" ? "LIVE" : "LAST KNOWN"}</Tooltip></Marker>
         </MapContainer>
         <button className="ops-locate" type="button" onClick={() => setFocusKey((key) => key + 1)} aria-label="Center selected employee"><Crosshair /></button>
         <button className={`ops-accuracy ${showAccuracy ? "active" : ""}`} type="button" onClick={() => setShowAccuracy((value) => !value)} disabled={latestAccuracy == null} aria-pressed={showAccuracy}>GPS ±{latestAccuracy == null ? "--" : `${Math.round(latestAccuracy)} m`}</button>
@@ -109,7 +114,7 @@ export default function LiveEmployeeMap({ locations, selectedEmpId, onSelectEmpl
 function Kpi({ icon, tone, label, value, note }: { icon: React.ReactNode; tone: string; label: string; value: string | number; note: string }) { return <div className="ops-kpi"><span className={`ops-kpi-icon ${tone}`}>{icon}</span><span><small>{label}</small><strong>{value}</strong><em>{note}</em></span></div>; }
 
 function EmployeeDetails({ employee, triggerPoints, selectedStatus }: { employee: EmployeeLocation; triggerPoints: EmployeeLocation["route"]; selectedStatus: TrackStatus }) {
-  const events = [...triggerPoints, { latitude: employee.latitude, longitude: employee.longitude, capturedAt: employee.receivedAt, locationName: employee.locationName, type: "LIVE" as const }];
+  const events = employee.attendanceStatus === "OUT" ? triggerPoints : [...triggerPoints, { latitude: employee.latitude, longitude: employee.longitude, capturedAt: employee.receivedAt, locationName: employee.locationName, type: "LIVE" as const }];
   return <div className="space-y-4">
     <div className="flex items-center gap-3"><Image src={employee.photo ? `/api/files/employees/${encodeURIComponent(employee.photo)}` : "/default-avatar.jpg"} alt={employee.name} width={52} height={52} unoptimized className="size-13 rounded-full border-2 border-sky-400 object-cover" /><div className="min-w-0"><h2 className="truncate font-bold text-slate-900">{employee.name}</h2><p className="text-xs text-slate-500">{employee.designation} · {employee.empId}</p><span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${selectedStatus.badge}`}>{selectedStatus.label}</span></div></div>
     <div className="grid grid-cols-2 gap-2"><Metric icon={<Clock3 />} label="On duty" value={duration(employee)} /><Metric icon={<Route />} label="Distance" value={distance(employee)} /><Metric icon={<Gauge />} label="Speed" value={speed(employee)} /><Metric icon={<Radio />} label="Last sync" value={time(employee.receivedAt)} /></div>

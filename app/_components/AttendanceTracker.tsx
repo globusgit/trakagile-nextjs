@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { createAttendanceTracker } from "@/lib/browserAttendanceTracking.mjs";
+import { TRACKING_INTERVAL_MS } from "@/lib/trackingPolicy.mjs";
 
 export default function AttendanceTracker() {
   const { data: session, status } = useSession();
@@ -30,7 +31,7 @@ export default function AttendanceTracker() {
         navigator.geolocation.getCurrentPosition(resolve, (error) => reject(new Error(
           error.code === 1
             ? "Tracking paused. Allow Location for this site in browser settings."
-            : "GPS update failed. Check device location and keep TrakAgile open; retrying every minute.",
+            : "GPS update failed. Check device location and keep TrakAgile open; retrying every five minutes.",
         )), { enableHighAccuracy: true, maximumAge: 0, timeout: 20_000 });
       }),
       sendLocation: (point: Record<string, unknown>) => request("/api/attendance/location", {
@@ -42,12 +43,12 @@ export default function AttendanceTracker() {
         toast.dismiss("attendance-tracking");
         window.dispatchEvent(new CustomEvent("attendance-location-updated", { detail: result }));
       },
-      onError: (error: unknown) => toast.error(error instanceof Error ? error.message : "Location sync failed; retrying every minute.", { id: "attendance-tracking" }),
+      onError: (error: unknown) => toast.error(error instanceof Error ? error.message : "Location sync failed; retrying every five minutes.", { id: "attendance-tracking" }),
     });
     const tick = () => { void tracker.tick(); };
     const resume = () => { if (document.visibilityState === "visible") tick(); };
     tick();
-    const timer = window.setInterval(tick, 60_000);
+    const timer = window.setInterval(tick, TRACKING_INTERVAL_MS);
     window.addEventListener("attendance-changed", tick);
     window.addEventListener("online", tick);
     document.addEventListener("visibilitychange", resume);
