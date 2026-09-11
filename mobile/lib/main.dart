@@ -90,19 +90,6 @@ class AttendanceTrackingService {
     }
   }
 
-  Future<void> _clearToken() async {
-    try {
-      await _secureStorage.delete(key: 'token');
-    } catch (error, stackTrace) {
-      if (kDebugMode) {
-        developer.log(
-          'AttendanceTrackingService: failed to clear token: $error',
-          stackTrace: stackTrace,
-        );
-      }
-    }
-  }
-
   Future<String?> _readToken() async {
     try {
       return await _secureStorage.read(key: 'token');
@@ -219,7 +206,8 @@ class AttendanceTrackingService {
     _retryTimer = null;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
-    await _clearToken();
+    // Stopping attendance tracking is not signing out. The next Mark In and
+    // other authenticated actions still need the login token.
   }
 
   Future<void> _captureHeartbeat() async {
@@ -687,14 +675,22 @@ class _TrakAgileAppState extends State<TrakAgileApp>
     final prefs = await SharedPreferences.getInstance();
     final rawUser = prefs.getString('user');
     if (rawUser != null) _user = jsonDecode(rawUser) as Map<String, dynamic>;
-    final token = await _secureStorage.read(key: 'token');
+    final token = await _readAuthToken();
+    if (token == null) {
+      _user = null;
+      await prefs.remove('user');
+    }
     if (_user != null && token != null) {
       try {
         final response = await http.get(
           Uri.parse('$_apiBaseUrl/api/mobile/me'),
           headers: {'authorization': 'Bearer $token'},
         );
-        if (response.statusCode == 200) {
+        if (response.statusCode == 401) {
+          _user = null;
+          await _secureStorage.delete(key: 'token');
+          await prefs.remove('user');
+        } else if (response.statusCode == 200) {
           final body = jsonDecode(response.body);
           if (body is Map && body['user'] is Map) {
             _user = Map<String, dynamic>.from(body['user'] as Map);
