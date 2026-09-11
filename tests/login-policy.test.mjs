@@ -22,8 +22,9 @@ test("an account is locked only while its lock timestamp is in the future", () =
 });
 
 test("password policy requires length and mixed character classes", () => {
-  assert.equal(MINIMUM_PASSWORD_LENGTH, 12);
-  assert.match(passwordPolicyError("Short1A") || "", /at least 12/);
+  assert.equal(MINIMUM_PASSWORD_LENGTH, 8);
+  assert.match(passwordPolicyError("Sho1A") || "", /at least 8/);
+  assert.equal(passwordPolicyError("Secure8A"), null);
   assert.match(passwordPolicyError("alllowercase123") || "", /uppercase/);
   assert.match(passwordPolicyError("ALLUPPERCASE123") || "", /lowercase/);
   assert.match(passwordPolicyError("NoNumbersHere") || "", /numeric/);

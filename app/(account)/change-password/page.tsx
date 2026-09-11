@@ -48,9 +48,9 @@ export default function ChangePasswordPage() {
           <form className="space-y-4" onSubmit={submit}>
             {error ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
             <Label>Current password<Input className="mt-1" type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></Label>
-            <Label>New password<Input className="mt-1" type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={12} required /></Label>
-            <Label>Confirm new password<Input className="mt-1" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={12} required /></Label>
-            <p className="text-xs text-muted-foreground">Use at least 12 characters with uppercase, lowercase, and numeric characters.</p>
+            <Label>New password<Input className="mt-1" type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={8} required /></Label>
+            <Label>Confirm new password<Input className="mt-1" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={8} required /></Label>
+            <p className="text-xs text-muted-foreground">Use at least 8 characters with uppercase, lowercase, and numeric characters.</p>
             <Button className="w-full" type="submit" disabled={saving}>{saving ? "Changing password..." : "Change password and sign in again"}</Button>
             <p className="flex items-center justify-center gap-2 text-xs text-muted-foreground"><ShieldCheck className="size-4" />Other signed-in sessions will be revoked.</p>
           </form>
