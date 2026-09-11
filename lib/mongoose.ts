@@ -1,5 +1,8 @@
 import mongoose from "mongoose";
 import { serverEnvironment } from "@/lib/env.mjs";
+import { createLogger } from "@/lib/logger.mjs";
+
+const logger = createLogger("mongodb");
 
 const MONGODB_URI = serverEnvironment().mongoUri;
 
@@ -26,7 +29,7 @@ export async function connectDB() {
   }
 
   if (!cached.promise) {
-    console.log("[MongoDB] Connecting...");
+    logger.info("Connecting to MongoDB...");
 
     cached.promise = mongoose
       .connect(MONGODB_URI, {
@@ -36,17 +39,13 @@ export async function connectDB() {
         maxPoolSize: 10,
       })
       .then((mongooseInstance) => {
-        console.log("[MongoDB] Connected successfully");
+        logger.info("MongoDB connected successfully");
+        setupConnectionListeners(mongooseInstance);
         return mongooseInstance;
       })
       .catch((error) => {
-        console.error(
-          "[MongoDB] Connection failed:",
-          error
-        );
-
+        logger.error("MongoDB connection failed", { error: error?.message });
         cached.promise = null;
-
         throw error;
       });
   }
@@ -54,6 +53,32 @@ export async function connectDB() {
   cached.conn = await cached.promise;
 
   return cached.conn;
+}
+
+function setupConnectionListeners(mongooseInstance) {
+  mongooseInstance.connection.on("disconnected", () => {
+    logger.warn("MongoDB connection lost");
+    cached.conn = null;
+    cached.promise = null;
+  });
+
+  mongooseInstance.connection.on("reconnected", () => {
+    logger.info("MongoDB connection restored");
+  });
+
+  mongooseInstance.connection.on("error", (error) => {
+    logger.error("MongoDB connection error", { error: error?.message });
+  });
+}
+
+export async function healthCheck() {
+  try {
+    const conn = await connectDB();
+    await conn.db.command({ ping: 1 });
+    return { status: "ok", connected: true };
+  } catch {
+    return { status: "error", connected: false };
+  }
 }
 
 export default connectDB;

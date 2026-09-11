@@ -25,7 +25,20 @@ export async function POST(request) {
     await connectDB();
     dbSession = await mongoose.startSession();
     const identity = await requireAttendanceUser();
-    const body = await request.json();
+
+    const contentLength = request.headers?.get?.("content-length");
+    if (contentLength != null) {
+      const size = Number(contentLength);
+      if (Number.isFinite(size) && size > 16 * 1024) {
+        throw new AttendanceError("Request body exceeds the 16 KB size limit.", 413);
+      }
+    }
+    const text = await request.text();
+    if (Buffer.byteLength(text) > 16 * 1024) {
+      throw new AttendanceError("Request body exceeds the 16 KB size limit.", 413);
+    }
+    const body = JSON.parse(text);
+
     const now = new Date();
     const policy = await getAttendancePolicy(identity.orgId);
     const location = locationFrom(body, now);

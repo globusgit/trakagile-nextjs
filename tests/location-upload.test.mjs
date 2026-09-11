@@ -4,11 +4,10 @@ import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
 
-// Run the real route handler with isolated database/auth dependencies. This
-// exercises persistence decisions without writing employee data or using GPS.
-const compiled = ts.transpileModule(readFileSync(new URL("../app/api/attendance/location/route.js", import.meta.url), "utf8"), {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-}).outputText;
+const compiled = ts.transpileModule(
+  readFileSync(new URL("../app/api/attendance/location/route.js", import.meta.url), "utf8"),
+  { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+).outputText;
 
 function fixture({ existingMinute = false, duplicate = false, previousSeconds = 60 } = {}) {
   const capturedAt = new Date();
@@ -18,17 +17,36 @@ function fixture({ existingMinute = false, duplicate = false, previousSeconds = 
     lastKnownLocation: { latitude: 17.42, longitude: 78.38, accuracy: 72, capturedAt: new Date(capturedAt.getTime() - previousSeconds * 1000) },
   };
   const stored = [], updates = [];
+  const dbSession = { withTransaction: async (fn) => fn(), endSession: async () => {} };
+  const bodyData = {
+    latitude: 17.42, longitude: 78.38, accuracy: 10, speed: 0,
+    capturedAt: capturedAt.toISOString(), clientPointId: "point",
+  };
   const dependencies = {
+    "mongoose": { default: { startSession: async () => dbSession } },
     "@/lib/mongoose": { connectDB: async () => {} },
     "@/models/Attendance": { default: {
       updateOne: async (...args) => { updates.push(args); },
       findOneAndUpdate: async (...args) => { updates.push(args); return attendance; },
     } },
-    "@/models/EmployeeVisit": { default: { findOne: async () => null } },
+    "@/models/EmployeeVisit": { default: { findOne: () => ({ session: () => null }) } },
     "@/models/TrackingLocation": { default: {
       exists: async (query) => query.clientPointId ? duplicate : existingMinute,
       findOne: () => ({ sort: () => ({ select: () => ({ lean: async () => null }) }) }),
-      create: async (point) => { stored.push(point); },
+      aggregate: async (pipeline) => {
+        const matchStage = pipeline.find((s) => s.$match);
+        if (matchStage?.$match?.attendanceId === "shift") {
+          return [{ _id: "shift", points: [{
+            _id: "hist-1", attendanceId: "shift", orgId: "org", employeeId: "employee",
+            latitude: 17.42, longitude: 78.38, accuracy: 72,
+            capturedAt: new Date(capturedAt.getTime() - previousSeconds * 1000),
+            receivedAt: new Date(capturedAt.getTime() - previousSeconds * 1000),
+            locationName: null, speed: 0, locationTrigger: false,
+          }] }];
+        }
+        return [];
+      },
+      create: async (points) => { stored.push(...points); },
     } },
     "../_lib/attendance": {
       AttendanceError: Error,
@@ -40,23 +58,30 @@ function fixture({ existingMinute = false, duplicate = false, previousSeconds = 
       distanceBetween: () => 0,
       getAttendancePolicy: async () => ({}),
       attendanceExpectedEndAt: () => new Date(Date.now() + 3_600_000),
-      errorResponse: (error) => { throw error; },
+      errorResponse: (error) => Response.json({ message: error.message }, { status: error.status || 500 }),
     },
     "../_lib/notifications": { notifyAttendance: async () => {}, reverseGeocode: async () => null },
     "../_lib/auto-close": { closeAttendanceAfterNoResponse: async () => false },
-    "@/lib/trackingPolicy.mjs": { TRACKING_INTERVAL_MS: 5 * 60_000 },
+    "@/lib/trackingPolicy.mjs": { TRACKING_INTERVAL_MS: 5 * 60_000, MAX_ACCURACY_MINUTE_TRIGGER: 100, MAX_ACCURACY_STREAM: 60, UNREALISTIC_SPEED_MPS: 45, TRAVEL_START_DISTANCE: 100, LOCATION_NAME_REFRESH_DISTANCE: 250, REVERSE_GEOCODE_TTL_MS: 24 * 60 * 60 * 1000, REVERSE_GEOCODE_CACHE_PRECISION: 4 },
+    "@/lib/logger.mjs": { createLogger: () => ({ error: () => {}, warn: () => {} }) },
   };
   const exports = {};
   vm.runInNewContext(compiled, { exports, require: (name) => {
     assert.ok(dependencies[name], `Unexpected dependency: ${name}`);
     return dependencies[name];
-  }, Response, Date });
+  }, Response, Date, Buffer });
   return {
     stored, updates,
-    post: async (overrides = {}) => (await exports.POST({ json: async () => ({
-      latitude: 17.42, longitude: 78.38, accuracy: 72, speed: 0,
-      capturedAt: capturedAt.toISOString(), clientPointId: "point", ...overrides,
-    }) })).json(),
+    post: async (overrides = {}) => {
+      const merged = { ...bodyData, ...overrides };
+      const mergedText = JSON.stringify(merged);
+      const response = await exports.POST({
+        json: async () => merged,
+        text: async () => mergedText,
+        headers: { get: (k) => k === "content-length" ? String(Buffer.byteLength(mergedText)) : undefined },
+      });
+      return response.json();
+    },
   };
 }
 
@@ -89,6 +114,7 @@ test("unusable accuracy is rejected without advancing the live heartbeat", async
   const f = fixture();
   const result = await f.post({ accuracy: 150, minuteTrigger: true });
   assert.equal(result.accepted, false);
+  assert.equal(result.reason, "LOW_ACCURACY");
   assert.equal(f.stored.length, 0);
   assert.equal(f.updates.length, 0);
 });

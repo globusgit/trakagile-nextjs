@@ -189,13 +189,13 @@ export function locationFrom(body, now = new Date(), options = {}) {
   const longitude = Number(body.longitude);
   const accuracy = body.accuracy == null ? undefined : Number(body.accuracy);
 
-  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+  if (Number.isNaN(latitude) || Number.isInfinity(latitude) || latitude < -90 || latitude > 90) {
     throw new AttendanceError("Latitude must be between -90 and 90.");
   }
-  if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+  if (Number.isNaN(longitude) || Number.isInfinity(longitude) || longitude < -180 || longitude > 180) {
     throw new AttendanceError("Longitude must be between -180 and 180.");
   }
-  if (accuracy != null && (!Number.isFinite(accuracy) || accuracy < 0)) {
+  if (accuracy != null && (Number.isNaN(accuracy) || Number.isInfinity(accuracy) || accuracy < 0)) {
     throw new AttendanceError("Accuracy must be a positive number.");
   }
 
@@ -217,10 +217,10 @@ export function movementFrom(body) {
   const speed = body.speed == null ? null : Number(body.speed);
   const heading = body.heading == null ? null : Number(body.heading);
 
-  if (speed != null && (!Number.isFinite(speed) || speed < 0)) {
+  if (speed != null && (Number.isNaN(speed) || Number.isInfinity(speed) || speed < 0)) {
     throw new AttendanceError("Speed must be a positive number.");
   }
-  if (heading != null && (!Number.isFinite(heading) || heading < 0 || heading > 360)) {
+  if (heading != null && (Number.isNaN(heading) || Number.isInfinity(heading) || heading < 0 || heading > 360)) {
     throw new AttendanceError("Heading must be between 0 and 360.");
   }
 

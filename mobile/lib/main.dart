@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
+import 'dart:io';
 import 'dart:math';
 
 import 'package:file_picker/file_picker.dart';
@@ -7,11 +9,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'location_service.dart';
 
 const _apiBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
@@ -19,6 +25,18 @@ const _apiBaseUrl = String.fromEnvironment(
 );
 
 const _trackingInterval = Duration(minutes: 5);
+const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
+
+Future<String?> _readAuthToken() async {
+  try {
+    return await _secureStorage.read(key: 'token');
+  } catch (error, stackTrace) {
+    if (kDebugMode) {
+      developer.log('Failed to read auth token: $error', stackTrace: stackTrace);
+    }
+    return null;
+  }
+}
 
 String _friendlyNetworkError(Object error) {
   final message = error.toString().replaceFirst('Exception: ', '');
@@ -42,6 +60,7 @@ class AttendanceTrackingService {
   bool _starting = false;
   bool _capturingHeartbeat = false;
   Future<void> _queueWork = Future<void>.value();
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
   Future<void> _mutateQueue(Future<void> Function(SharedPreferences) action) {
     final work = _queueWork.then((_) async {
@@ -51,12 +70,43 @@ class AttendanceTrackingService {
     return work;
   }
 
-  String? _token;
   final Random _random = Random.secure();
+  static const _queueTtl = Duration(hours: 24);
+  static const _maxQueueSize = 500;
+
+  Future<void> _saveToken(String token) async {
+    try {
+      await _secureStorage.write(key: 'token', value: token);
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        developer.log('AttendanceTrackingService: failed to save token: $error', stackTrace: stackTrace);
+      }
+    }
+  }
+
+  Future<void> _clearToken() async {
+    try {
+      await _secureStorage.delete(key: 'token');
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        developer.log('AttendanceTrackingService: failed to clear token: $error', stackTrace: stackTrace);
+      }
+    }
+  }
+
+  Future<String?> _readToken() async {
+    try {
+      return await _secureStorage.read(key: 'token');
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        developer.log('AttendanceTrackingService: failed to read token: $error', stackTrace: stackTrace);
+      }
+      return null;
+    }
+  }
 
   Future<void> restore() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
+    final token = await _readToken();
     if (token == null) return;
     try {
       final response = await http
@@ -76,8 +126,10 @@ class AttendanceTrackingService {
           await stop();
         }
       }
-    } catch (_) {
-      // A later app refresh retries without blocking sign-in.
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        developer.log('AttendanceTrackingService: restore failed: $error', stackTrace: stackTrace);
+      }
     }
   }
 
@@ -85,25 +137,12 @@ class AttendanceTrackingService {
     if (_starting) return;
     _starting = true;
     try {
-      _token = token;
-      // Install recovery before permission/GPS checks: switching GPS back on
-      // must restart tracking without requiring another Mark In.
-      _retryTimer ??= Timer.periodic(_trackingInterval, (_) {
-        final activeToken = _token;
-        if (activeToken != null && _subscription == null) {
-          unawaited(start(activeToken));
-        } else {
-          unawaited(_flushQueue());
-        }
-      });
-      if (_subscription != null) {
-        await _flushQueue();
-        return;
-      }
-      if (!await Geolocator.isLocationServiceEnabled()) return;
-      var permission = await Geolocator.checkPermission();
+      await _saveToken(token);
+      final locationService = LocationService.instance;
+      if (!await locationService.isLocationEnabled()) return;
+      var permission = await locationService.checkPermission();
       if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
+        permission = await locationService.requestPermission();
       }
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
@@ -134,7 +173,8 @@ class AttendanceTrackingService {
               accuracy: LocationAccuracy.high,
               distanceFilter: 0,
             );
-      _subscription = Geolocator.getPositionStream(locationSettings: settings)
+      _subscription = locationService
+          .getPositionStream(settings: settings)
           .listen(
             (position) => unawaited(_queuePosition(position)),
             onError: (Object _) {
@@ -164,23 +204,25 @@ class AttendanceTrackingService {
     _retryTimer = null;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
-    _token = null;
+    await _clearToken();
   }
 
   Future<void> _captureHeartbeat() async {
-    if (_token == null || _capturingHeartbeat) return;
+    final activeToken = await _readToken();
+    if (activeToken == null || _capturingHeartbeat) return;
     _capturingHeartbeat = true;
     try {
-      if (!await Geolocator.isLocationServiceEnabled()) return;
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 20),
-        ),
+      final locationService = LocationService.instance;
+      if (!await locationService.isLocationEnabled()) return;
+      final position = await locationService.getCurrentPosition(
+        accuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 20),
       );
       await _queuePosition(position, minuteTrigger: true);
-    } catch (_) {
-      // The stream and the next five-minute heartbeat provide recovery.
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        developer.log('AttendanceTrackingService: heartbeat failed: $error', stackTrace: stackTrace);
+      }
     } finally {
       _capturingHeartbeat = false;
     }
@@ -190,7 +232,8 @@ class AttendanceTrackingService {
     Position position, {
     bool minuteTrigger = false,
   }) async {
-    if (_token == null || position.accuracy > 100) return;
+    final token = await _readToken();
+    if (token == null || position.accuracy > 100) return;
     final prefs = await SharedPreferences.getInstance();
     final lastRaw = prefs.getString('tracking_last_position');
     if (lastRaw != null) {
@@ -201,6 +244,7 @@ class AttendanceTrackingService {
         return;
       }
     }
+    final now = DateTime.now().toUtc();
     final item = <String, dynamic>{
       'clientPointId':
           '${position.timestamp.microsecondsSinceEpoch}-${_random.nextInt(1 << 32)}',
@@ -210,55 +254,103 @@ class AttendanceTrackingService {
       'speed': position.speed < 0 ? null : position.speed,
       'heading': position.heading < 0 ? null : position.heading,
       'capturedAt': position.timestamp.toUtc().toIso8601String(),
+      'capturedAtEpoch': position.timestamp.toUtc().millisecondsSinceEpoch,
       'offlineQueued': true,
-      // Legacy API field; scheduled captures now occur every five minutes.
       'minuteTrigger': true,
+      'expiresAt': now.add(_queueTtl).toIso8601String(),
     };
     await _mutateQueue((prefs) async {
       final queue =
           (prefs.getStringList('tracking_offline_queue') ?? <String>[])
               .toList();
-      queue.add(jsonEncode(item));
-      if (queue.length > 500) queue.removeRange(0, queue.length - 500);
-      await prefs.setStringList('tracking_offline_queue', queue);
+      final filtered = queue.map(jsonDecode).whereType<Map<String, dynamic>>().toList();
+      filtered.removeWhere((entry) {
+        final expiresAt = DateTime.tryParse('${entry['expiresAt']}');
+        return expiresAt != null && expiresAt.isBefore(now);
+      });
+      filtered.add(item);
+      filtered.sort((a, b) {
+        final aEpoch = a['capturedAtEpoch'] is num
+            ? (a['capturedAtEpoch'] as num).toInt()
+            : DateTime.tryParse('${a['capturedAt']}')?.millisecondsSinceEpoch ?? 0;
+        final bEpoch = b['capturedAtEpoch'] is num
+            ? (b['capturedAtEpoch'] as num).toInt()
+            : DateTime.tryParse('${b['capturedAt']}')?.millisecondsSinceEpoch ?? 0;
+        return aEpoch.compareTo(bEpoch);
+      });
+      if (filtered.length > _maxQueueSize) {
+        filtered.removeRange(0, filtered.length - _maxQueueSize);
+      }
+      await prefs.setStringList(
+        'tracking_offline_queue',
+        filtered.map(jsonEncode).toList(),
+      );
       await prefs.setString('tracking_last_position', jsonEncode(item));
     });
     await _flushQueue();
   }
 
   Future<void> _flushQueue() async {
-    if (_sending || _token == null) return;
+    final token = await _readToken();
+    if (_sending || token == null) return;
     _sending = true;
     try {
-      while (_token != null) {
-        String? pending;
+      while (true) {
+        List<Map<String, dynamic>>? queueItems;
         await _mutateQueue((prefs) async {
-          final queue =
+          final rawQueue =
               prefs.getStringList('tracking_offline_queue') ?? <String>[];
-          if (queue.isNotEmpty) pending = queue.first;
+          final now = DateTime.now().toUtc();
+          final parsed = rawQueue
+              .map(jsonDecode)
+              .whereType<Map<String, dynamic>>()
+              .toList();
+          parsed.removeWhere((entry) {
+            final expiresAt = DateTime.tryParse('${entry['expiresAt']}');
+            return expiresAt != null && expiresAt.isBefore(now);
+          });
+          if (parsed.isNotEmpty) {
+            parsed.sort((a, b) {
+              final aEpoch = a['capturedAtEpoch'] is num
+                  ? (a['capturedAtEpoch'] as num).toInt()
+                  : DateTime.tryParse('${a['capturedAt']}')?.millisecondsSinceEpoch ?? 0;
+              final bEpoch = b['capturedAtEpoch'] is num
+                  ? (b['capturedAtEpoch'] as num).toInt()
+                  : DateTime.tryParse('${b['capturedAt']}')?.millisecondsSinceEpoch ?? 0;
+              return aEpoch.compareTo(bEpoch);
+            });
+            queueItems = parsed;
+            await prefs.setStringList(
+              'tracking_offline_queue',
+              parsed.map(jsonEncode).toList(),
+            );
+          } else {
+            queueItems = const [];
+          }
         });
+        final pending = queueItems?.firstOrNull;
         if (pending == null) break;
         try {
-          final response = await http
-              .post(
-                Uri.parse('$_apiBaseUrl/api/attendance/location'),
-                headers: {
-                  'authorization': 'Bearer $_token',
-                  'content-type': 'application/json',
-                },
-                body: pending,
-              )
-              .timeout(const Duration(seconds: 15));
+          final response = await _postWithRetry(
+            Uri.parse('$_apiBaseUrl/api/attendance/location'),
+            headers: {
+              'authorization': 'Bearer $token',
+              'content-type': 'application/json',
+            },
+            body: jsonEncode(pending),
+          );
           if ((response.statusCode >= 200 && response.statusCode < 300) ||
               response.statusCode == 400 ||
               response.statusCode == 422) {
-            // Drop only this acknowledged or invalid point. Captures made while
-            // the request was in flight must remain queued.
             await _mutateQueue((prefs) async {
               final queue =
                   (prefs.getStringList('tracking_offline_queue') ?? <String>[])
                       .toList();
-              queue.remove(pending);
+              queue.removeWhere((entry) {
+                final decoded = jsonDecode(entry) as Map<String, dynamic>;
+                final itemId = '${decoded['clientPointId']}';
+                return itemId == '${pending['clientPointId']}';
+              });
               await prefs.setStringList('tracking_offline_queue', queue);
             });
           } else if (response.statusCode == 404 || response.statusCode == 409) {
@@ -271,13 +363,144 @@ class AttendanceTrackingService {
           } else {
             break;
           }
-        } catch (_) {
+        } catch (error, stackTrace) {
+          if (kDebugMode) {
+            developer.log('AttendanceTrackingService: flush failed: $error', stackTrace: stackTrace);
+          }
           break;
         }
       }
     } finally {
       _sending = false;
     }
+  }
+
+  Future<http.Response> _postWithRetry(
+    Uri uri, {
+    required Map<String, String> headers,
+    required String body,
+    int maxAttempts = 3,
+  }) async {
+    int attempt = 0;
+    Duration delay = const Duration(seconds: 1);
+    while (true) {
+      attempt++;
+      try {
+        final response = await http
+            .post(uri, headers: headers, body: body)
+            .timeout(const Duration(seconds: 15));
+        if (response.statusCode < 500 || attempt >= maxAttempts) {
+          return response;
+        }
+      } on SocketException catch (error) {
+        if (kDebugMode) developer.log('Retry network error: $error');
+        if (attempt >= maxAttempts) rethrow;
+      } on TimeoutException catch (error) {
+        if (kDebugMode) developer.log('Retry timeout error: $error');
+        if (attempt >= maxAttempts) rethrow;
+      } catch (error) {
+        if (kDebugMode) developer.log('Retry error: $error');
+        if (attempt >= maxAttempts) rethrow;
+      }
+      await Future<void>.delayed(delay);
+      delay *= 2;
+    }
+  }
+}
+
+Future<http.Response> _postWithRetry(
+  Uri uri, {
+  required Map<String, String> headers,
+  required String body,
+  int maxAttempts = 3,
+}) async {
+  int attempt = 0;
+  Duration delay = const Duration(seconds: 1);
+  while (true) {
+    attempt++;
+    try {
+      final response = await http
+          .post(uri, headers: headers, body: body)
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode < 500 || attempt >= maxAttempts) {
+        return response;
+      }
+    } on SocketException catch (error) {
+      if (kDebugMode) developer.log('Retry network error: $error');
+      if (attempt >= maxAttempts) rethrow;
+    } on TimeoutException catch (error) {
+      if (kDebugMode) developer.log('Retry timeout error: $error');
+      if (attempt >= maxAttempts) rethrow;
+    } catch (error) {
+      if (kDebugMode) developer.log('Retry error: $error');
+      if (attempt >= maxAttempts) rethrow;
+    }
+    await Future<void>.delayed(delay);
+    delay *= 2;
+  }
+}
+
+Future<http.Response> _patchWithRetry(
+  Uri uri, {
+  required Map<String, String> headers,
+  required Map<String, dynamic> body,
+  int maxAttempts = 3,
+}) async {
+  int attempt = 0;
+  Duration delay = const Duration(seconds: 1);
+  while (true) {
+    attempt++;
+    try {
+      final response = await http
+          .patch(uri, headers: headers, body: jsonEncode(body))
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode < 500 || attempt >= maxAttempts) {
+        return response;
+      }
+    } on SocketException catch (error) {
+      if (kDebugMode) developer.log('PATCH network error: $error');
+      if (attempt >= maxAttempts) rethrow;
+    } on TimeoutException catch (error) {
+      if (kDebugMode) developer.log('PATCH timeout error: $error');
+      if (attempt >= maxAttempts) rethrow;
+    } catch (error) {
+      if (kDebugMode) developer.log('PATCH error: $error');
+      if (attempt >= maxAttempts) rethrow;
+    }
+    await Future<void>.delayed(delay);
+    delay *= 2;
+  }
+}
+
+Future<http.Response> _putWithRetry(
+  Uri uri, {
+  required Map<String, String> headers,
+  required Map<String, dynamic> body,
+  int maxAttempts = 3,
+}) async {
+  int attempt = 0;
+  Duration delay = const Duration(seconds: 1);
+  while (true) {
+    attempt++;
+    try {
+      final response = await http
+          .put(uri, headers: headers, body: jsonEncode(body))
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode < 500 || attempt >= maxAttempts) {
+        return response;
+      }
+    } on SocketException catch (error) {
+      if (kDebugMode) developer.log('PUT network error: $error');
+      if (attempt >= maxAttempts) rethrow;
+    } on TimeoutException catch (error) {
+      if (kDebugMode) developer.log('PUT timeout error: $error');
+      if (attempt >= maxAttempts) rethrow;
+    } catch (error) {
+      if (kDebugMode) developer.log('PUT error: $error');
+      if (attempt >= maxAttempts) rethrow;
+    }
+    await Future<void>.delayed(delay);
+    delay *= 2;
   }
 }
 
@@ -293,9 +516,11 @@ class TrakAgileApp extends StatefulWidget {
 class _TrakAgileAppState extends State<TrakAgileApp>
     with WidgetsBindingObserver {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
   Map<String, dynamic>? _user;
   bool _loading = true;
   bool _locationPromptOpen = false;
+  bool _batteryPromptOpen = false;
 
   @override
   void initState() {
@@ -304,6 +529,7 @@ class _TrakAgileAppState extends State<TrakAgileApp>
     _restoreSession();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_requestInitialLocationAccess());
+      unawaited(_requestIgnoreBatteryOptimizations());
     });
   }
 
@@ -325,9 +551,10 @@ class _TrakAgileAppState extends State<TrakAgileApp>
       return;
     }
 
-    var permission = await Geolocator.checkPermission();
+    final locationService = LocationService.instance;
+    var permission = await locationService.checkPermission();
     if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
+      permission = await locationService.requestPermission();
     }
     if (!mounted || permission == LocationPermission.always) return;
 
@@ -360,7 +587,7 @@ class _TrakAgileAppState extends State<TrakAgileApp>
           FilledButton.icon(
             onPressed: () async {
               Navigator.of(dialogContext).pop();
-              await Geolocator.openAppSettings();
+              await LocationService.instance.openAppSettings();
             },
             icon: const Icon(Icons.settings_outlined),
             label: const Text('Open settings'),
@@ -371,11 +598,68 @@ class _TrakAgileAppState extends State<TrakAgileApp>
     _locationPromptOpen = false;
   }
 
+  Future<void> _requestIgnoreBatteryOptimizations() async {
+    if (!mounted || kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return;
+    }
+    try {
+      final status = await Permission.ignoreBatteryOptimizations.status;
+      if (status == PermissionStatus.granted) return;
+    } catch (error) {
+      if (kDebugMode) {
+        developer.log('Failed to check battery optimization status: $error');
+      }
+      return;
+    }
+    final promptContext = _navigatorKey.currentContext;
+    if (_batteryPromptOpen ||
+        promptContext == null ||
+        !promptContext.mounted) {
+      return;
+    }
+    _batteryPromptOpen = true;
+    final granted = await showDialog<bool>(
+      context: promptContext,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.battery_charging_full_outlined, size: 38),
+        title: const Text('Disable battery optimization'),
+        content: const Text(
+          'TrakAgile needs to run in the background to track attendance. '
+          'Please disable battery optimization for this app to ensure reliable tracking.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Later'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            icon: const Icon(Icons.settings_outlined),
+            label: const Text('Open settings'),
+          ),
+        ],
+      ),
+    );
+    _batteryPromptOpen = false;
+    if (granted != true || !mounted) return;
+    final result = await Permission.ignoreBatteryOptimizations.request();
+    if (result != PermissionStatus.granted && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Battery optimization not disabled. Attendance tracking may stop when the app is in the background.',
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _restoreSession() async {
     final prefs = await SharedPreferences.getInstance();
     final rawUser = prefs.getString('user');
     if (rawUser != null) _user = jsonDecode(rawUser) as Map<String, dynamic>;
-    final token = prefs.getString('token');
+    final token = await _secureStorage.read(key: 'token');
     if (_user != null && token != null) {
       try {
         final response = await http.get(
@@ -389,8 +673,10 @@ class _TrakAgileAppState extends State<TrakAgileApp>
             await prefs.setString('user', jsonEncode(_user));
           }
         }
-      } catch (_) {
-        // Keep the cached profile available when the phone is temporarily offline.
+      } catch (error, stackTrace) {
+        if (kDebugMode) {
+          developer.log('TrakAgileApp: session restore failed: $error', stackTrace: stackTrace);
+        }
       }
     }
     if (_user != null) unawaited(AttendanceTrackingService.instance.restore());
@@ -399,7 +685,21 @@ class _TrakAgileAppState extends State<TrakAgileApp>
 
   Future<void> _signedIn(Map<String, dynamic> user, String token) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('token', token);
+    try {
+      await _secureStorage.write(key: 'token', value: token);
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        developer.log('TrakAgileApp: failed to persist token: $error', stackTrace: stackTrace);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to save session securely. Please try again.'),
+          ),
+        );
+      }
+      return;
+    }
     await prefs.setString('user', jsonEncode(user));
     setState(() => _user = user);
     unawaited(AttendanceTrackingService.instance.restore());
@@ -408,6 +708,13 @@ class _TrakAgileAppState extends State<TrakAgileApp>
   Future<void> _signOut() async {
     await AttendanceTrackingService.instance.stop();
     final prefs = await SharedPreferences.getInstance();
+    try {
+      await _secureStorage.deleteAll();
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        developer.log('TrakAgileApp: failed to clear secure storage: $error', stackTrace: stackTrace);
+      }
+    }
     await prefs.clear();
     setState(() => _user = null);
   }
@@ -619,8 +926,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
       _error = null;
     });
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
+      final token = await _readAuthToken();
       if (token == null) {
         throw Exception('Your session has expired. Sign in again.');
       }
@@ -848,8 +1154,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
       });
     }
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
+      final token = await _readAuthToken();
       if (token == null) {
         throw Exception('Your session has expired. Sign in again.');
       }
@@ -988,12 +1293,12 @@ class _ModuleScreenState extends State<ModuleScreen> {
           _error = null;
         });
         try {
-          if (!await Geolocator.isLocationServiceEnabled()) {
+          if (!await LocationService.instance.isLocationEnabled()) {
             throw Exception('Turn on Location/GPS and try again.');
           }
-          var permission = await Geolocator.checkPermission();
+          var permission = await LocationService.instance.checkPermission();
           if (permission == LocationPermission.denied) {
-            permission = await Geolocator.requestPermission();
+            permission = await LocationService.instance.requestPermission();
           }
           if (permission == LocationPermission.denied ||
               permission == LocationPermission.deniedForever) {
@@ -1001,11 +1306,9 @@ class _ModuleScreenState extends State<ModuleScreen> {
               'Location permission is required to complete the visit.',
             );
           }
-          final position = await Geolocator.getCurrentPosition(
-            locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.high,
-              timeLimit: Duration(seconds: 20),
-            ),
+          final position = await LocationService.instance.getCurrentPosition(
+            accuracy: LocationAccuracy.high,
+            timeLimit: const Duration(seconds: 20),
           );
           await _sendJson('/api/attendance/visits/end', {
             'latitude': position.latitude,
@@ -1080,12 +1383,12 @@ class _ModuleScreenState extends State<ModuleScreen> {
           throw Exception('Expected completion time must be in the future.');
         }
       }
-      if (!await Geolocator.isLocationServiceEnabled()) {
+      if (!await LocationService.instance.isLocationEnabled()) {
         throw Exception('Turn on Location/GPS and try again.');
       }
-      var permission = await Geolocator.checkPermission();
+      var permission = await LocationService.instance.checkPermission();
       if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
+        permission = await LocationService.instance.requestPermission();
       }
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
@@ -1115,19 +1418,16 @@ class _ModuleScreenState extends State<ModuleScreen> {
             ],
           ),
         );
-        if (openSettings == true) await Geolocator.openAppSettings();
+        if (openSettings == true) await LocationService.instance.openAppSettings();
         throw Exception(
           'Select "Allow all the time", return to TrakAgile, and tap Mark In again.',
         );
       }
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 20),
-        ),
+      final position = await LocationService.instance.getCurrentPosition(
+        accuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 20),
       );
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
+      final token = await _readAuthToken();
       if (token == null) {
         throw Exception('Your session has expired. Sign in again.');
       }
@@ -1286,8 +1586,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
     Map<String, dynamic> body, {
     String method = 'POST',
   }) async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
+    final token = await _readAuthToken();
     if (token == null) {
       throw Exception('Your session has expired. Sign in again.');
     }
@@ -1297,10 +1596,10 @@ class _ModuleScreenState extends State<ModuleScreen> {
       'content-type': 'application/json',
     };
     final response = method == 'PATCH'
-        ? await http.patch(uri, headers: headers, body: jsonEncode(body))
+        ? await _patchWithRetry(uri, headers: headers, body: body)
         : method == 'PUT'
-        ? await http.put(uri, headers: headers, body: jsonEncode(body))
-        : await http.post(uri, headers: headers, body: jsonEncode(body));
+        ? await _putWithRetry(uri, headers: headers, body: body)
+        : await _postWithRetry(uri, headers: headers, body: jsonEncode(body));
     final decoded = jsonDecode(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final message = decoded is Map
@@ -1467,25 +1766,22 @@ class _ModuleScreenState extends State<ModuleScreen> {
     }
     setState(() => _submitting = true);
     try {
-      if (!await Geolocator.isLocationServiceEnabled()) {
+      if (!await LocationService.instance.isLocationEnabled()) {
         throw Exception('Turn on Location/GPS and try again.');
       }
-      var permission = await Geolocator.checkPermission();
+      var permission = await LocationService.instance.checkPermission();
       if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
+        permission = await LocationService.instance.requestPermission();
       }
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
         throw Exception('Location permission is required.');
       }
-      final gps = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 20),
-        ),
+      final gps = await LocationService.instance.getCurrentPosition(
+        accuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 20),
       );
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
+      final token = await _readAuthToken();
       if (token == null) {
         throw Exception('Your session has expired. Sign in again.');
       }
@@ -1762,22 +2058,20 @@ class _ModuleScreenState extends State<ModuleScreen> {
       if (reason.text.trim().isEmpty || tasks.text.trim().isEmpty) {
         throw Exception('Reason and planned tasks are required.');
       }
-      if (!await Geolocator.isLocationServiceEnabled()) {
+      if (!await LocationService.instance.isLocationEnabled()) {
         throw Exception('Turn on Location/GPS and try again.');
       }
-      var permission = await Geolocator.checkPermission();
+      var permission = await LocationService.instance.checkPermission();
       if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
+        permission = await LocationService.instance.requestPermission();
       }
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
         throw Exception('Location permission is required.');
       }
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 20),
-        ),
+      final position = await LocationService.instance.getCurrentPosition(
+        accuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 20),
       );
       await _sendJson('/api/wfh/requests', {
         'fromDate': _dateKey(from),
@@ -2122,8 +2416,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
       return;
     }
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
+      final token = await _readAuthToken();
       if (token == null) {
         throw Exception('Your session has expired. Sign in again.');
       }
@@ -2148,7 +2441,8 @@ class _ModuleScreenState extends State<ModuleScreen> {
       dynamic body;
       try {
         body = jsonDecode(responseText);
-      } catch (_) {
+      } catch (error) {
+        if (kDebugMode) developer.log('Document upload response parse failed: $error');
         body = null;
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -2197,22 +2491,20 @@ class _ModuleScreenState extends State<ModuleScreen> {
     final action = _nextTripAction;
     if (active is! Map || action == null) return;
     try {
-      if (!await Geolocator.isLocationServiceEnabled()) {
+      if (!await LocationService.instance.isLocationEnabled()) {
         throw Exception('Turn on Location/GPS and try again.');
       }
-      var permission = await Geolocator.checkPermission();
+      var permission = await LocationService.instance.checkPermission();
       if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
+        permission = await LocationService.instance.requestPermission();
       }
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
         throw Exception('Location permission is required.');
       }
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 20),
-        ),
+      final position = await LocationService.instance.getCurrentPosition(
+        accuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 20),
       );
       await _sendJson('/api/field-trips/${active['_id']}/action', {
         'action': action.$1,
@@ -3232,8 +3524,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
     Navigator.of(context).pop();
     setState(() => _submitting = true);
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
+      final token = await _readAuthToken();
       if (token == null) {
         throw Exception('Your session has expired. Sign in again.');
       }
@@ -4106,8 +4397,7 @@ class _LiveTrackingDialogState extends State<_LiveTrackingDialog> {
     if (_refreshing) return;
     _refreshing = true;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
+      final token = await _readAuthToken();
       if (token == null) return;
       final response = await http.get(
         Uri.parse('$_apiBaseUrl/api/attendance/live'),
@@ -4657,8 +4947,7 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _loadAttendanceSummary() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
+      final token = await _readAuthToken();
       if (token == null) return;
       final response = await http.get(
         Uri.parse('$_apiBaseUrl/api/attendance/today'),
@@ -4674,8 +4963,10 @@ class _HomePageState extends State<HomePage> {
           );
         }
       }
-    } catch (_) {
-      // The full Attendance screen displays actionable network errors.
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        developer.log('HomePage: failed to load attendance summary: $error', stackTrace: stackTrace);
+      }
     } finally {
       if (mounted) setState(() => _attendanceLoading = false);
     }
