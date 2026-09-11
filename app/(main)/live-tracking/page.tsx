@@ -36,6 +36,9 @@ type LiveEmployee = {
     trackingStatus?: EmployeeLocation["trackingStatus"];
     lastLocationReceivedAt?: string;
     markIn?: { time?: string };
+    currentBreakId?: string;
+    breakStartedAt?: string;
+    totalBreakMinutes?: number;
   };
   location?: Point & { receivedAt: string };
   workStatus: { state: string; label: string };
@@ -43,6 +46,12 @@ type LiveEmployee = {
   triggerPoints?: Point[];
   movementPoints?: Point[];
   filteredDistanceMeters?: number;
+  break?: {
+    type?: string;
+    reason?: string;
+    startedAt?: string;
+    elapsedMinutes?: number;
+  } | null;
 };
 
 function toMapLocation(item: LiveEmployee): EmployeeLocation | null {
@@ -87,8 +96,6 @@ function toMapLocation(item: LiveEmployee): EmployeeLocation | null {
     latitude: latest.latitude,
     longitude: latest.longitude,
     locationName: latest.locationName || "Location name pending",
-    // Online/offline reflects the newest heartbeat, while the marker keeps the
-    // last reliable coordinates when stationary GPS drift is filtered out.
     receivedAt: item.attendance.lastLocationReceivedAt || latest.receivedAt,
     presentToday: true,
     attendanceDate: item.attendance.attendanceDate || new Date().toISOString().slice(0, 10),
@@ -100,6 +107,7 @@ function toMapLocation(item: LiveEmployee): EmployeeLocation | null {
     route,
     events: triggers,
     accuracy: latest.accuracy,
+    break: item.break,
   };
 }
 
@@ -109,6 +117,7 @@ export default function LiveTrackingPage() {
   const requestedEmpId = searchParams.get("empId") || "";
   const [employees, setEmployees] = useState<LiveEmployee[]>([]);
   const [query, setQuery] = useState("");
+  const [designationFilter, setDesignationFilter] = useState("ALL");
   const [selectedEmpId, setSelectedEmpId] = useState(requestedEmpId);
   const [loading, setLoading] = useState(true);
   const inFlight = useRef(false);
@@ -138,11 +147,18 @@ export default function LiveTrackingPage() {
   }, [load]);
 
   const locations = useMemo(() => employees.map(toMapLocation).filter((item): item is EmployeeLocation => Boolean(item)), [employees]);
+  const designations = useMemo(() => {
+    const values = new Set(locations.map((employee) => employee.designation || "Employee"));
+    return [...values].sort((left, right) => left.localeCompare(right));
+  }, [locations]);
   const filteredLocations = useMemo(() => {
     const value = query.trim().toLowerCase();
-    if (!value) return locations;
-    return locations.filter((employee) => employee.name.toLowerCase().includes(value) || employee.empId.toLowerCase().includes(value) || employee.locationName.toLowerCase().includes(value));
-  }, [locations, query]);
+    return locations.filter((employee) => {
+      const matchesSearch = !value || employee.name.toLowerCase().includes(value) || employee.empId.toLowerCase().includes(value) || employee.locationName.toLowerCase().includes(value);
+      const matchesDesignation = designationFilter === "ALL" || employee.designation === designationFilter;
+      return matchesSearch && matchesDesignation;
+    });
+  }, [locations, query, designationFilter]);
 
   const chooseEmployee = (empId: string) => {
     setSelectedEmpId(empId);
@@ -152,8 +168,18 @@ export default function LiveTrackingPage() {
   return <div className="space-y-3 pb-4">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div><h1 className="text-xl font-bold tracking-tight text-slate-900">Live tracking</h1><p className="text-sm text-slate-500">GPS updates every 5 minutes · Map refreshes every 15 seconds</p></div>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <div className="relative min-w-0 sm:w-72"><Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search employee or location" className="bg-white pl-9" /></div>
+        <select
+          value={designationFilter}
+          onChange={(event) => setDesignationFilter(event.target.value)}
+          className="h-10 min-w-40 rounded-lg border bg-white px-3 text-sm"
+        >
+          <option value="ALL">All designations</option>
+          {designations.map((designation) => (
+            <option key={designation} value={designation}>{designation}</option>
+          ))}
+        </select>
         <Button variant="outline" className="bg-white" onClick={() => void load(true)} disabled={loading}><RefreshCw className={loading ? "animate-spin" : ""} /><span className="hidden sm:inline">Refresh</span></Button>
       </div>
     </div>

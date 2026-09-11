@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+import mongoose, { type Mongoose } from "mongoose";
 import { serverEnvironment } from "@/lib/env.mjs";
 import { createLogger } from "@/lib/logger.mjs";
 
@@ -7,8 +7,8 @@ const logger = createLogger("mongodb");
 const MONGODB_URI = serverEnvironment().mongoUri;
 
 type MongooseCache = {
-  conn: typeof mongoose | null;
-  promise: Promise<typeof mongoose> | null;
+  conn: Mongoose | null;
+  promise: Promise<Mongoose> | null;
 };
 
 const globalWithMongoose = globalThis as typeof globalThis & {
@@ -38,13 +38,14 @@ export async function connectDB() {
         socketTimeoutMS: 30000,
         maxPoolSize: 10,
       })
-      .then((mongooseInstance) => {
+      .then((mongooseInstance: Mongoose) => {
         logger.info("MongoDB connected successfully");
         setupConnectionListeners(mongooseInstance);
         return mongooseInstance;
       })
-      .catch((error) => {
-        logger.error("MongoDB connection failed", { error: error?.message });
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error("MongoDB connection failed", { error: message });
         cached.promise = null;
         throw error;
       });
@@ -55,7 +56,7 @@ export async function connectDB() {
   return cached.conn;
 }
 
-function setupConnectionListeners(mongooseInstance) {
+function setupConnectionListeners(mongooseInstance: Mongoose) {
   mongooseInstance.connection.on("disconnected", () => {
     logger.warn("MongoDB connection lost");
     cached.conn = null;
@@ -66,15 +67,20 @@ function setupConnectionListeners(mongooseInstance) {
     logger.info("MongoDB connection restored");
   });
 
-  mongooseInstance.connection.on("error", (error) => {
-    logger.error("MongoDB connection error", { error: error?.message });
+  mongooseInstance.connection.on("error", (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error("MongoDB connection error", { error: message });
   });
 }
 
 export async function healthCheck() {
   try {
     const conn = await connectDB();
-    await conn.db.command({ ping: 1 });
+    const db = conn.connection?.db;
+    if (!db) {
+      throw new Error("MongoDB connection is not ready");
+    }
+    await db.command({ ping: 1 });
     return { status: "ok", connected: true };
   } catch {
     return { status: "error", connected: false };

@@ -1,6 +1,6 @@
 import { connectDB } from "@/lib/mongoose";
 import Attendance from "@/models/Attendance";
-import { errorResponse, requireAttendanceUser } from "./_lib/attendance";
+import { AttendanceError, errorResponse, requireAttendanceUser } from "./_lib/attendance";
 import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 import { visibleEmployeeIds } from "@/lib/access";
 
@@ -11,15 +11,32 @@ function escapeRegex(value) {
 export async function GET(request) {
   try {
     await connectDB();
-    const identity = await requireAttendanceUser(rolesForPermission(PERMISSIONS.ATTENDANCE_TEAM_READ));
     const { searchParams } = new URL(request.url);
     const page = Math.max(1, Number(searchParams.get("page")) || 1);
     const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit")) || 10));
     const search = searchParams.get("search")?.trim() || "";
     const date = searchParams.get("date")?.trim();
-    const allowedIds = await visibleEmployeeIds(identity);
+    const month = searchParams.get("month")?.trim();
+    const mine = searchParams.get("mine") === "true";
+    const employeeId = searchParams.get("empId")?.trim();
+
+    const identity = mine || employeeId ? await requireAttendanceUser() : await requireAttendanceUser(rolesForPermission(PERMISSIONS.ATTENDANCE_TEAM_READ));
+    const isTeamRead = !mine && !employeeId && rolesForPermission(PERMISSIONS.ATTENDANCE_TEAM_READ).includes(identity.role);
+    const allowedIds = isTeamRead ? await visibleEmployeeIds(identity) : null;
+
     const match = { orgId: identity.orgId, ...(allowedIds ? { empId: { $in: allowedIds } } : {}) };
+    if (mine || employeeId) {
+      const targetEmployeeId = employeeId || identity.empId;
+      if (employeeId && targetEmployeeId !== identity.empId && !isTeamRead) {
+        throw new AttendanceError("You can only view your own attendance history.", 403);
+      }
+      match.empId = targetEmployeeId;
+    }
     if (date) match.attendanceDate = date;
+    if (month) {
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new AttendanceError("Invalid attendance month.");
+      match.attendanceDate = { $regex: `^${month}` };
+    }
 
     const employeeMatch = search
       ? {
@@ -59,6 +76,8 @@ export async function GET(request) {
                 trackingStatus: 1,
                 totalVisits: 1,
                 totalWorkedMinutes: 1,
+                attendanceType: 1,
+                totalBreakMinutes: 1,
               },
             },
           ],

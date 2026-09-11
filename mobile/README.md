@@ -1,17 +1,31 @@
-# trakagile_mobile
+# TrakAgile Android app
 
-A new Flutter project.
+Flutter mobile client for TrakAgile. The default backend is `https://trakagile.com`.
 
-## Getting Started
+## Validate and build
 
-This project is a starting point for a Flutter application.
+Run from `mobile/` with Flutter and the Android SDK installed:
 
-A few resources to get you started if this is your first Flutter project:
+```sh
+flutter pub get
+flutter analyze
+flutter test
+flutter build apk --release
+```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+The universal APK is generated at `build/app/outputs/flutter-apk/app-release.apk`.
+Version 1.3.15 uses Android build number 36.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+To target a different backend, pass `--dart-define=API_BASE_URL=https://your-server.example` when building.
+Deploy the matching backend changes before testing the new break endpoints.
+
+## Signing and device checks
+
+The current release build uses the existing Android debug signing key. It is an
+installable test/distribution APK; configure a private release signing key before
+publishing to Google Play. Keep signing credentials out of Git.
+
+On a device, verify login, attendance mark-in, break start/end, and mark-out.
+For background location tracking, allow precise location all the time and follow
+the app's battery optimization prompt. Automated tests do not verify physical GPS
+or background behavior on an Android device.

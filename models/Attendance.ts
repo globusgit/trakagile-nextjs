@@ -84,6 +84,9 @@ const AttendanceSchema = new mongoose.Schema(
       default: undefined,
     },
     autoMarkOutReason: { type: String, trim: true },
+    currentBreakId: { type: mongoose.Types.ObjectId, ref: "Break", select: false },
+    breakStartedAt: { type: Date, select: false },
+    totalBreakMinutes: { type: Number, default: 0 },
   },
   { timestamps: true },
 );

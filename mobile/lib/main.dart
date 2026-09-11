@@ -32,7 +32,10 @@ Future<String?> _readAuthToken() async {
     return await _secureStorage.read(key: 'token');
   } catch (error, stackTrace) {
     if (kDebugMode) {
-      developer.log('Failed to read auth token: $error', stackTrace: stackTrace);
+      developer.log(
+        'Failed to read auth token: $error',
+        stackTrace: stackTrace,
+      );
     }
     return null;
   }
@@ -79,7 +82,10 @@ class AttendanceTrackingService {
       await _secureStorage.write(key: 'token', value: token);
     } catch (error, stackTrace) {
       if (kDebugMode) {
-        developer.log('AttendanceTrackingService: failed to save token: $error', stackTrace: stackTrace);
+        developer.log(
+          'AttendanceTrackingService: failed to save token: $error',
+          stackTrace: stackTrace,
+        );
       }
     }
   }
@@ -89,7 +95,10 @@ class AttendanceTrackingService {
       await _secureStorage.delete(key: 'token');
     } catch (error, stackTrace) {
       if (kDebugMode) {
-        developer.log('AttendanceTrackingService: failed to clear token: $error', stackTrace: stackTrace);
+        developer.log(
+          'AttendanceTrackingService: failed to clear token: $error',
+          stackTrace: stackTrace,
+        );
       }
     }
   }
@@ -99,7 +108,10 @@ class AttendanceTrackingService {
       return await _secureStorage.read(key: 'token');
     } catch (error, stackTrace) {
       if (kDebugMode) {
-        developer.log('AttendanceTrackingService: failed to read token: $error', stackTrace: stackTrace);
+        developer.log(
+          'AttendanceTrackingService: failed to read token: $error',
+          stackTrace: stackTrace,
+        );
       }
       return null;
     }
@@ -128,7 +140,10 @@ class AttendanceTrackingService {
       }
     } catch (error, stackTrace) {
       if (kDebugMode) {
-        developer.log('AttendanceTrackingService: restore failed: $error', stackTrace: stackTrace);
+        developer.log(
+          'AttendanceTrackingService: restore failed: $error',
+          stackTrace: stackTrace,
+        );
       }
     }
   }
@@ -221,7 +236,10 @@ class AttendanceTrackingService {
       await _queuePosition(position, minuteTrigger: true);
     } catch (error, stackTrace) {
       if (kDebugMode) {
-        developer.log('AttendanceTrackingService: heartbeat failed: $error', stackTrace: stackTrace);
+        developer.log(
+          'AttendanceTrackingService: heartbeat failed: $error',
+          stackTrace: stackTrace,
+        );
       }
     } finally {
       _capturingHeartbeat = false;
@@ -263,7 +281,10 @@ class AttendanceTrackingService {
       final queue =
           (prefs.getStringList('tracking_offline_queue') ?? <String>[])
               .toList();
-      final filtered = queue.map(jsonDecode).whereType<Map<String, dynamic>>().toList();
+      final filtered = queue
+          .map(jsonDecode)
+          .whereType<Map<String, dynamic>>()
+          .toList();
       filtered.removeWhere((entry) {
         final expiresAt = DateTime.tryParse('${entry['expiresAt']}');
         return expiresAt != null && expiresAt.isBefore(now);
@@ -272,10 +293,12 @@ class AttendanceTrackingService {
       filtered.sort((a, b) {
         final aEpoch = a['capturedAtEpoch'] is num
             ? (a['capturedAtEpoch'] as num).toInt()
-            : DateTime.tryParse('${a['capturedAt']}')?.millisecondsSinceEpoch ?? 0;
+            : DateTime.tryParse('${a['capturedAt']}')?.millisecondsSinceEpoch ??
+                  0;
         final bEpoch = b['capturedAtEpoch'] is num
             ? (b['capturedAtEpoch'] as num).toInt()
-            : DateTime.tryParse('${b['capturedAt']}')?.millisecondsSinceEpoch ?? 0;
+            : DateTime.tryParse('${b['capturedAt']}')?.millisecondsSinceEpoch ??
+                  0;
         return aEpoch.compareTo(bEpoch);
       });
       if (filtered.length > _maxQueueSize) {
@@ -313,10 +336,14 @@ class AttendanceTrackingService {
             parsed.sort((a, b) {
               final aEpoch = a['capturedAtEpoch'] is num
                   ? (a['capturedAtEpoch'] as num).toInt()
-                  : DateTime.tryParse('${a['capturedAt']}')?.millisecondsSinceEpoch ?? 0;
+                  : DateTime.tryParse('${a['capturedAt']}')
+                            ?.millisecondsSinceEpoch ??
+                        0;
               final bEpoch = b['capturedAtEpoch'] is num
                   ? (b['capturedAtEpoch'] as num).toInt()
-                  : DateTime.tryParse('${b['capturedAt']}')?.millisecondsSinceEpoch ?? 0;
+                  : DateTime.tryParse('${b['capturedAt']}')
+                            ?.millisecondsSinceEpoch ??
+                        0;
               return aEpoch.compareTo(bEpoch);
             });
             queueItems = parsed;
@@ -365,7 +392,10 @@ class AttendanceTrackingService {
           }
         } catch (error, stackTrace) {
           if (kDebugMode) {
-            developer.log('AttendanceTrackingService: flush failed: $error', stackTrace: stackTrace);
+            developer.log(
+              'AttendanceTrackingService: flush failed: $error',
+              stackTrace: stackTrace,
+            );
           }
           break;
         }
@@ -612,9 +642,7 @@ class _TrakAgileAppState extends State<TrakAgileApp>
       return;
     }
     final promptContext = _navigatorKey.currentContext;
-    if (_batteryPromptOpen ||
-        promptContext == null ||
-        !promptContext.mounted) {
+    if (_batteryPromptOpen || promptContext == null || !promptContext.mounted) {
       return;
     }
     _batteryPromptOpen = true;
@@ -675,7 +703,10 @@ class _TrakAgileAppState extends State<TrakAgileApp>
         }
       } catch (error, stackTrace) {
         if (kDebugMode) {
-          developer.log('TrakAgileApp: session restore failed: $error', stackTrace: stackTrace);
+          developer.log(
+            'TrakAgileApp: session restore failed: $error',
+            stackTrace: stackTrace,
+          );
         }
       }
     }
@@ -689,7 +720,10 @@ class _TrakAgileAppState extends State<TrakAgileApp>
       await _secureStorage.write(key: 'token', value: token);
     } catch (error, stackTrace) {
       if (kDebugMode) {
-        developer.log('TrakAgileApp: failed to persist token: $error', stackTrace: stackTrace);
+        developer.log(
+          'TrakAgileApp: failed to persist token: $error',
+          stackTrace: stackTrace,
+        );
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -712,7 +746,10 @@ class _TrakAgileAppState extends State<TrakAgileApp>
       await _secureStorage.deleteAll();
     } catch (error, stackTrace) {
       if (kDebugMode) {
-        developer.log('TrakAgileApp: failed to clear secure storage: $error', stackTrace: stackTrace);
+        developer.log(
+          'TrakAgileApp: failed to clear secure storage: $error',
+          stackTrace: stackTrace,
+        );
       }
     }
     await prefs.clear();
@@ -1085,6 +1122,68 @@ class _ModuleScreenState extends State<ModuleScreen> {
   bool _overnightWork = false;
   Timer? _liveRefreshTimer;
   String? _selectedLiveEmployeeId;
+  String _breakType = 'LUNCH';
+  final TextEditingController _breakReasonController = TextEditingController();
+
+  bool get _onBreak => _data?['currentBreakId'] != null;
+
+  Future<void> _startBreak() async {
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      await _sendJson('/api/attendance/break/start', {
+        'breakType': _breakType,
+        'reason': _breakReasonController.text.trim(),
+      });
+      if (!mounted) return;
+      _breakReasonController.clear();
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Break started.')));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', '')),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  Future<void> _endBreak() async {
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      await _sendJson('/api/attendance/break/end', {});
+      if (!mounted) return;
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Break ended.')));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', '')),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
 
   bool get _isTeamRole => const [
     'MANAGER',
@@ -1113,6 +1212,7 @@ class _ModuleScreenState extends State<ModuleScreen> {
   void dispose() {
     _liveRefreshTimer?.cancel();
     _fieldPurpose.dispose();
+    _breakReasonController.dispose();
     super.dispose();
   }
 
@@ -1418,7 +1518,9 @@ class _ModuleScreenState extends State<ModuleScreen> {
             ],
           ),
         );
-        if (openSettings == true) await LocationService.instance.openAppSettings();
+        if (openSettings == true) {
+          await LocationService.instance.openAppSettings();
+        }
         throw Exception(
           'Select "Allow all the time", return to TrakAgile, and tap Mark In again.',
         );
@@ -2442,7 +2544,9 @@ class _ModuleScreenState extends State<ModuleScreen> {
       try {
         body = jsonDecode(responseText);
       } catch (error) {
-        if (kDebugMode) developer.log('Document upload response parse failed: $error');
+        if (kDebugMode) {
+          developer.log('Document upload response parse failed: $error');
+        }
         body = null;
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -3190,6 +3294,113 @@ class _ModuleScreenState extends State<ModuleScreen> {
                       'Mark Out will be enabled at ${_formatTimestamp(markOutAvailableAt.toIso8601String())}.',
                       style: Theme.of(context).textTheme.bodySmall,
                       textAlign: TextAlign.center,
+                    ),
+                  ],
+
+                  if (_onBreak) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.tertiaryContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.coffee,
+                                color: Theme.of(context).colorScheme.tertiary,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'On break',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Break started at ${_formatTimestamp('${_data?['breakStartedAt'] ?? ''}')}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          if (_data case Map<String, dynamic> attendance
+                              when attendance['totalBreakMinutes'] is int)
+                            Text(
+                              'Break time today: ${attendance['totalBreakMinutes']} min',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              onPressed: _submitting ? null : _endBreak,
+                              icon: _submitting
+                                  ? const SizedBox.square(
+                                      dimension: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(Icons.play_arrow),
+                              label: const Text('End Break'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else if (isMarkedIn && !isCompleted) ...[
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      initialValue: _breakType,
+                      decoration: const InputDecoration(
+                        labelText: 'Break type',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'LUNCH', child: Text('Lunch')),
+                        DropdownMenuItem(
+                          value: 'TEA',
+                          child: Text('Tea break'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'PERSONAL',
+                          child: Text('Personal'),
+                        ),
+                        DropdownMenuItem(value: 'OTHER', child: Text('Other')),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => _breakType = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _breakReasonController,
+                      decoration: const InputDecoration(
+                        labelText: 'Reason (optional)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _submitting ? null : _startBreak,
+                        icon: _submitting
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.pause_circle_outline),
+                        label: const Text('Start Break'),
+                      ),
                     ),
                   ],
                   if (isMarkedIn && _data?['expectedMarkOutAt'] != null) ...[
@@ -4965,7 +5176,10 @@ class _HomePageState extends State<HomePage> {
       }
     } catch (error, stackTrace) {
       if (kDebugMode) {
-        developer.log('HomePage: failed to load attendance summary: $error', stackTrace: stackTrace);
+        developer.log(
+          'HomePage: failed to load attendance summary: $error',
+          stackTrace: stackTrace,
+        );
       }
     } finally {
       if (mounted) setState(() => _attendanceLoading = false);

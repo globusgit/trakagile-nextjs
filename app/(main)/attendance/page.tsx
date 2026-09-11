@@ -144,6 +144,9 @@ type Attendance = {
   expectedWorkEndAt?: string;
   overnightWork?: boolean;
   wfh?: { breakStartedAt?: string; totalBreakMinutes?: number; dailySummary?: string; pendingTasks?: string; blockers?: string };
+  currentBreakId?: string;
+  breakStartedAt?: string;
+  totalBreakMinutes?: number;
 
   workMode?: "NORMAL" | "OVERTIME";
 
@@ -659,6 +662,8 @@ export default function AttendancePage() {
   const [expectedEndAt, setExpectedEndAt] = useState(() =>
     dateTimeLocalValue(new Date(Date.now() + 60 * 60 * 1000))
   );
+  const [breakType, setBreakType] = useState<"LUNCH" | "TEA" | "PERSONAL" | "OTHER">("LUNCH");
+  const [breakReason, setBreakReason] = useState("");
   const reminderKeys = useRef(new Set<string>());
   const autoClosePending = useRef(false);
 
@@ -1081,6 +1086,37 @@ export default function AttendancePage() {
       toast.success(action === "START" ? "Break started. GPS tracking remains paused." : "Work resumed.");
     } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to update break."); }
     finally { setBusy(false); }
+  };
+
+  const startBreak = async () => {
+    setBusy(true);
+    try {
+      await api("/api/attendance/break/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ breakType, reason: breakReason }),
+      });
+      setBreakReason("");
+      await refresh();
+      toast.success("Break started.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to start break.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const endBreak = async () => {
+    setBusy(true);
+    try {
+      await api("/api/attendance/break/end", { method: "POST" });
+      await refresh();
+      toast.success("Break ended.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to end break.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const continueWorking = async () => {
@@ -2037,6 +2073,64 @@ export default function AttendancePage() {
             )}
           </div>
         </details>
+      )}
+
+      {/* ===============================================
+          BREAK
+      =============================================== */}
+
+      {attendance?.status === "IN" && !attendance.currentBreakId && (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Start a break</p>
+            <select
+              className="h-9 rounded-lg border bg-background px-3 text-sm"
+              value={breakType}
+              onChange={(event) => setBreakType(event.target.value as typeof breakType)}
+            >
+              <option value="LUNCH">Lunch</option>
+              <option value="TEA">Tea break</option>
+              <option value="PERSONAL">Personal</option>
+              <option value="OTHER">Other</option>
+            </select>
+            <Input
+              className="text-sm"
+              placeholder="Optional reason"
+              value={breakReason}
+              onChange={(event) => setBreakReason(event.target.value)}
+            />
+          </div>
+          <Button
+            variant="outline"
+            disabled={busy}
+            onClick={startBreak}
+          >
+            Start Break
+          </Button>
+        </div>
+      )}
+
+      {attendance?.status === "IN" && attendance.currentBreakId && (
+        <div className="flex flex-col gap-2 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-semibold">On break</p>
+            <p className="text-sm">
+              {attendance.breakStartedAt
+                ? `Started at ${time(attendance.breakStartedAt)}`
+                : "Break in progress"}
+            </p>
+            <p className="text-sm">
+              Total break time today: {formatMinutes((attendance.totalBreakMinutes || 0) + (attendance.breakStartedAt ? Math.max(0, Math.round((currentTime.getTime() - new Date(attendance.breakStartedAt).getTime()) / 60000)) : 0))}
+            </p>
+          </div>
+          <Button
+            variant="destructive"
+            disabled={busy}
+            onClick={endBreak}
+          >
+            End Break
+          </Button>
+        </div>
       )}
 
       {/* ===============================================

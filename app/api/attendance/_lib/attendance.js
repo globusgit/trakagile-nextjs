@@ -21,10 +21,32 @@ export const DEFAULT_ATTENDANCE_POLICY = {
   officeGeofence: {
     enabled: false,
     name: "Main Office",
+    latitude: undefined,
+    longitude: undefined,
     radiusMeters: 300,
     maximumAccuracyMeters: 100,
   },
+  geofences: [],
 };
+
+export function resolveAttendanceGeofences(policy) {
+  const geofences = Array.isArray(policy?.geofences) && policy.geofences.length
+    ? policy.geofences
+    : policy?.officeGeofence
+      ? [policy.officeGeofence]
+      : [];
+
+  return geofences
+    .filter((geofence) => geofence && typeof geofence === "object")
+    .map((geofence) => ({
+      enabled: geofence.enabled === true,
+      name: String(geofence.name || "Main Office").trim() || "Main Office",
+      latitude: geofence.latitude == null ? undefined : Number(geofence.latitude),
+      longitude: geofence.longitude == null ? undefined : Number(geofence.longitude),
+      radiusMeters: Number.isFinite(Number(geofence.radiusMeters)) ? Number(geofence.radiusMeters) : 300,
+      maximumAccuracyMeters: Number.isFinite(Number(geofence.maximumAccuracyMeters)) ? Number(geofence.maximumAccuracyMeters) : 100,
+    }));
+}
 
 export const MARK_OUT_ENABLE_MINUTES = 18 * 60;
 
@@ -102,12 +124,23 @@ export async function getAttendancePolicy(orgId) {
     AttendancePolicy.findOne({ orgId }).lean(),
     Organization.findOne(organizationIdentityFilter(orgId)).select("timeZone").lean(),
   ]);
-  return {
+
+  const normalized = {
     ...DEFAULT_ATTENDANCE_POLICY,
     ...(policy || {}),
+    geofences: Array.isArray(policy?.geofences) && policy.geofences.length
+      ? policy.geofences
+      : policy?.officeGeofence
+        ? [policy.officeGeofence]
+        : DEFAULT_ATTENDANCE_POLICY.geofences,
+    officeGeofence: policy?.officeGeofence || DEFAULT_ATTENDANCE_POLICY.officeGeofence,
     timeZone: policy?.timeZone || organization?.timeZone || DEFAULT_ATTENDANCE_POLICY.timeZone,
     orgId,
   };
+
+  if (!normalized.geofences.length && normalized.officeGeofence) normalized.geofences = [normalized.officeGeofence];
+  if (normalized.geofences.length && !normalized.officeGeofence) normalized.officeGeofence = normalized.geofences[0];
+  return normalized;
 }
 
 export function minutesInTimeZone(date, timeZone) {

@@ -1,5 +1,6 @@
 import { connectDB } from "@/lib/mongoose";
 import Attendance from "@/models/Attendance";
+import Break from "@/models/Break";
 import Employee from "@/models/Employee";
 import { attendanceTracks } from "@/lib/attendanceTracks";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../_lib/attendance";
@@ -46,6 +47,13 @@ export async function GET(request) {
     const tracks = await attendanceTracks(identity.orgId, paginatedAttendances);
     const employeeById = new Map(employees.map((employee) => [employee.empId, employee]));
     const now = Date.now();
+    const attendanceIds = paginatedAttendances.map((a) => a._id);
+    const activeBreaks = attendanceIds.length
+      ? await Break.find({ attendanceId: { $in: attendanceIds }, status: "ACTIVE" })
+          .select("attendanceId breakType reason startTime")
+          .lean()
+      : [];
+    const breakByAttendanceId = new Map(activeBreaks.map((brk) => [String(brk.attendanceId), brk]));
     await Promise.allSettled(paginatedAttendances.map((attendance) => {
       const location = tracks.get(String(attendance._id))?.location;
       const heartbeatAt = attendance.lastLocationReceivedAt || location?.receivedAt;
@@ -68,6 +76,7 @@ export async function GET(request) {
           ? attendance.overtime.expectedEndAt
           : attendance.expectedWorkEndAt;
         const track = tracks.get(String(attendance._id));
+        const activeBreak = breakByAttendanceId.get(String(attendance._id));
         return ({
         employee: employeeById.get(attendance.empId),
         attendance,
@@ -80,6 +89,14 @@ export async function GET(request) {
             : null,
         },
         ...track,
+        break: activeBreak
+          ? {
+              type: activeBreak.breakType,
+              reason: activeBreak.reason,
+              startedAt: activeBreak.startTime,
+              elapsedMinutes: Math.max(0, Math.round((now - new Date(activeBreak.startTime).getTime()) / 60000)),
+            }
+          : null,
         workStatus: workStatusFor(attendance, track?.location),
       });}),
       nextCursor,

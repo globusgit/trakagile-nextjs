@@ -24,6 +24,8 @@ import styles from "./AppShell.module.css";
 const employeeItems = [
   { label: "Dashboard", href: "/dashboard", icon: <Home size={20} /> },
   { label: "Attendance", href: "/attendance", icon: <CalendarCheck2 size={20} /> },
+  { label: "Attendance Calendar", href: "/attendance/calendar", icon: <CalendarCheck2 size={20} /> },
+  { label: "My History", href: "/attendance/history", icon: <ScrollText size={20} /> },
   { label: "Tasks", href: "/tasks", icon: <ListTodo size={20} /> },
   { label: "Notifications", href: "/notifications", icon: <Bell size={20} /> },
   { label: "Field Trips", href: "/field-trips", icon: <BriefcaseBusiness size={20} /> },
