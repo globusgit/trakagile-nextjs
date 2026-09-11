@@ -94,34 +94,36 @@ export default function AdminDashboard({ name, role }: { name: string; role: str
     </Card>
     {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
     {(absentEmployees.length > 0 || noLocationEmployees.length > 0) && (
-      <Card className="border-amber-200 bg-amber-50/80">
-        <CardContent className="space-y-3 p-4">
+      <Card className="border-amber-200 bg-amber-50/70">
+        <CardContent className="space-y-2 p-3">
           <div className="flex items-center gap-2 text-amber-800">
             <AlertTriangle className="size-4" />
-            <p className="text-sm font-semibold">Attention needed</p>
+            <p className="text-sm font-semibold">Attention</p>
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-amber-700">Absent today</p>
-              <ul className="mt-2 space-y-2 text-sm text-amber-900">
-                {absentEmployees.length ? absentEmployees.map((employee) => (
-                  <li key={employee.empId} className="flex items-center justify-between rounded-lg border border-amber-200 bg-white/60 px-2 py-1.5">
-                    <span>{employee.name}</span>
-                    <span className="text-xs font-medium text-amber-700">{employee.empId}</span>
-                  </li>
-                )) : <li className="text-xs text-amber-700">No absent employees.</li>}
-              </ul>
+          <div className="grid gap-2 md:grid-cols-2">
+            <div className="rounded-lg border border-amber-200 bg-white/60 p-2">
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-amber-700">Absent today</p>
+              <div className="space-y-1 text-sm text-amber-900">
+                {absentEmployees.length ? absentEmployees.slice(0, 4).map((employee) => (
+                  <div key={employee.empId} className="flex items-center justify-between rounded-md bg-amber-50 px-2 py-1 text-xs">
+                    <span className="truncate pr-2">{employee.name}</span>
+                    <span className="shrink-0 font-medium text-amber-700">{employee.empId}</span>
+                  </div>
+                )) : <div className="text-xs text-amber-700">No absent employees.</div>}
+                {absentEmployees.length > 4 && <div className="text-[10px] font-medium text-amber-700">+{absentEmployees.length - 4} more</div>}
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-amber-700">No live location</p>
-              <ul className="mt-2 space-y-2 text-sm text-amber-900">
-                {noLocationEmployees.length ? noLocationEmployees.map((employee) => (
-                  <li key={employee.empId} className="flex items-center justify-between rounded-lg border border-amber-200 bg-white/60 px-2 py-1.5">
-                    <span>{employee.name}</span>
-                    <span className="text-xs font-medium text-amber-700">{employee.empId}</span>
-                  </li>
-                )) : <li className="text-xs text-amber-700">All present employees have location data.</li>}
-              </ul>
+            <div className="rounded-lg border border-amber-200 bg-white/60 p-2">
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-amber-700">No live location</p>
+              <div className="space-y-1 text-sm text-amber-900">
+                {noLocationEmployees.length ? noLocationEmployees.slice(0, 4).map((employee) => (
+                  <div key={employee.empId} className="flex items-center justify-between rounded-md bg-amber-50 px-2 py-1 text-xs">
+                    <span className="truncate pr-2">{employee.name}</span>
+                    <span className="shrink-0 font-medium text-amber-700">{employee.empId}</span>
+                  </div>
+                )) : <div className="text-xs text-amber-700">All present employees have location data.</div>}
+                {noLocationEmployees.length > 4 && <div className="text-[10px] font-medium text-amber-700">+{noLocationEmployees.length - 4} more</div>}
+              </div>
             </div>
           </div>
         </CardContent>
