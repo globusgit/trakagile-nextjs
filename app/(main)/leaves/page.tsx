@@ -341,6 +341,7 @@ export default function LeavesPage() {
               <p className="font-semibold">Employee Leave Allocation · {currentYear}</p>
               <p className="text-xs text-muted-foreground">Allocations are separate for each employee in this organization.</p>
             </div>
+            {/* Use native select instead of EmployeeSingleSelect to avoid TS2352 type error with getValue prop */}
             <select
               className="h-10 w-full max-w-md rounded-md border bg-white px-3 text-sm"
               value={allocationUserId}
