@@ -89,7 +89,6 @@ export default function EmployeeSingleSelect<T extends BaseEmployee>({
   useLayoutEffect(() => {
     if (!open) return;
     updatePosition();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   useEffect(() => {
@@ -101,7 +100,6 @@ export default function EmployeeSingleSelect<T extends BaseEmployee>({
       window.removeEventListener("scroll", handleReposition, true);
       window.removeEventListener("resize", handleReposition);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   useEffect(() => {
