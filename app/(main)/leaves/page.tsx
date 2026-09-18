@@ -87,6 +87,13 @@ interface LeaveCardStat {
   balance: number;
 }
 
+type AllocationEmployee = {
+  userId: string;
+  name: string;
+  photo?: string | null;
+  balance?: Record<string, number>;
+};
+
 function LeaveCard({ stat }: { stat: LeaveCardStat }) {
   return (
     <Card className="shadow-sm transition-all hover:shadow-lg duration-200 hover:translate-y-1 hover:border-cyan-700 cursor-pointer">
@@ -186,7 +193,7 @@ export default function LeavesPage() {
     },
     enabled: canAllocate,
   });
-  const allocationEmployees = allocationData?.employees ?? [];
+  const allocationEmployees: AllocationEmployee[] = allocationData?.employees ?? [];
 
   const selectAllocationEmployee = (selectedUserId: string) => {
     const employee = allocationEmployees.find((item: { userId: string }) => item.userId === selectedUserId);
@@ -344,11 +351,11 @@ export default function LeavesPage() {
               <p className="font-semibold">Employee Leave Allocation · {currentYear}</p>
               <p className="text-xs text-muted-foreground">Allocations are separate for each employee in this organization.</p>
             </div>
-                        <EmployeeSingleSelect
+            <EmployeeSingleSelect
               employees={allocationEmployees}
               value={allocationUserId}
               onChange={selectAllocationEmployee}
-              getValue={(employee) => (employee as { userId: string }).userId}
+              getValue={(employee) => employee.userId}
               placeholder="Select employee"
               className="max-w-md"
               triggerClassName="h-10 w-full text-sm"
