@@ -1,7 +1,6 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Download, ListTodo, Maximize2, Minimize2, RefreshCw, UserCheck, UserRoundX, UsersRound, MapPin } from "lucide-react";
@@ -11,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { buildAttendanceCsv } from "@/lib/dashboardExport.mjs";
 import type { EmployeeLocation } from "./EmployeeLocationMap";
 import DashboardAttendanceCard from "./DashboardAttendanceCard";
+import EmployeeAvatar from "@/app/_components/EmployeeAvatar";
 
 const EmployeeLocationMap = dynamic(() => import("./EmployeeLocationMap"), { ssr: false, loading: () => <div className="h-[620px] animate-pulse rounded-xl bg-slate-100" /> });
 type EmployeeSummary = { empId: string; name: string; designation: string; photo?: string | null; presentToday: boolean; located: boolean };
@@ -106,7 +106,10 @@ export default function AdminDashboard({ name, role }: { name: string; role: str
               <div className="space-y-1 text-sm text-amber-900">
                 {absentEmployees.length ? absentEmployees.slice(0, 4).map((employee) => (
                   <div key={employee.empId} className="flex items-center justify-between rounded-md bg-amber-50 px-2 py-1 text-xs">
-                    <span className="truncate pr-2">{employee.name}</span>
+                    <span className="flex min-w-0 items-center gap-1.5 pr-2">
+                      <EmployeeAvatar name={employee.name} photo={employee.photo} size={18} />
+                      <span className="truncate">{employee.name}</span>
+                    </span>
                     <span className="shrink-0 font-medium text-amber-700">{employee.empId}</span>
                   </div>
                 )) : <div className="text-xs text-amber-700">No absent employees.</div>}
@@ -118,7 +121,10 @@ export default function AdminDashboard({ name, role }: { name: string; role: str
               <div className="space-y-1 text-sm text-amber-900">
                 {noLocationEmployees.length ? noLocationEmployees.slice(0, 4).map((employee) => (
                   <div key={employee.empId} className="flex items-center justify-between rounded-md bg-amber-50 px-2 py-1 text-xs">
-                    <span className="truncate pr-2">{employee.name}</span>
+                    <span className="flex min-w-0 items-center gap-1.5 pr-2">
+                      <EmployeeAvatar name={employee.name} photo={employee.photo} size={18} />
+                      <span className="truncate">{employee.name}</span>
+                    </span>
                     <span className="shrink-0 font-medium text-amber-700">{employee.empId}</span>
                   </div>
                 )) : <div className="text-xs text-amber-700">All present employees have location data.</div>}
@@ -135,6 +141,6 @@ export default function AdminDashboard({ name, role }: { name: string; role: str
       <CardHeader className="flex-row items-center justify-between border-b bg-white py-4"><div><CardTitle>Present employee live map</CardTitle><p className="mt-1 text-sm text-muted-foreground">Select an employee to show mark-in, five-minute GPS updates, triggers and live position.</p><div className="mt-2 flex flex-wrap gap-3 text-[11px] font-medium text-slate-600"><span>🟢 Mark in</span><span>🟣 Trigger</span><span>🟠 Live/latest</span><span>🔴 Mark out</span></div></div><div className="flex items-center gap-2"><span className="hidden text-xs text-muted-foreground sm:block">GPS every 5 min · Map refresh every 15 sec</span><Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}><RefreshCw className={loading ? "animate-spin" : ""} />Refresh</Button><Button variant="outline" size="sm" onClick={() => setFullScreen((value) => !value)}>{fullScreen ? <Minimize2 /> : <Maximize2 />}{fullScreen ? "Exit" : "Full map"}</Button></div></CardHeader>
       <CardContent className="min-w-0 bg-slate-950 p-0"><EmployeeLocationMap locations={data?.locations ?? []} fullScreen={fullScreen} selectedEmpId={selectedEmpId} onSelectEmployee={setSelectedEmpId} /></CardContent>
     </Card>
-    <Dialog open={cardFilter !== null} onOpenChange={(open) => { if (!open) { setCardFilter(null); setEmployeeSearch(""); } }}><DialogContent overlayClassName="z-[2000]" className="z-[2001] max-h-[80vh] overflow-hidden sm:max-w-2xl"><DialogHeader><DialogTitle>{cards.find((card) => card.filter === cardFilter)?.label || "Employees"} ({cardEmployees.length})</DialogTitle></DialogHeader><div className="space-y-3"><div className="flex items-center gap-2 rounded-lg border bg-slate-50 px-3 py-2"><input value={employeeSearch} onChange={(event) => setEmployeeSearch(event.target.value)} placeholder="Search by name, ID or role" className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" /><button type="button" className="text-xs font-medium text-slate-500 hover:text-slate-700" onClick={() => setEmployeeSearch("")}>Clear</button></div><div className="max-h-[58vh] space-y-2 overflow-y-auto pr-1">{cardEmployees.map((employee) => { const location = data?.locations.find((item) => item.empId === employee.empId); return <button type="button" key={employee.empId} onClick={() => { setCardFilter(null); setEmployeeSearch(""); if (location) setSelectedEmpId(employee.empId); }} className="flex w-full items-center gap-3 rounded-xl border p-3 text-left hover:border-cyan-400 hover:bg-cyan-50"><Image src={employee.photo ? `/api/files/employees/${encodeURIComponent(employee.photo)}` : "/default-avatar.jpg"} alt={employee.name} width={42} height={42} unoptimized className="size-11 rounded-full object-cover" /><span className="min-w-0 flex-1"><span className="block font-semibold">{employee.name}</span><span className="block text-xs text-muted-foreground">{employee.empId} · {employee.designation}</span>{location && <span className="mt-1 block truncate text-xs text-cyan-800">{location.locationName}</span>}</span><span className={`rounded-full px-2 py-1 text-xs font-semibold ${employee.presentToday ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{employee.presentToday ? "Present" : "Absent"}</span></button>; })}{!cardEmployees.length && <p className="py-10 text-center text-muted-foreground">No employees match this search in this category.</p>}</div></div></DialogContent></Dialog>
+    <Dialog open={cardFilter !== null} onOpenChange={(open) => { if (!open) { setCardFilter(null); setEmployeeSearch(""); } }}><DialogContent overlayClassName="z-[2000]" className="z-[2001] max-h-[80vh] overflow-hidden sm:max-w-2xl"><DialogHeader><DialogTitle>{cards.find((card) => card.filter === cardFilter)?.label || "Employees"} ({cardEmployees.length})</DialogTitle></DialogHeader><div className="space-y-3"><div className="flex items-center gap-2 rounded-lg border bg-slate-50 px-3 py-2"><input value={employeeSearch} onChange={(event) => setEmployeeSearch(event.target.value)} placeholder="Search by name, ID or role" className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" /><button type="button" className="text-xs font-medium text-slate-500 hover:text-slate-700" onClick={() => setEmployeeSearch("")}>Clear</button></div><div className="max-h-[58vh] space-y-2 overflow-y-auto pr-1">{cardEmployees.map((employee) => { const location = data?.locations.find((item) => item.empId === employee.empId); return <button type="button" key={employee.empId} onClick={() => { setCardFilter(null); setEmployeeSearch(""); if (location) setSelectedEmpId(employee.empId); }} className="flex w-full items-center gap-3 rounded-xl border p-3 text-left hover:border-cyan-400 hover:bg-cyan-50"><EmployeeAvatar name={employee.name} photo={employee.photo} size={42} className="size-11" /><span className="min-w-0 flex-1"><span className="block font-semibold">{employee.name}</span><span className="block text-xs text-muted-foreground">{employee.empId} · {employee.designation}</span>{location && <span className="mt-1 block truncate text-xs text-cyan-800">{location.locationName}</span>}</span><span className={`rounded-full px-2 py-1 text-xs font-semibold ${employee.presentToday ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{employee.presentToday ? "Present" : "Absent"}</span></button>; })}{!cardEmployees.length && <p className="py-10 text-center text-muted-foreground">No employees match this search in this category.</p>}</div></div></DialogContent></Dialog>
   </div>;
 }

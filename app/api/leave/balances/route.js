@@ -12,9 +12,10 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const year = Number(searchParams.get("year") || new Date().getFullYear());
     const employees = await Employee.find({ orgId: identity.orgId, status: "Active" })
-      .select("name empId")
+      .select("name empId photo")
       .sort({ name: 1 })
       .lean();
+      
     const users = await User.find({
       orgId: identity.orgId,
       username: { $in: employees.map((employee) => employee.empId) },
@@ -35,6 +36,7 @@ export async function GET(request) {
           userId: String(user._id),
           empId: employee.empId,
           name: employee.name,
+          photo: employee.photo || null,
           balance: balanceByUserId.get(String(user._id)) || null,
         }];
       }),

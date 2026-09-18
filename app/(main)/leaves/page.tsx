@@ -19,6 +19,8 @@ import { useSession } from "next-auth/react";
 import { Pencil } from "lucide-react";
 // add near the top with the other imports
 import Link from "next/link";
+import { EmployeeNameTag } from "@/app/_components/EmployeeAvatar";
+import EmployeeSingleSelect from "@/app/_components/EmployeeSingleSelect";
 
 export async function fetchLeaves({
   orgId,
@@ -66,6 +68,7 @@ interface LeaveRequestRow {
   _id: string;
   userId: string;
   employeeName?: string | null;
+  employeePhoto?: string | null;
   leaveType: string;
   startDate: string;
   endDate: string;
@@ -341,16 +344,16 @@ export default function LeavesPage() {
               <p className="font-semibold">Employee Leave Allocation · {currentYear}</p>
               <p className="text-xs text-muted-foreground">Allocations are separate for each employee in this organization.</p>
             </div>
-            <select
-              className="h-10 w-full max-w-md rounded-md border bg-white px-3 text-sm"
+                        <EmployeeSingleSelect
+              employees={allocationEmployees}
               value={allocationUserId}
-              onChange={(event) => selectAllocationEmployee(event.target.value)}
-            >
-              <option value="">Select employee</option>
-              {allocationEmployees.map((employee: { userId: string; empId: string; name: string }) => (
-                <option key={employee.userId} value={employee.userId}>{employee.name} · {employee.empId}</option>
-              ))}
-            </select>
+              onChange={selectAllocationEmployee}
+              getValue={(employee) => (employee as { userId: string }).userId}
+              placeholder="Select employee"
+              className="max-w-md"
+              triggerClassName="h-10 w-full text-sm"
+              avatarSize={22}
+            />
             {allocationUserId && (
               <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                 {Object.keys(allocation).map((key) => (
@@ -432,8 +435,8 @@ export default function LeavesPage() {
                       </button>
                     </TableCell>
 
-                    <TableCell className="font-medium">
-                      {leave.employeeName || leave.userId}
+                   <TableCell className="font-medium">
+                      <EmployeeNameTag name={leave.employeeName || leave.userId} photo={leave.employeePhoto} size={22} />
                     </TableCell>
                     <TableCell className="capitalize">{leave.leaveType}</TableCell>
                     <TableCell>{leave.days}</TableCell>

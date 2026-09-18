@@ -19,6 +19,9 @@ async function attachEmployeeNames(leaves, orgId) {
   const nameByEmployeeId = Object.fromEntries(
     employees.map((employee) => [employee.empId, employee.name]),
   );
+  const photoByEmployeeId = Object.fromEntries(
+    employees.filter((employee) => employee.photo).map((employee) => [employee.empId, employee.photo]),
+  );
 
   return leaves.map((leave) => {
     const employeeId = usernameByUserId[leave.userId?.toString()];
@@ -26,6 +29,7 @@ async function attachEmployeeNames(leaves, orgId) {
     return {
       ...leave,
       employeeName: nameByEmployeeId[employeeId] || employeeId || null,
+      employeePhoto: photoByEmployeeId[employeeId] || null,
       approvedBy: nameByEmployeeId[reviewerId] || reviewerId || null,
     };
   });

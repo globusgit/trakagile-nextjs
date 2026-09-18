@@ -1,28 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
 import { ChevronDown, X } from "lucide-react";
+import EmployeeAvatar from "./EmployeeAvatar";
 
 type Employee = { _id: string; empId: string; name: string; photo?: string };
-
-// Same convention used across the app (employees page, dashboard, live
-// tracking, navbar): employee.photo is a filename served through the
-// authenticated /api/files/employees route; fall back to the shared
-// default-avatar image when nothing has been uploaded.
-function EmployeeAvatar({ name, photo }: { name: string; photo?: string }) {
-  const src = photo ? `/api/files/employees/${encodeURIComponent(photo)}` : "/default-avatar.jpg";
-  return (
-    <Image
-      src={src}
-      alt={name}
-      width={28}
-      height={28}
-      unoptimized
-      className="size-7 shrink-0 rounded-full border object-cover"
-    />
-  );
-}
 
 export default function EmployeeMultiSelect({
   employees,
