@@ -351,6 +351,7 @@ export default function LeavesPage() {
               <p className="font-semibold">Employee Leave Allocation · {currentYear}</p>
               <p className="text-xs text-muted-foreground">Allocations are separate for each employee in this organization.</p>
             </div>
+
             <EmployeeSingleSelect
               employees={allocationEmployees}
               value={allocationUserId}
@@ -361,6 +362,7 @@ export default function LeavesPage() {
               triggerClassName="h-10 w-full text-sm"
               avatarSize={22}
             />
+
             {allocationUserId && (
               <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                 {Object.keys(allocation).map((key) => (
