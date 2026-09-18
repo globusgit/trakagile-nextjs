@@ -24,7 +24,7 @@ const _apiBaseUrl = String.fromEnvironment(
   defaultValue: 'https://trakagile.com',
 );
 
-const _trackingInterval = Duration(minutes: 5);
+const _trackingInterval = Duration(minutes: 1);
 const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
 Future<String?> _readAuthToken() async {

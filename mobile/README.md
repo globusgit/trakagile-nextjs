@@ -14,7 +14,7 @@ flutter build apk --release
 ```
 
 The universal APK is generated at `build/app/outputs/flutter-apk/app-release.apk`.
-Version 1.3.16 uses Android build number 37.
+Version 1.3.17 uses Android build number 38. Tracking heartbeats run every minute.
 
 To target a different backend, pass `--dart-define=API_BASE_URL=https://your-server.example` when building.
 Deploy the matching backend changes before testing the new break endpoints.
