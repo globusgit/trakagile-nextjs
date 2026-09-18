@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { EmployeeNameTag } from "@/app/_components/EmployeeAvatar";
 
 // Roles allowed to edit tasks — keep in sync with TASK_MANAGE_ROLES
 // in app/api/tasks/_lib/tasks.js
@@ -27,7 +28,10 @@ type Reference = {
   state?: string;
 };
 
-type AssignedEmployee = { empId: string; name: string };
+type AssignedEmployee = { empId: string; 
+  name: string;
+  photo?: string | null;
+ };
 
 // A single entry in the task's append-only notes log.
 type Note = {
@@ -49,10 +53,12 @@ type Task = {
   subTaskType?: string;
   createdByName?: string;
   createdByEmpId: string;
+  createdByPhoto?: string | null;
   createdAt: string;
   assignedToEmpIds?: string[];
   assignedToNames?: AssignedEmployee[];
   assignedByName?: string;
+  assignedByPhoto?: string | null;
   assignedAt?: string;
   projectNo?: Reference;
   workOrderNo?: Reference;
@@ -61,7 +67,7 @@ type Task = {
   notes?: Note[];
 };
 
-type Employee = { _id: string; empId: string; name: string };
+type Employee = { _id: string; empId: string; name: string; photo?: string};
 type TaskTypeEntry = { name: string; subTypes: string[] };
 
 function formatDate(value?: string) {
@@ -106,7 +112,7 @@ async function postJson(url: string, body: unknown) {
   return result;
 }
 
-function ReadOnlyField({ label, value }: { label: string; value: string }) {
+function ReadOnlyField({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="space-y-2">
       <Label className="text-muted-foreground">{label}</Label>
@@ -219,6 +225,13 @@ export default function EditTaskPage() {
   // recent note is immediately visible at the top of the panel.
   const displayNotes = useMemo(() => [...notes].reverse(), [notes]);
 
+  const employeePhotoByEmpId = useMemo(() => {
+    const map = new Map<string, string | undefined>();
+    employees.forEach((employee) => map.set(employee.empId, employee.photo));
+    return map;
+  }, [employees]);
+   
+
   const handleTaskTypeChange = (nextValue: string) => {
     setTaskType(nextValue);
     setSubTaskType("");
@@ -313,7 +326,16 @@ export default function EditTaskPage() {
     );
   }
 
-  const assignedToDisplay = (task?.assignedToNames || []).map((employee) => employee.name).join(", ");
+   const assignedToDisplay =
+    task?.assignedToNames && task.assignedToNames.length > 0 ? (
+      <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        {task.assignedToNames.map((employee) => (
+          <EmployeeNameTag key={employee.empId} name={employee.name} photo={employee.photo} size={20} />
+        ))}
+      </span>
+    ) : (
+      ""
+    );
 
   return (
     <div className="space-y-4">
@@ -359,7 +381,9 @@ export default function EditTaskPage() {
 
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                   <ReadOnlyField label="Task ID" value={task.taskId} />
-                  <ReadOnlyField label="Created By" value={task.createdByName || task.createdByEmpId} />
+                  <ReadOnlyField label="Created By"
+                    value={<EmployeeNameTag name={task.createdByName || task.createdByEmpId} photo={task.createdByPhoto} size={20} />}
+                  />
                 </div>
 
                 <ReadOnlyField label="Description" value={task.description} />
@@ -371,7 +395,9 @@ export default function EditTaskPage() {
 
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
                   <ReadOnlyField label="Created Date" value={formatDate(task.createdAt)} />
-                  <ReadOnlyField label="Assigned By" value={task.assignedByName || ""} />
+                  <ReadOnlyField label="Assigned By"
+                    value={task.assignedByName ? <EmployeeNameTag name={task.assignedByName} photo={task.assignedByPhoto} size={20} /> : ""}
+                  />
                   <ReadOnlyField label="Assigned Date" value={formatDate(task.assignedAt)} />
                 </div>
 
@@ -520,8 +546,13 @@ export default function EditTaskPage() {
                 ) : (
                   displayNotes.map((note, index) => (
                     <div key={note._id || index} className="rounded-md border bg-slate-50 p-3 text-sm shadow-sm">
-                      <div className="mb-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                        <span className="font-semibold">{note.authorName || note.authorEmpId}</span>
+                     <div className="mb-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                        <EmployeeNameTag
+                          name={note.authorName || note.authorEmpId}
+                          photo={employeePhotoByEmpId.get(note.authorEmpId)}
+                          size={20}
+                          className="font-semibold"
+                        />
                         <span className="text-xs text-muted-foreground">{formatDateTime(note.createdAt)}</span>
                       </div>
                       <p className="whitespace-pre-wrap">{note.text}</p>

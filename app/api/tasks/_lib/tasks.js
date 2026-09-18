@@ -98,23 +98,30 @@ export async function withEmployeeNames(orgId, tasks) {
   if (!empIds.length) return tasks;
 
   const [employees, users] = await Promise.all([
-    Employee.find({ orgId, empId: { $in: empIds } }).select("empId name").lean(),
+    Employee.find({ orgId, empId: { $in: empIds } }).select("empId name photo").lean(),
     User.find({ orgId, username: { $in: empIds } }).select("username employeeName").lean(),
   ]);
   const nameByEmpId = new Map();
+  const photoByEmpId = new Map();
   users.forEach((user) => nameByEmpId.set(user.username, user.employeeName));
-  employees.forEach((employee) => nameByEmpId.set(employee.empId, employee.name));
+  employees.forEach((employee) => {
+    nameByEmpId.set(employee.empId, employee.name);
+    if (employee.photo) photoByEmpId.set(employee.empId, employee.photo);
+  });
 
   return tasks.map((task) => {
     const assignedToEmpIds = task.assignedToEmpIds || [];
     return {
       ...task,
       createdByName: nameByEmpId.get(task.createdByEmpId) || task.createdByEmpId,
+      createdByPhoto: photoByEmpId.get(task.createdByEmpId) || null,
       assignedToNames: assignedToEmpIds.map((empId) => ({
         empId,
         name: nameByEmpId.get(empId) || empId,
+        photo: photoByEmpId.get(empId) || null,
       })),
       assignedByName: task.assignedByEmpId ? nameByEmpId.get(task.assignedByEmpId) || task.assignedByEmpId : null,
+      assignedByPhoto: task.assignedByEmpId ? photoByEmpId.get(task.assignedByEmpId) || null : null,
     };
   });
 }

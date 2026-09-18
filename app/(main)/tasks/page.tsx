@@ -20,6 +20,8 @@ import {
 import { Pencil, UserPlus } from "lucide-react";
 import { useRegionalSettings } from "@/app/_components/RegionalSettingsProvider";
 import { formatRegionalDate } from "@/lib/regionalFormat.mjs";
+import EmployeeAvatar, { EmployeeNameTag } from "@/app/_components/EmployeeAvatar";
+import EmployeeSingleSelect from "@/app/_components/EmployeeSingleSelect";
 
 // Roles allowed to create tasks, assign tasks and edit tasks via the edit page.
 // Keep in sync with TASK_MANAGE_ROLES in app/api/tasks/_lib/tasks.js
@@ -45,7 +47,8 @@ type Reference = {
   state?: string;
 };
 
-type AssignedEmployee = { empId: string; name: string };
+type AssignedEmployee = { empId: string; name: string; photo?: string | null };
+type Employee = { _id: string; empId: string; name: string; photo?: string };
 
 type Task = {
   _id: string;
@@ -56,11 +59,13 @@ type Task = {
   subTaskType?: string;
   createdByEmpId: string;
   createdByName?: string;
+  createdByPhoto?: string | null;
   createdAt: string;
   assignedToEmpIds?: string[];
   assignedToNames?: AssignedEmployee[];
   assignedByEmpId?: string;
   assignedByName?: string;
+  assignedByPhoto?: string | null;
   assignedAt?: string;
   projectNo?: Reference;
   workOrderNo?: Reference;
@@ -68,8 +73,6 @@ type Task = {
   completedDate?: string;
   closedAt?: string;
 };
-
-type Employee = { _id: string; empId: string; name: string };
 
 // Options for the Task Source -> Task Vertical -> Task Type -> Sub-Task Type
 // cascading filter bar, returned by GET /api/tasks/filters.
@@ -133,7 +136,6 @@ function DescriptionCell({ task, regional }: { task: Task; regional: { locale: s
         </div>
       }
       panelClassName="w-72"
-      portaled
     />
   );
 }
@@ -172,16 +174,33 @@ function AssignedToCell({ assignedToNames }: { assignedToNames?: AssignedEmploye
   const names = assignedToNames || [];
   if (names.length === 0) return <span className="whitespace-nowrap">-</span>;
 
-  const label = names.length > 1 ? "Team" : names[0].name;
+  const trigger =
+    names.length > 1 ? (
+      <span className="flex items-center -space-x-2">
+        {names.slice(0, 3).map((employee) => (
+          <EmployeeAvatar key={employee.empId} name={employee.name} photo={employee.photo} size={22} className="ring-2 ring-background" />
+        ))}
+        {names.length > 3 && (
+          <span className="ml-3 flex size-[22px] items-center justify-center rounded-full border bg-muted text-[10px] font-medium">
+            +{names.length - 3}
+          </span>
+        )}
+      </span>
+    ) : (
+      <EmployeeNameTag name={names[0].name} photo={names[0].photo} size={22} />
+    );
+
   return (
     <HoverPanel
-      trigger={<span className="whitespace-nowrap cursor-default underline decoration-dotted underline-offset-4">{label}</span>}
+      trigger={<span className="inline-flex cursor-default whitespace-nowrap items-center">{trigger}</span>}
       panel={
         <div className="space-y-1">
           <p className="font-semibold">Assigned Employees</p>
-          <ul className="list-disc space-y-0.5 pl-4">
+          <ul className="space-y-1">
             {names.map((employee) => (
-              <li key={employee.empId}>{employee.name} <span className="text-muted-foreground">({employee.empId})</span></li>
+              <li key={employee.empId}>
+                <EmployeeNameTag name={employee.name} photo={employee.photo} empId={employee.empId} size={20} />
+              </li>
             ))}
           </ul>
         </div>
@@ -237,18 +256,16 @@ function StatusCell({
             panel="Assign Task"
           />
         </div>
-        {assigning && (
+               {assigning && (
           <div className="flex items-center gap-1">
-            <select
-              className="h-8 rounded-md border bg-background px-2 text-xs"
+            <EmployeeSingleSelect
+              employees={employees}
               value={pickedEmpId}
-              onChange={(event) => setPickedEmpId(event.target.value)}
-            >
-              <option value="">Select employee...</option>
-              {employees.map((employee) => (
-                <option key={employee._id} value={employee.empId}>{employee.name} ({employee.empId})</option>
-              ))}
-            </select>
+              onChange={setPickedEmpId}
+              placeholder="Select employee..."
+              triggerClassName="h-8 text-xs"
+              avatarSize={18}
+            />
             <Button size="sm" className="h-8" disabled={!pickedEmpId || isBusy} onClick={() => { onAssign(task._id, pickedEmpId); setAssigning(false); }}>
               {isBusy ? "..." : "Assign"}
             </Button>
@@ -681,10 +698,18 @@ export default function TasksPage() {
                     />
                   </TableCell>
                   <TableCell className="whitespace-nowrap">{task.taskType || "-"}</TableCell>
-                  <TableCell className="whitespace-nowrap">{task.createdByName || task.createdByEmpId}</TableCell>
+                                    <TableCell className="whitespace-nowrap">
+                    <EmployeeNameTag name={task.createdByName || task.createdByEmpId} photo={task.createdByPhoto} size={22} />
+                  </TableCell>
                   <TableCell className="whitespace-nowrap">{ageLabel(task.createdAt, task.closedAt, now)}</TableCell>
                   <TableCell><AssignedToCell assignedToNames={task.assignedToNames} /></TableCell>
-                  <TableCell className="whitespace-nowrap">{task.assignedByName || "-"}</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {task.assignedByName ? (
+                      <EmployeeNameTag name={task.assignedByName} photo={task.assignedByPhoto} size={22} />
+                    ) : (
+                      "-"
+                    )}
+                  </TableCell>
                   <TableCell><ReferenceCell reference={task.projectNo} /></TableCell>
                   <TableCell><ReferenceCell reference={task.workOrderNo} /></TableCell>
                   <TableCell><ReferenceCell reference={task.tenderNo} /></TableCell>

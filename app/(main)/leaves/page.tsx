@@ -19,6 +19,8 @@ import { useSession } from "next-auth/react";
 import { Pencil } from "lucide-react";
 // add near the top with the other imports
 import Link from "next/link";
+import { EmployeeNameTag } from "@/app/_components/EmployeeAvatar";
+import EmployeeSingleSelect from "@/app/_components/EmployeeSingleSelect";
 
 export async function fetchLeaves({
   orgId,
@@ -66,6 +68,7 @@ interface LeaveRequestRow {
   _id: string;
   userId: string;
   employeeName?: string | null;
+  employeePhoto?: string | null;
   leaveType: string;
   startDate: string;
   endDate: string;
@@ -433,8 +436,8 @@ export default function LeavesPage() {
                       </button>
                     </TableCell>
 
-                    <TableCell className="font-medium">
-                      {leave.employeeName || leave.userId}
+                   <TableCell className="font-medium">
+                      <EmployeeNameTag name={leave.employeeName || leave.userId} photo={leave.employeePhoto} size={22} />
                     </TableCell>
                     <TableCell className="capitalize">{leave.leaveType}</TableCell>
                     <TableCell>{leave.days}</TableCell>

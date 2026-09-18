@@ -26,11 +26,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { EmployeeNameTag } from "@/app/_components/EmployeeAvatar";
 
 interface LeaveRequestRow {
   _id: string;
   userId: string;
   employeeName?: string | null;
+  employeePhoto?: string | null;
   leaveType: string;
   startDate: string;
   endDate: string;
@@ -287,8 +289,8 @@ export default function LeaveRequestsPage() {
                       </button>
                     </TableCell>
 
-                    <TableCell className="font-medium">
-                      {leave.employeeName || leave.userId}
+                   <TableCell className="font-medium">
+                      <EmployeeNameTag name={leave.employeeName || leave.userId} photo={leave.employeePhoto} size={22} />
                       {isOwn && <span className="block text-[10px] text-muted-foreground">(You)</span>}
                     </TableCell>
                     <TableCell className="capitalize">{leave.leaveType}</TableCell>
