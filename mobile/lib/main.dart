@@ -62,6 +62,7 @@ class AttendanceTrackingService {
   bool _sending = false;
   bool _starting = false;
   bool _capturingHeartbeat = false;
+  bool _trackingRequested = false;
   Future<void> _queueWork = Future<void>.value();
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
@@ -155,6 +156,7 @@ class AttendanceTrackingService {
         return;
       }
 
+      _trackingRequested = true;
       final LocationSettings settings =
           defaultTargetPlatform == TargetPlatform.android
           ? AndroidSettings(
@@ -183,8 +185,12 @@ class AttendanceTrackingService {
               final subscription = _subscription;
               _subscription = null;
               unawaited(subscription?.cancel());
+              _scheduleRestart();
             },
-            onDone: () => _subscription = null,
+            onDone: () {
+              _subscription = null;
+              _scheduleRestart();
+            },
           );
       _heartbeatTimer?.cancel();
       _heartbeatTimer = Timer.periodic(
@@ -199,6 +205,7 @@ class AttendanceTrackingService {
   }
 
   Future<void> stop() async {
+    _trackingRequested = false;
     await _flushQueue();
     await _subscription?.cancel();
     _subscription = null;
@@ -208,6 +215,16 @@ class AttendanceTrackingService {
     _heartbeatTimer = null;
     // Stopping attendance tracking is not signing out. The next Mark In and
     // other authenticated actions still need the login token.
+  }
+
+  void _scheduleRestart() {
+    if (!_trackingRequested || _retryTimer != null) return;
+    // Android can end a location stream while the app process remains alive.
+    // Recreate it after a short delay without creating duplicate streams.
+    _retryTimer = Timer(const Duration(seconds: 30), () {
+      _retryTimer = null;
+      if (_trackingRequested) unawaited(restore());
+    });
   }
 
   Future<void> _captureHeartbeat() async {
