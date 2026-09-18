@@ -14,6 +14,7 @@ export type EmployeeLocation = {
   attendanceDate: string; markInAt?: string | null; markOutAt?: string | null; attendanceStatus: "IN" | "OUT";
   trackingStatus?: "ACTIVE" | "DELAYED" | "OFFLINE" | "STOPPED"; totalDistanceMeters?: number; route: RoutePoint[];
   accuracy?: number | null; events?: RoutePoint[];
+  break?: { type?: string; reason?: string; startedAt?: string; elapsedMinutes?: number } | null;
 };
 
 // Dashboard and Live Tracking share the same map, status and event presentation.

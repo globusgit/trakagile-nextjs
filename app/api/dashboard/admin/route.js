@@ -6,12 +6,13 @@ import { visibleEmployeeIds } from "@/lib/access";
 import { dayKey, errorResponse, getAttendancePolicy, requireAttendanceUser } from "../../attendance/_lib/attendance";
 import { PERMISSIONS, rolesForPermission } from "@/lib/permissions.mjs";
 
-export async function GET() {
+export async function GET(request) {
   try {
     await connectDB();
     const identity = await requireAttendanceUser(rolesForPermission(PERMISSIONS.DASHBOARD_TEAM_READ));
     const policy = await getAttendancePolicy(identity.orgId);
     const visibleIds = await visibleEmployeeIds(identity);
+    const selectedDate = new URL(request.url).searchParams.get("date") || dayKey(new Date(), policy.timeZone);
     const employees = await Employee.find({
       orgId: identity.orgId,
       status: "Active",
@@ -22,27 +23,24 @@ export async function GET() {
       .lean();
     const empIds = employees.map((employee) => employee.empId);
     const attendance = empIds.length
-      ? await Attendance.find({ orgId: identity.orgId, empId: { $in: empIds } })
+      ? await Attendance.find({ orgId: identity.orgId, empId: { $in: empIds }, attendanceDate: selectedDate })
           .select("empId attendanceDate status trackingStatus totalDistanceMeters lastKnownLocation lastKnownLocationName lastLocationReceivedAt markIn markOut updatedAt")
           .sort({ attendanceDate: -1, updatedAt: -1 })
           .lean()
       : [];
 
-    const today = dayKey(new Date(), policy.timeZone);
-    const presentIds = new Set(attendance.filter((item) => item.attendanceDate === today).map((item) => item.empId));
-    // A monitoring dashboard must never present an older attendance location
-    // as if it were live. Only today's marked attendance belongs on this map.
-    const todayByEmployee = new Map();
+    const presentIds = new Set(attendance.map((item) => item.empId));
+    const selectedDateByEmployee = new Map();
     for (const item of attendance) {
-      if (item.attendanceDate === today && !todayByEmployee.has(item.empId)) {
-        todayByEmployee.set(item.empId, item);
+      if (!selectedDateByEmployee.has(item.empId)) {
+        selectedDateByEmployee.set(item.empId, item);
       }
     }
-    const todayAttendance = [...todayByEmployee.values()];
-    const tracks = await attendanceTracks(identity.orgId, todayAttendance);
+    const selectedAttendance = [...selectedDateByEmployee.values()];
+    const tracks = await attendanceTracks(identity.orgId, selectedAttendance);
 
     const locations = employees.flatMap((employee) => {
-      const item = todayByEmployee.get(employee.empId);
+      const item = selectedDateByEmployee.get(employee.empId);
       const track = tracks.get(String(item?._id));
       const point = track?.location;
       if (!point || !Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)) return [];
@@ -72,7 +70,7 @@ export async function GET() {
     });
 
     return Response.json({
-      date: today,
+      date: selectedDate,
       summary: {
         totalEmployees: employees.length,
         present: presentIds.size,

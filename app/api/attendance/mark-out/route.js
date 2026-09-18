@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { connectDB } from "@/lib/mongoose";
+import Break from "@/models/Break";
 import EmployeeVisit from "@/models/EmployeeVisit";
 import TrackingLocation from "@/models/TrackingLocation";
 import WorkFromHomeRequest from "@/models/WorkFromHomeRequest";
@@ -69,7 +70,28 @@ export async function POST(request) {
         throw new AttendanceError("Complete the active visit before marking out.", 409);
       }
 
-      let wfhBreakMinutes = attendance.wfh?.totalBreakMinutes || 0;
+      const activeBreak = attendance.currentBreakId
+        ? await Break.findById(attendance.currentBreakId).session(dbSession)
+        : null;
+      if (activeBreak && activeBreak.status === "ACTIVE") {
+        const breakEnd = new Date();
+        const breakDurationMinutes = Math.max(
+          0,
+          Math.round((breakEnd.getTime() - new Date(activeBreak.startTime).getTime()) / 60000)
+        );
+        await Break.findByIdAndUpdate(
+          activeBreak._id,
+          { endTime: breakEnd, durationMinutes: breakDurationMinutes, status: "COMPLETED" },
+          { session: dbSession, new: true }
+        );
+        attendance.set({
+          currentBreakId: undefined,
+          breakStartedAt: undefined,
+          totalBreakMinutes: (attendance.totalBreakMinutes || 0) + breakDurationMinutes,
+        });
+      }
+
+      let wfhBreakMinutes = attendance.totalBreakMinutes || 0;
       if (attendance.attendanceType === "WORK_FROM_HOME") {
         const device = deviceFrom(body, request);
         assertBoundDevice(attendance, device);

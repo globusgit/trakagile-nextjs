@@ -21,10 +21,32 @@ export const DEFAULT_ATTENDANCE_POLICY = {
   officeGeofence: {
     enabled: false,
     name: "Main Office",
+    latitude: undefined,
+    longitude: undefined,
     radiusMeters: 300,
     maximumAccuracyMeters: 100,
   },
+  geofences: [],
 };
+
+export function resolveAttendanceGeofences(policy) {
+  const geofences = Array.isArray(policy?.geofences) && policy.geofences.length
+    ? policy.geofences
+    : policy?.officeGeofence
+      ? [policy.officeGeofence]
+      : [];
+
+  return geofences
+    .filter((geofence) => geofence && typeof geofence === "object")
+    .map((geofence) => ({
+      enabled: geofence.enabled === true,
+      name: String(geofence.name || "Main Office").trim() || "Main Office",
+      latitude: geofence.latitude == null ? undefined : Number(geofence.latitude),
+      longitude: geofence.longitude == null ? undefined : Number(geofence.longitude),
+      radiusMeters: Number.isFinite(Number(geofence.radiusMeters)) ? Number(geofence.radiusMeters) : 300,
+      maximumAccuracyMeters: Number.isFinite(Number(geofence.maximumAccuracyMeters)) ? Number(geofence.maximumAccuracyMeters) : 100,
+    }));
+}
 
 export const MARK_OUT_ENABLE_MINUTES = 18 * 60;
 
@@ -102,12 +124,23 @@ export async function getAttendancePolicy(orgId) {
     AttendancePolicy.findOne({ orgId }).lean(),
     Organization.findOne(organizationIdentityFilter(orgId)).select("timeZone").lean(),
   ]);
-  return {
+
+  const normalized = {
     ...DEFAULT_ATTENDANCE_POLICY,
     ...(policy || {}),
+    geofences: Array.isArray(policy?.geofences) && policy.geofences.length
+      ? policy.geofences
+      : policy?.officeGeofence
+        ? [policy.officeGeofence]
+        : DEFAULT_ATTENDANCE_POLICY.geofences,
+    officeGeofence: policy?.officeGeofence || DEFAULT_ATTENDANCE_POLICY.officeGeofence,
     timeZone: policy?.timeZone || organization?.timeZone || DEFAULT_ATTENDANCE_POLICY.timeZone,
     orgId,
   };
+
+  if (!normalized.geofences.length && normalized.officeGeofence) normalized.geofences = [normalized.officeGeofence];
+  if (normalized.geofences.length && !normalized.officeGeofence) normalized.officeGeofence = normalized.geofences[0];
+  return normalized;
 }
 
 export function minutesInTimeZone(date, timeZone) {
@@ -189,13 +222,13 @@ export function locationFrom(body, now = new Date(), options = {}) {
   const longitude = Number(body.longitude);
   const accuracy = body.accuracy == null ? undefined : Number(body.accuracy);
 
-  if (Number.isNaN(latitude) || Number.isInfinity(latitude) || latitude < -90 || latitude > 90) {
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
     throw new AttendanceError("Latitude must be between -90 and 90.");
   }
-  if (Number.isNaN(longitude) || Number.isInfinity(longitude) || longitude < -180 || longitude > 180) {
+  if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
     throw new AttendanceError("Longitude must be between -180 and 180.");
   }
-  if (accuracy != null && (Number.isNaN(accuracy) || Number.isInfinity(accuracy) || accuracy < 0)) {
+  if (accuracy != null && (!Number.isFinite(accuracy) || accuracy < 0)) {
     throw new AttendanceError("Accuracy must be a positive number.");
   }
 
@@ -217,10 +250,10 @@ export function movementFrom(body) {
   const speed = body.speed == null ? null : Number(body.speed);
   const heading = body.heading == null ? null : Number(body.heading);
 
-  if (speed != null && (Number.isNaN(speed) || Number.isInfinity(speed) || speed < 0)) {
+  if (speed != null && (!Number.isFinite(speed) || speed < 0)) {
     throw new AttendanceError("Speed must be a positive number.");
   }
-  if (heading != null && (Number.isNaN(heading) || Number.isInfinity(heading) || heading < 0 || heading > 360)) {
+  if (heading != null && (!Number.isFinite(heading) || heading < 0 || heading > 360)) {
     throw new AttendanceError("Heading must be between 0 and 360.");
   }
 

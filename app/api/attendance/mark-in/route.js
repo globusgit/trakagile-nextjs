@@ -15,6 +15,7 @@ import {
   locationFrom,
   minutesInTimeZone,
   requireAttendanceUser,
+  resolveAttendanceGeofences,
 } from "../_lib/attendance";
 import { notifyAttendance, reverseGeocode } from "../_lib/notifications";
 import { deviceFrom } from "../../wfh/_lib/device";
@@ -52,20 +53,30 @@ export async function POST(request) {
       : null;
     const policy = await getAttendancePolicy(identity.orgId);
 
-    if (attendanceType === "OFFICE" && policy.officeGeofence?.enabled) {
-      const office = policy.officeGeofence;
-      if (location.accuracy != null && location.accuracy > office.maximumAccuracyMeters) {
-        throw new AttendanceError(
-          `GPS accuracy is ${Math.round(location.accuracy)} m. Move to an open area and retry with accuracy below ${office.maximumAccuracyMeters} m.`,
-          409,
-        );
-      }
-      const distance = distanceBetween(location, office);
-      if (distance > office.radiusMeters) {
-        throw new AttendanceError(
-          `You are ${Math.round(distance)} m from ${office.name || "the office"}. Office attendance is allowed within ${office.radiusMeters} m.`,
-          409,
-        );
+    if (attendanceType === "OFFICE") {
+      const geofences = resolveAttendanceGeofences(policy).filter((geofence) => geofence.enabled);
+      if (geofences.length) {
+        let matched = false;
+        let reason = "Office attendance is allowed only inside the configured geofence.";
+        let furthest = 0;
+
+        for (const geofence of geofences) {
+          if (!Number.isFinite(geofence.latitude) || !Number.isFinite(geofence.longitude)) continue;
+          if (location.accuracy != null && location.accuracy > geofence.maximumAccuracyMeters) {
+            continue;
+          }
+          const distance = distanceBetween(location, geofence);
+          furthest = Math.max(furthest, distance);
+          if (distance <= geofence.radiusMeters) {
+            matched = true;
+            break;
+          }
+          reason = `You are ${Math.round(distance)} m from ${geofence.name}. Office attendance is allowed within ${geofence.radiusMeters} m.`;
+        }
+
+        if (!matched) {
+          throw new AttendanceError(reason, 409);
+        }
       }
     }
 

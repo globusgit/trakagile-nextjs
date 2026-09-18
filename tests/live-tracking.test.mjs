@@ -26,7 +26,7 @@ function fixture({ employees = [], attendances = [], tracks = new Map() } = {}) 
     [resolveDep("@/lib/mongoose")]: { connectDB: async () => {} },
     [resolveDep("@/models/Attendance")]: { default: {
       find: (query) => ({
-        sort: (sort) => ({
+        sort: () => ({
           limit: (lim) => ({
             lean: async () => attendances.filter((a) => {
               if (query.orgId && a.orgId !== query.orgId) return false;
@@ -39,8 +39,8 @@ function fixture({ employees = [], attendances = [], tracks = new Map() } = {}) 
       }),
     } },
     [resolveDep("@/models/Employee")]: { default: {
-      find: (query) => ({
-        select: (fields) => ({
+      find: () => ({
+        select: () => ({
           lean: async () => employees.map((e) => ({
             name: e.name, empId: e.empId, photo: e.photo, reportingTo: e.reportingTo ?? null,
           })),
@@ -60,12 +60,13 @@ function fixture({ employees = [], attendances = [], tracks = new Map() } = {}) 
     [resolveDep("@/lib/attendanceTracks")]: {
       attendanceTracks: async () => tracks,
     },
+    [resolveDep("@/models/Break")]: { default: { find: () => ({ select: () => ({ lean: async () => [] }) }) } },
     [resolveDep("@/lib/trackingPolicy.mjs")]: { TRACKING_STALE_MS: 6 * 60_000 },
     [resolveDep("../_lib/notifications")]: {
       notifyAttendance: async (opts) => { storedNotifications.push(opts); },
     },
     [resolveDep("../_lib/work-status")]: {
-      workStatusFor: (attendance, location) => ({
+      workStatusFor: (attendance) => ({
         state: attendance.status === "IN" ? "VERIFIED" : "STOPPED",
         label: attendance.status === "IN" ? "Online" : "Not working",
       }),
