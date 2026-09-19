@@ -3681,6 +3681,8 @@ class _ModuleScreenState extends State<ModuleScreen> {
                   latest: latest,
                   triggers: points,
                   movements: movements,
+                  apiBaseUrl: _apiBaseUrl,
+                  employeePhoto: '${employee['photo'] ?? ''}',
                 )
               else
                 const SizedBox(
@@ -4084,6 +4086,9 @@ class _ModuleScreenState extends State<ModuleScreen> {
                               '${selectedEmployee['name'] ?? selectedEmployee['empId']}',
                           teamItems: employees,
                           height: constraints.maxHeight - 104,
+                          apiBaseUrl: _apiBaseUrl,
+                          employeePhoto:
+                              '${selectedEmployee['employee']['photo'] ?? ''}',
                         ),
                 ),
               ],
@@ -4711,6 +4716,8 @@ class _LiveTrackingDialogState extends State<_LiveTrackingDialog> {
               latest: latest,
               triggers: triggers,
               movements: movements,
+              apiBaseUrl: _apiBaseUrl,
+              employeePhoto: '${_item['employee']['photo'] ?? ''}',
             )
           else
             const SizedBox(
@@ -4859,6 +4866,8 @@ class _LiveTrackingMap extends StatelessWidget {
     this.employeeName,
     this.teamItems = const [],
     this.height = 430,
+    this.apiBaseUrl,
+    this.employeePhoto,
   });
 
   final Map latest;
@@ -4867,6 +4876,38 @@ class _LiveTrackingMap extends StatelessWidget {
   final String? employeeName;
   final List teamItems;
   final double height;
+  final String? apiBaseUrl;
+  final String? employeePhoto;
+
+  String? _avatarUrl(String? photo) {
+    if (photo == null || photo.isEmpty || apiBaseUrl == null) return null;
+    return '$apiBaseUrl/api/files/employees/${Uri.encodeComponent(photo)}';
+  }
+
+  Widget _buildAvatar(String? photo, double radius, {Color? backgroundColor, String? fallbackName}) {
+    final url = _avatarUrl(photo);
+    if (url == null) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: backgroundColor ?? const Color(0xFF073552),
+        child: Text(
+          _mobileInitials(fallbackName ?? employeeName ?? ''),
+          style: TextStyle(
+            color: backgroundColor == null ? const Color(0xFF67E8F9) : Colors.white,
+            fontSize: radius * 0.9,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
+    }
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: backgroundColor ?? const Color(0xFF14BCEB),
+      backgroundImage: NetworkImage(url),
+      onBackgroundImageError: (exception, stackTrace) {},
+      child: null,
+    );
+  }
 
   LatLng? _coordinate(dynamic value) {
     if (value is! Map) return null;
@@ -4992,93 +5033,91 @@ class _LiveTrackingMap extends StatelessWidget {
                   ),
                 MarkerLayer(
                   markers: [
-                    for (final markerEntry in teamGroups.values.indexed)
-                      Marker(
-                        point: markerEntry.$2.first.$2,
-                        width: 58,
-                        height: 58,
-                        child: Container(
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF071524),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color:
-                                  routeColors[markerEntry.$1 %
-                                      routeColors.length],
-                              width: 3,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                blurRadius: 18,
-                                spreadRadius: 4,
-                                color:
-                                    routeColors[markerEntry.$1 %
-                                            routeColors.length]
-                                        .withValues(alpha: 0.42),
-                              ),
-                            ],
-                          ),
-                          child: Text(
-                            markerEntry.$2.length > 1
-                                ? '${markerEntry.$2.length}'
-                                : _mobileInitials(
-                                    '${(markerEntry.$2.first.$1['employee'] as Map?)?['name'] ?? ''}',
+                     for (final markerEntry in teamGroups.values.indexed)
+                       Marker(
+                         point: markerEntry.$2.first.$2,
+                         width: 58,
+                         height: 58,
+                         child: Container(
+                           alignment: Alignment.center,
+                           decoration: BoxDecoration(
+                             color: const Color(0xFF071524),
+                             shape: BoxShape.circle,
+                             border: Border.all(
+                               color:
+                                   routeColors[markerEntry.$1 %
+                                       routeColors.length],
+                               width: 3,
+                             ),
+                             boxShadow: [
+                               BoxShadow(
+                                 blurRadius: 18,
+                                 spreadRadius: 4,
+                                 color:
+                                     routeColors[markerEntry.$1 %
+                                             routeColors.length]
+                                         .withValues(alpha: 0.42),
+                               ),
+                             ],
+                           ),
+                           child: markerEntry.$2.length > 1
+                               ? Text(
+                                   '${markerEntry.$2.length}',
+                                   style: TextStyle(
+                                     color: routeColors[markerEntry.$1 %
+                                         routeColors.length],
+                                     fontWeight: FontWeight.w800,
+                                   ),
+                                 )
+                                : _buildAvatar(
+                                    '${(markerEntry.$2.first.$1['employee'] as Map?)?['photo'] ?? ''}',
+                                    22,
+                                    backgroundColor: const Color(0xFF073552),
+                                    fallbackName: '${(markerEntry.$2.first.$1['employee'] as Map?)?['name'] ?? ''}',
                                   ),
-                            style: TextStyle(
-                              color:
-                                  routeColors[markerEntry.$1 %
-                                      routeColors.length],
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ),
-                    for (final entry in triggerEntries.indexed)
-                      Marker(
-                        point: entry.$2.$2!,
-                        width: 150,
-                        height: 54,
-                        child: Column(
-                          children: [
-                            Container(
-                              constraints: const BoxConstraints(maxWidth: 145),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xE6071524),
-                                border: Border.all(
-                                  color: const Color(0x5522D3EE),
-                                ),
-                                borderRadius: BorderRadius.circular(6),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    blurRadius: 3,
-                                    color: Colors.black26,
-                                  ),
-                                ],
-                              ),
-                              child: Text(
-                                '${entry.$2.$1['type'] == 'MARK_IN' ? 'MARK IN' : 'T${entry.$1 + 1}'} · ${_name(entry.$2.$1)}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                            const Icon(
-                              Icons.location_on,
-                              color: Colors.deepPurple,
-                              size: 28,
-                            ),
-                          ],
-                        ),
-                      ),
+                         ),
+                       ),
+                     for (final entry in triggerEntries.indexed)
+                       Marker(
+                         point: entry.$2.$2!,
+                         width: 36,
+                         height: 48,
+                         child: Column(
+                           children: [
+                             _buildAvatar(employeePhoto, 14, backgroundColor: const Color(0xFF0ea5e9)),
+                             const SizedBox(height: 2),
+                             Container(
+                               constraints: const BoxConstraints(maxWidth: 80),
+                               padding: const EdgeInsets.symmetric(
+                                 horizontal: 4,
+                                 vertical: 2,
+                               ),
+                               decoration: BoxDecoration(
+                                 color: const Color(0xE6071524),
+                                 border: Border.all(
+                                   color: const Color(0x5522D3EE),
+                                 ),
+                                 borderRadius: BorderRadius.circular(4),
+                               ),
+                               child: Text(
+                                 '${entry.$2.$1['type'] == 'MARK_IN' ? 'IN' : 'T${entry.$1 + 1}'}',
+                                 maxLines: 1,
+                                 overflow: TextOverflow.ellipsis,
+                                 style: const TextStyle(
+                                   color: Colors.white,
+                                   fontSize: 9,
+                                   fontWeight: FontWeight.w800,
+                                 ),
+                               ),
+                             ),
+                             const Icon(
+                               Icons.location_on,
+                               color: Colors.deepPurple,
+                               size: 20,
+                             ),
+                           ],
+                         ),
+                       ),
                     Marker(
                       point: latestCoordinate,
                       width: 150,

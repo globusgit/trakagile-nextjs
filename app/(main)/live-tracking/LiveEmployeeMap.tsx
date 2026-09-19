@@ -4,7 +4,7 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import Image from "next/image";
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { Circle, CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
+import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
 import { AlertTriangle, Clock3, Crosshair, Gauge, MapPin, Navigation, Radio, Route, Search, Users, Coffee } from "lucide-react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -41,6 +41,11 @@ function avatarIcon(employee: EmployeeLocation) {
 function triggerIcon(index: number, kind: string) {
   const color = kind === "MARK_IN" ? "#10b981" : kind === "MARK_OUT" ? "#64748b" : "#0ea5e9";
   return L.divIcon({ className: "ops-trigger-marker", html: `<div style="--trigger:${color}"><span>${kind === "MARK_IN" ? "IN" : kind === "MARK_OUT" ? "OUT" : index}</span></div>`, iconSize: [32, 38], iconAnchor: [16, 36] });
+}
+
+function triggerAvatarIcon(employee: EmployeeLocation, index: number) {
+  const src = employee.photo ? `/api/files/employees/${encodeURIComponent(employee.photo)}` : "/default-avatar.jpg";
+  return L.divIcon({ className: "ops-trigger-avatar-marker", html: `<div><img src="${src}" alt="Trigger ${index + 1}"><span></span></div>`, iconSize: [34, 46], iconAnchor: [17, 46] });
 }
 
 function liveIcon(heading = 0) {
@@ -87,7 +92,7 @@ export default function LiveEmployeeMap({ locations, selectedEmpId, onSelectEmpl
             const label = point.type === "MARK_IN" ? "Marked in" : point.type === "MARK_OUT" ? "Marked out" : `Trigger ${number}`;
             const details = <><Popup><strong>{label}</strong><br />{time(point.capturedAt)}<br />{point.locationName || "GPS location recorded"}<br /><span className="font-mono text-xs">{coordinates(point.latitude, point.longitude)}</span>{point.accuracy != null && <><br />Accuracy ±{Math.round(point.accuracy)} m</>}</Popup><Tooltip>{label} · {time(point.capturedAt)}</Tooltip></>;
             return point.type === "TRIGGER"
-              ? <CircleMarker key={`${point.capturedAt}-${index}`} center={[point.latitude, point.longitude]} radius={4} pathOptions={{ color: "#fff", weight: 1, fillColor: "#0284c7", fillOpacity: 1 }}>{details}</CircleMarker>
+              ? <Marker key={`${point.capturedAt}-${index}`} position={[point.latitude, point.longitude]} icon={triggerAvatarIcon(selected, number)}>{details}</Marker>
               : <Marker key={`${point.capturedAt}-${index}`} position={[point.latitude, point.longitude]} icon={triggerIcon(number, point.type)}>{details}</Marker>;
           })}
           {showAccuracy && latestAccuracy != null && <Circle center={[selected.latitude, selected.longitude]} radius={Math.min(60, Math.max(5, latestAccuracy))} pathOptions={{ color: "#0ea5e9", fillColor: "#38bdf8", fillOpacity: .08, weight: 1 }} />}

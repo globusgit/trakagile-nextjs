@@ -236,6 +236,10 @@
 .ops-avatar-marker span { position: absolute; right: 0; bottom: 1px; width: 11px; height: 11px; border: 2px solid white; border-radius: 999px; background: #10b981; }
 .ops-trigger-marker div { display: grid; width: 30px; height: 30px; place-items: center; border: 3px solid white; border-radius: 999px 999px 999px 3px; color: white; background: var(--trigger); box-shadow: 0 5px 14px rgb(15 23 42 / .28); font-size: 10px; font-weight: 800; transform: rotate(-45deg); }
 .ops-trigger-marker div span { transform: rotate(45deg); }
+.ops-trigger-avatar-marker { border: 0; background: transparent; }
+.ops-trigger-avatar-marker > div { position: relative; width: 34px; height: 34px; border: 2.5px solid #fff; border-radius: 999px; background: #fff; box-shadow: 0 5px 16px rgb(15 23 42 / .28); }
+.ops-trigger-avatar-marker img { width: 29px; height: 29px; border-radius: 999px; object-fit: cover; }
+.ops-trigger-avatar-marker span { position: absolute; right: 0; bottom: 0; width: 10px; height: 10px; border: 2px solid white; border-radius: 999px; background: #0ea5e9; }
 .ops-live-marker div { display: grid; width: 48px; height: 48px; place-items: center; border: 1px solid rgb(14 165 233 / .45); border-radius: 999px; background: rgb(14 165 233 / .16); animation: ops-pulse 2s ease-out infinite; }
 .ops-live-marker span { display: grid; width: 32px; height: 32px; place-items: center; border: 3px solid white; border-radius: 999px; color: white; background: #0284c7; box-shadow: 0 6px 18px rgb(2 132 199 / .4); }
 .ops-avatar-tooltip { max-width: 220px; white-space: normal; text-align: left; line-height: 1.35; }
