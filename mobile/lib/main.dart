@@ -4004,35 +4004,28 @@ class _ModuleScreenState extends State<ModuleScreen> {
                                           )
                                         : null,
                                   ),
-                                  child: Column(
-                                    children: [
-                                      Stack(
-                                        clipBehavior: Clip.none,
-                                        children: [
-                                          CircleAvatar(
-                                            radius: 22,
-                                            backgroundColor: const Color(
-                                              0xFF14BCEB,
-                                            ),
-                                            child: Text(
-                                              _mobileInitials(name),
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                            ),
-                                          ),
-                                          Positioned(
-                                            right: -2,
-                                            bottom: 1,
-                                            child: Container(
-                                              width: 12,
-                                              height: 12,
-                                              decoration: BoxDecoration(
-                                                color: fresh
-                                                    ? const Color(0xFF35D05B)
-                                                    : const Color(0xFFFFB020),
-                                                shape: BoxShape.circle,
+                                   child: Column(
+                                     children: [
+                                       Stack(
+                                         clipBehavior: Clip.none,
+                                         children: [
+                                           _buildAvatar(
+                                             '${(item['employee'] as Map?)?['photo'] ?? ''}',
+                                             22,
+                                             backgroundColor: const Color(0xFF14BCEB),
+                                             fallbackName: name,
+                                           ),
+                                           Positioned(
+                                             right: -2,
+                                             bottom: 1,
+                                             child: Container(
+                                               width: 12,
+                                               height: 12,
+                                               decoration: BoxDecoration(
+                                                 color: fresh
+                                                     ? const Color(0xFF35D05B)
+                                                     : const Color(0xFFFFB020),
+                                                 shape: BoxShape.circle,
                                                 border: Border.all(
                                                   color: const Color(
                                                     0xFF073552,
@@ -4148,17 +4141,11 @@ class _ModuleScreenState extends State<ModuleScreen> {
                             Stack(
                               clipBehavior: Clip.none,
                               children: [
-                                CircleAvatar(
-                                  radius: 18,
+                                _buildAvatar(
+                                  '${(item['employee'] as Map?)?['photo'] ?? ''}',
+                                  18,
                                   backgroundColor: const Color(0xFF073552),
-                                  child: Text(
-                                    _mobileInitials(name),
-                                    style: const TextStyle(
-                                      color: Color(0xFF67E8F9),
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
+                                  fallbackName: name,
                                 ),
                                 Positioned(
                                   right: -1,
@@ -4231,16 +4218,11 @@ class _ModuleScreenState extends State<ModuleScreen> {
               padding: const EdgeInsets.fromLTRB(14, 12, 12, 8),
               child: Row(
                 children: [
-                  CircleAvatar(
-                    radius: 25,
+                  _buildAvatar(
+                    '${selectedEmployee['photo'] ?? ''}',
+                    25,
                     backgroundColor: const Color(0xFF14BCEB),
-                    child: Text(
-                      _mobileInitials('${selectedEmployee['name'] ?? ''}'),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
+                    fallbackName: '${selectedEmployee['name'] ?? ''}',
                   ),
                   const SizedBox(width: 9),
                   Expanded(
