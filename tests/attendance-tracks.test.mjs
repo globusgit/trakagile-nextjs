@@ -193,8 +193,30 @@ test("locationTriggerPoints filtering", async () => {
   });
   const result = await f.attendanceTracks("org", [att]);
   const track = result.get("a1");
-  assert.equal(track.triggerPoints.length, 3);
+  assert.equal(track.triggerPoints.length, 4);
   assert.equal(track.triggerPoints[0].type, "MARK_IN");
   assert.equal(track.triggerPoints[1].type, "LOCATION_TRIGGER");
   assert.equal(track.triggerPoints[2].type, "LOCATION_TRIGGER");
+});
+
+test("unflagged moved points remain visible as trigger points", async () => {
+  const att = makeAttendance("a1", {
+    markIn: { location: { latitude: 17.42, longitude: 78.38, accuracy: 5 } },
+  });
+  const f = fixture({
+    attendances: [att],
+    aggregateResult: [{
+      _id: "a1",
+      points: [{
+        capturedAt: new Date("2026-09-05T08:01:00Z"),
+        latitude: 17.43,
+        longitude: 78.39,
+        accuracy: 5,
+      }],
+    }],
+  });
+  const track = (await f.attendanceTracks("org", [att])).get("a1");
+  assert.equal(track.triggerPoints.length, 2);
+  assert.equal(track.triggerPoints[0].type, "MARK_IN");
+  assert.equal(track.triggerPoints[1].type, "LOCATION_TRIGGER");
 });

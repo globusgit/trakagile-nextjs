@@ -4,7 +4,7 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import Image from "next/image";
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { Circle, CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
+import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
 import { AlertTriangle, Clock3, Crosshair, Gauge, MapPin, Navigation, Radio, Route, Search, Users, Coffee } from "lucide-react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -43,6 +43,15 @@ function triggerIcon(index: number, kind: string) {
   return L.divIcon({ className: "ops-trigger-marker", html: `<div style="--trigger:${color}"><span>${kind === "MARK_IN" ? "IN" : kind === "MARK_OUT" ? "OUT" : index}</span></div>`, iconSize: [32, 38], iconAnchor: [16, 36] });
 }
 
+function isTrigger(point: { type?: string }) {
+  return point.type === "TRIGGER" || point.type === "LOCATION_TRIGGER";
+}
+
+function triggerAvatarIcon(employee: EmployeeLocation, index: number) {
+  const src = employee.photo ? `/api/files/employees/${encodeURIComponent(employee.photo)}` : "/default-avatar.jpg";
+  return L.divIcon({ className: "ops-trigger-avatar-marker", html: `<div><img src="${src}" alt="Trigger ${index + 1}"><span></span></div>`, iconSize: [34, 46], iconAnchor: [17, 46] });
+}
+
 function liveIcon(heading = 0) {
   return L.divIcon({ className: "ops-live-marker", html: `<div><span>${renderToStaticMarkup(<Navigation size={20} fill="currentColor" style={{ transform: `rotate(${heading}deg)` }} />)}</span></div>`, iconSize: [48, 48], iconAnchor: [24, 24] });
 }
@@ -61,7 +70,7 @@ export default function LiveEmployeeMap({ locations, selectedEmpId, onSelectEmpl
   const triggerPoints = (selected?.events || []).slice(-8);
   const recentRoute = (selected?.route || []).slice(-30);
   const routeSegments = splitLocationTrack(recentRoute);
-  const triggerNumber = (index: number) => triggerPoints.slice(0, index + 1).filter((point) => point.type === "TRIGGER").length;
+  const triggerNumber = (index: number) => triggerPoints.slice(0, index + 1).filter(isTrigger).length;
   const latestAccuracy = selected?.accuracy;
   const delayed = locations.filter((employee) => ["Delayed", "Offline"].includes(status(employee).label)).length;
   const totalDistance = locations.reduce((sum, employee) => sum + (employee.totalDistanceMeters || 0), 0) / 1000;
@@ -74,7 +83,7 @@ export default function LiveEmployeeMap({ locations, selectedEmpId, onSelectEmpl
       <Kpi icon={<Users />} tone="emerald" label="Active now" value={locations.filter((employee) => employee.attendanceStatus === "IN").length} note="On duty" />
       <Kpi icon={<Clock3 />} tone="amber" label="Delayed" value={delayed} note="GPS needs attention" />
       <Kpi icon={<Route />} tone="blue" label="Distance today" value={`${totalDistance.toFixed(1)} km`} note="Team total" />
-      <Kpi icon={<AlertTriangle />} tone="rose" label="Triggers" value={locations.reduce((sum, employee) => sum + (employee.events || []).filter((point) => point.type === "TRIGGER").length, 0)} note="Recorded GPS updates" />
+      <Kpi icon={<AlertTriangle />} tone="rose" label="Triggers" value={locations.reduce((sum, employee) => sum + (employee.events || []).filter(isTrigger).length, 0)} note="Recorded GPS updates" />
     </section>
     <div className="ops-workspace">
       <div className="ops-map-wrap">
@@ -86,8 +95,8 @@ export default function LiveEmployeeMap({ locations, selectedEmpId, onSelectEmpl
             const number = triggerNumber(index);
             const label = point.type === "MARK_IN" ? "Marked in" : point.type === "MARK_OUT" ? "Marked out" : `Trigger ${number}`;
             const details = <><Popup><strong>{label}</strong><br />{time(point.capturedAt)}<br />{point.locationName || "GPS location recorded"}<br /><span className="font-mono text-xs">{coordinates(point.latitude, point.longitude)}</span>{point.accuracy != null && <><br />Accuracy ±{Math.round(point.accuracy)} m</>}</Popup><Tooltip>{label} · {time(point.capturedAt)}</Tooltip></>;
-            return point.type === "TRIGGER"
-              ? <CircleMarker key={`${point.capturedAt}-${index}`} center={[point.latitude, point.longitude]} radius={4} pathOptions={{ color: "#fff", weight: 1, fillColor: "#0284c7", fillOpacity: 1 }}>{details}</CircleMarker>
+            return isTrigger(point)
+              ? <Marker key={`${point.capturedAt}-${index}`} position={[point.latitude, point.longitude]} icon={triggerAvatarIcon(selected, number)}>{details}</Marker>
               : <Marker key={`${point.capturedAt}-${index}`} position={[point.latitude, point.longitude]} icon={triggerIcon(number, point.type)}>{details}</Marker>;
           })}
           {showAccuracy && latestAccuracy != null && <Circle center={[selected.latitude, selected.longitude]} radius={Math.min(60, Math.max(5, latestAccuracy))} pathOptions={{ color: "#0ea5e9", fillColor: "#38bdf8", fillOpacity: .08, weight: 1 }} />}
@@ -105,7 +114,7 @@ export default function LiveEmployeeMap({ locations, selectedEmpId, onSelectEmpl
         <div className="ops-panel-body">
           {panel === "team" ? <>
             <div className="relative"><Search className="absolute left-3 top-2.5 size-4 text-slate-400" /><input value={teamQuery} onChange={(event) => setTeamQuery(event.target.value)} placeholder="Search employees" className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-sky-400" /></div>
-            <div className="ops-team-list">{visibleTeam.map((employee) => { const itemStatus = status(employee); const employeeTriggers = (employee.events || []).filter((point) => point.type === "TRIGGER").length; const onBreak = Boolean(employee.break); return <button key={employee.empId} type="button" className={`ops-team-row ${employee.empId === selected.empId ? "selected" : ""}`} onClick={() => { onSelectEmployee?.(employee.empId); setPanel("employee"); }}><Image src={employee.photo ? `/api/files/employees/${encodeURIComponent(employee.photo)}` : "/default-avatar.jpg"} alt="" width={40} height={40} unoptimized /><span className="min-w-0 flex-1"><strong>{employee.name}</strong><small>{employee.empId} · {employee.designation}</small><small className="text-sky-600">{employeeTriggers} trigger{employeeTriggers === 1 ? "" : "s"} · {distance(employee)}</small>{onBreak && <small className="block text-amber-700">On break</small>}</span><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${itemStatus.badge}`}>{itemStatus.label}</span></button>; })}</div>
+            <div className="ops-team-list">{visibleTeam.map((employee) => { const itemStatus = status(employee); const employeeTriggers = (employee.events || []).filter(isTrigger).length; const onBreak = Boolean(employee.break); return <button key={employee.empId} type="button" className={`ops-team-row ${employee.empId === selected.empId ? "selected" : ""}`} onClick={() => { onSelectEmployee?.(employee.empId); setPanel("employee"); }}><Image src={employee.photo ? `/api/files/employees/${encodeURIComponent(employee.photo)}` : "/default-avatar.jpg"} alt="" width={40} height={40} unoptimized /><span className="min-w-0 flex-1"><strong>{employee.name}</strong><small>{employee.empId} · {employee.designation}</small><small className="text-sky-600">{employeeTriggers} trigger{employeeTriggers === 1 ? "" : "s"} · {distance(employee)}</small>{onBreak && <small className="block text-amber-700">On break</small>}</span><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${itemStatus.badge}`}>{itemStatus.label}</span></button>; })}</div>
           </> : <EmployeeDetails employee={selected} triggerPoints={triggerPoints} selectedStatus={selectedStatus} />}
         </div>
       </aside>
@@ -123,7 +132,7 @@ function EmployeeDetails({ employee, triggerPoints, selectedStatus }: { employee
     <div className="grid grid-cols-2 gap-2"><Metric icon={<Clock3 />} label="On duty" value={duration(employee)} /><Metric icon={<Route />} label="Distance" value={distance(employee)} /><Metric icon={<Gauge />} label="Speed" value={speed(employee)} /><Metric icon={<Radio />} label="Last sync" value={time(employee.receivedAt)} /></div>
     {onBreak && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><div className="flex items-center gap-2"><Coffee className="size-4 text-amber-700" /><span className="font-semibold">On break</span></div><p className="mt-1">{employee.break?.type || "Break"} · {employee.break?.reason || ""}</p><p className="text-xs">Started at {time(employee.break?.startedAt)} · Elapsed {employee.break?.elapsedMinutes ?? 0} min</p></div>}
     <div><p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Current location</p><div className="rounded-xl bg-sky-50 p-3 text-sm text-slate-700"><MapPin className="mb-2 size-4 text-sky-600" /><p className="font-medium text-slate-800">{employee.locationName}</p><code className="mt-2 block text-[11px] font-semibold text-sky-700">{coordinates(employee.latitude, employee.longitude)}</code></div></div>
-    <div><div className="mb-3 flex items-center justify-between"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Latest route events</p><span className="text-xs font-semibold text-sky-600">{Math.min(events.length, 10)} shown</span></div><div className="ops-timeline">{events.slice(-10).map((point, index) => { const isLive = point.type === "LIVE"; const number = events.slice(0, index + 1).filter((event) => event.type === "TRIGGER").length; return <div key={`${point.capturedAt}-${index}`} className="ops-event"><span className={isLive ? "live" : point.type === "MARK_IN" ? "start" : "trigger"}>{isLive ? <Navigation /> : point.type === "MARK_IN" ? <MapPin /> : number}</span><span><strong>{isLive ? (selectedStatus.label === "On time" ? "Live position" : "Last known position") : point.type === "MARK_IN" ? "Marked in" : point.type === "MARK_OUT" ? "Marked out" : `Location trigger ${number}`}</strong><small>{point.locationName || "Location recorded"}</small><code>{coordinates(point.latitude, point.longitude)}</code></span><time>{time(point.capturedAt)}</time></div>; })}</div></div>
+    <div><div className="mb-3 flex items-center justify-between"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Latest route events</p><span className="text-xs font-semibold text-sky-600">{Math.min(events.length, 10)} shown</span></div><div className="ops-timeline">{events.slice(-10).map((point, index) => { const isLive = point.type === "LIVE"; const number = events.slice(0, index + 1).filter(isTrigger).length; return <div key={`${point.capturedAt}-${index}`} className="ops-event"><span className={isLive ? "live" : point.type === "MARK_IN" ? "start" : "trigger"}>{isLive ? <Navigation /> : point.type === "MARK_IN" ? <MapPin /> : number}</span><span><strong>{isLive ? (selectedStatus.label === "On time" ? "Live position" : "Last known position") : point.type === "MARK_IN" ? "Marked in" : point.type === "MARK_OUT" ? "Marked out" : `Location trigger ${number}`}</strong><small>{point.locationName || "Location recorded"}</small><code>{coordinates(point.latitude, point.longitude)}</code></span><time>{time(point.capturedAt)}</time></div>; })}</div></div>
   </div>;
 }
 
