@@ -61,15 +61,15 @@ function formatDate(value: string | null) {
 //   1 pending  -> yellow  (watch)
 //   2+ pending -> red     (falling behind)
 function rowClassForPending(pendingCount: number) {
-  if (pendingCount >= 2) return "bg-red-50 hover:bg-red-100 border-l-4 border-l-red-500";
-  if (pendingCount === 1) return "bg-amber-50 hover:bg-amber-100 border-l-4 border-l-amber-400";
-  return "bg-emerald-50 hover:bg-emerald-100 border-l-4 border-l-emerald-500";
+  if (pendingCount >= 2) return "bg-red-100 hover:bg-red-200 border-l-4 border-l-red-500";
+  if (pendingCount === 1) return "bg-amber-100 hover:bg-amber-200 border-l-4 border-l-amber-400";
+  return "bg-emerald-100 hover:bg-emerald-200 border-l-4 border-l-emerald-500";
 }
 
 function countBadgeClass(kind: "assigned" | "completed" | "pending") {
-  if (kind === "completed") return "bg-emerald-100 text-emerald-800";
-  if (kind === "pending") return "bg-red-100 text-red-800";
-  return "bg-sky-100 text-sky-800";
+  if (kind === "completed") return "text-emerald-800";
+  if (kind === "pending") return "text-red-800";
+  return "text-sky-800";
 }
 
 // Clickable count badge. Clicking opens a large, scrollable dialog listing
