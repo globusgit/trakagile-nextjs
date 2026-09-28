@@ -20,30 +20,29 @@ import {
   User,
 } from "lucide-react";
 import styles from "./AppShell.module.css";
+import { MODULES, ModuleKey, isModuleEnabledForRole } from "@/lib/moduleAccess";
 
-const employeeItems = [
-  { label: "Dashboard", href: "/dashboard", icon: <Home size={20} /> },
-  { label: "Attendance", href: "/attendance", icon: <CalendarCheck2 size={20} /> },
-  { label: "Attendance Calendar", href: "/attendance/calendar", icon: <CalendarCheck2 size={20} /> },
-  { label: "My History", href: "/attendance/history", icon: <ScrollText size={20} /> },
-  { label: "Tasks", href: "/tasks", icon: <ListTodo size={20} /> },
-  { label: "Notifications", href: "/notifications", icon: <Bell size={20} /> },
-  { label: "Field Trips", href: "/field-trips", icon: <BriefcaseBusiness size={20} /> },
-  { label: "Work From Home", href: "/work-from-home", icon: <House size={20} /> },
-  { label: "Leaves", href: "/leaves", icon: <ListCheckIcon size={20} /> },
-  { label: "Holidays", href: "/holidays", icon: <CalendarCheck2 size={20} /> },
-  { label: "Reports", href: "/reports", icon: <BarChart3 size={20} /> },
-  { label: "Documents", href: "/documents", icon: <Files size={20} /> },
-];
-
-const teamOnlyItems = [
-  { label: "Live Tracking", href: "/live-tracking", icon: <MapPinned size={20} /> },
-  { label: "Employees", href: "/employees", icon: <User size={20} /> },
-];
-
-const adminOnlyItems = [
-  { label: "Audit Logs", href: "/audit-logs", icon: <ScrollText size={20} /> },
-  { label: "Settings", href: "/settings", icon: <Settings size={20} /> },
+// Every nav item the app *can* show. Whether one actually renders is driven
+// entirely by lib/moduleAccess.ts (MODULES[key].enabled / .roles) — nothing
+// here needs to be commented out to turn a module off, and nothing is
+// deleted, so re-enabling a module later is just a one-line config change.
+const NAV_ITEMS: { key: ModuleKey; label: string; href: string; icon: React.ReactNode }[] = [
+  { key: "dashboard", label: "Dashboard", href: "/dashboard", icon: <Home size={20} /> },
+  { key: "attendance", label: "Attendance", href: "/attendance", icon: <CalendarCheck2 size={20} /> },
+  { key: "attendance-calendar", label: "Attendance Calendar", href: "/attendance/calendar", icon: <CalendarCheck2 size={20} /> },
+  { key: "history", label: "My History", href: "/attendance/history", icon: <ScrollText size={20} /> },
+  { key: "tasks", label: "Tasks", href: "/tasks", icon: <ListTodo size={20} /> },
+  { key: "notifications", label: "Notifications", href: "/notifications", icon: <Bell size={20} /> },
+  { key: "live-tracking", label: "Live Tracking", href: "/live-tracking", icon: <MapPinned size={20} /> },
+  { key: "employees", label: "Employees", href: "/employees", icon: <User size={20} /> },
+  { key: "field-trips", label: "Field Trips", href: "/field-trips", icon: <BriefcaseBusiness size={20} /> },
+  { key: "work-from-home", label: "Work From Home", href: "/work-from-home", icon: <House size={20} /> },
+  { key: "leaves", label: "Leaves", href: "/leaves", icon: <ListCheckIcon size={20} /> },
+  { key: "holidays", label: "Holidays", href: "/holidays", icon: <CalendarCheck2 size={20} /> },
+  { key: "reports", label: "Reports", href: "/reports", icon: <BarChart3 size={20} /> },
+  { key: "documents", label: "Documents", href: "/documents", icon: <Files size={20} /> },
+  { key: "audit-logs", label: "Audit Logs", href: "/audit-logs", icon: <ScrollText size={20} /> },
+  { key: "settings", label: "Settings", href: "/settings", icon: <Settings size={20} /> },
 ];
 
 export default function SideNav({ collapsed, isMobile }: { collapsed: boolean; isMobile: boolean }) {
@@ -51,22 +50,16 @@ export default function SideNav({ collapsed, isMobile }: { collapsed: boolean; i
   const { data: session } = useSession();
   const [unreadCount, setUnreadCount] = useState(0);
   const role = session?.user?.role;
-  const isTeamRole = ["MANAGER", "ADMIN", "DIRECTOR"].includes(role || "");
-  const isAdminRole = ["ADMIN", "DIRECTOR"].includes(role || "");
 
   // "collapsed" means two different things depending on viewport: an icon-only
   // rail on desktop, or an open full-width drawer on mobile. Only the desktop
   // case should hide labels/shrink the logo.
   const isIconRail = collapsed && !isMobile;
 
-  const visibleItems = [
-    ...employeeItems.slice(0, 3),
-    ...(isTeamRole ? teamOnlyItems.slice(0, 1) : []),
-    ...employeeItems.slice(3, 6),
-    ...(isTeamRole ? teamOnlyItems.slice(1) : []),
-    ...employeeItems.slice(6),
-    ...(isAdminRole ? adminOnlyItems : []),
-  ];
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    const moduleConfig = MODULES.find((m) => m.key === item.key);
+    return moduleConfig ? isModuleEnabledForRole(moduleConfig, role) : false;
+  });
 
   useEffect(() => {
     if (!session?.user?.empId) return;

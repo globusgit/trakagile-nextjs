@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, CheckCircle2, Eye, EyeOff, Fingerprint, ShieldCheck, Sparkles } from "lucide-react";
+import { DEFAULT_LANDING_PATH } from "@/lib/moduleAccess";
 import styles from "./Login.module.css";
 
 export default function HomePage() {
@@ -48,7 +49,7 @@ export default function HomePage() {
       return;
     }
 
-    router.push("/dashboard");
+    router.push(DEFAULT_LANDING_PATH);
     router.refresh();
   };
 
