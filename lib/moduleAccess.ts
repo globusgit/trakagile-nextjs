@@ -32,6 +32,7 @@ export type ModuleKey =
   | "documents"
   | "live-tracking"
   | "employees"
+  | "task-dashboard"
   | "audit-logs"
   | "settings";
 
@@ -66,6 +67,12 @@ export const MODULES: ModuleConfig[] = [
   { key: "documents", href: "/documents", enabled: false, roles: "all" },
   { key: "live-tracking", href: "/live-tracking", enabled: false, roles: ["MANAGER", "ADMIN", "DIRECTOR"] },
   { key: "employees", href: "/employees", enabled: true, roles: ["HR", "ADMIN", "DIRECTOR"] },
+  // Director-only overview: for each employee, how many tasks THIS director
+  // has assigned them, and how many are completed/pending. Strictly
+  // account-scoped in the API (see app/api/tasks/dashboard/route.js) - each
+  // director only ever sees their own assignments, never another
+  // director's.
+  { key: "task-dashboard", href: "/task-dashboard", enabled: true, roles: ["DIRECTOR"] },
   { key: "audit-logs", href: "/audit-logs", enabled: false, roles: ["ADMIN", "DIRECTOR"] },
   { key: "settings", href: "/settings", enabled: false, roles: ["ADMIN", "DIRECTOR"] },
 ];
