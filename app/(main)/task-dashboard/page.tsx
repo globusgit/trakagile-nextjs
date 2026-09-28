@@ -14,7 +14,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import PageHeader from "@/app/_components/PageHeader";
-import HoverPanel from "@/app/_components/HoverPanel";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import EmployeeAvatar from "@/app/_components/EmployeeAvatar";
 
 type TaskSummary = {
@@ -66,48 +72,93 @@ function countBadgeClass(kind: "assigned" | "completed" | "pending") {
   return "bg-sky-100 text-sky-800";
 }
 
-// Hover card listing every task in a bucket (Assigned / Completed /
-// Pending) with its Assigned Date and End Date.
+// Clickable count badge. Clicking opens a large, scrollable dialog listing
+// every task in the bucket (Assigned / Completed / Pending) as a table.
 function TaskCountCell({
   count,
   tasks,
   kind,
   emptyLabel,
+  title,
+  employeeName,
 }: {
   count: number;
   tasks: TaskSummary[];
   kind: "assigned" | "completed" | "pending";
   emptyLabel: string;
+  title: string;
+  employeeName: string;
 }) {
+  const [open, setOpen] = useState(false);
+
   if (count === 0) {
-    return <span className={`inline-flex min-w-[2rem] justify-center rounded-full px-2.5 py-1 text-sm font-semibold ${countBadgeClass(kind)}`}>0</span>;
+    return (
+      <span className={`inline-flex min-w-[2rem] justify-center rounded-full px-2.5 py-1 text-sm font-semibold ${countBadgeClass(kind)}`}>
+        0
+      </span>
+    );
   }
 
   return (
-    <HoverPanel
-      trigger={
-        <span className={`inline-flex min-w-[2rem] cursor-default justify-center rounded-full px-2.5 py-1 text-sm font-semibold ${countBadgeClass(kind)}`}>
-          {count}
-        </span>
-      }
-      panel={
-        <div className="max-h-80 space-y-2 overflow-y-auto">
-          {tasks.length === 0 ? (
-            <p className="text-muted-foreground">{emptyLabel}</p>
-          ) : (
-            tasks.map((task, index) => (
-              <div key={`${task.taskId}-${index}`} className={index > 0 ? "border-t pt-2" : ""}>
-                <p className="font-semibold">{task.taskId}</p>
-                <p className="line-clamp-2 text-muted-foreground">{task.description}</p>
-                <p><span className="font-semibold">Assigned Date:</span> {formatDate(task.assignedAt)}</p>
-                <p><span className="font-semibold">End Date:</span> {formatDate(task.endDate)}</p>
-              </div>
-            ))
-          )}
-        </div>
-      }
-      panelClassName="w-80"
-    />
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        title={`View ${title.toLowerCase()}`}
+        className={`inline-flex min-w-[2rem] cursor-pointer justify-center rounded-full px-2.5 py-1 text-sm font-semibold transition hover:ring-2 hover:ring-cyan-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 ${countBadgeClass(kind)}`}
+      >
+        {count}
+      </button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="flex max-h-[85vh] w-full flex-col gap-3 sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg">
+              {title} — {employeeName}
+            </DialogTitle>
+            <DialogDescription>
+              {count} {count === 1 ? "task" : "tasks"}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Scrollable table area */}
+          <div className="min-h-0 flex-1 overflow-auto rounded-lg border">
+            {tasks.length === 0 ? (
+              <p className="p-6 text-center text-muted-foreground">{emptyLabel}</p>
+            ) : (
+              <table className="w-full caption-bottom text-sm">
+                <thead className="sticky top-0 z-10 bg-cyan-200 shadow-sm">
+                  <tr className="border-b">
+                    <th className="w-12 px-3 py-2 text-left font-bold">#</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-left font-bold">Task ID</th>
+                    <th className="px-3 py-2 text-left font-bold">Description</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-left font-bold">Status</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-left font-bold">Assigned Date</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-left font-bold">End Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tasks.map((task, index) => (
+                    <tr key={`${task.taskId}-${index}`} className="border-b last:border-b-0 hover:bg-slate-50">
+                      <td className="px-3 py-2 text-muted-foreground">{index + 1}</td>
+                      <td className="whitespace-nowrap px-3 py-2 font-semibold">{task.taskId}</td>
+                      <td className="min-w-[16rem] px-3 py-2 text-muted-foreground">{task.description}</td>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                          {task.status}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">{formatDate(task.assignedAt)}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{formatDate(task.endDate)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -205,6 +256,8 @@ export default function TaskDashboardPage() {
                       tasks={row.assignedTasks}
                       kind="assigned"
                       emptyLabel="No tasks assigned."
+                      title="Assigned Tasks"
+                      employeeName={row.name}
                     />
                   </TableCell>
                   <TableCell className="text-center">
@@ -213,6 +266,8 @@ export default function TaskDashboardPage() {
                       tasks={row.completedTasks}
                       kind="completed"
                       emptyLabel="Nothing completed yet."
+                      title="Completed Tasks"
+                      employeeName={row.name}
                     />
                   </TableCell>
                   <TableCell className="text-center">
@@ -221,6 +276,8 @@ export default function TaskDashboardPage() {
                       tasks={row.pendingTasks}
                       kind="pending"
                       emptyLabel="Nothing pending."
+                      title="Pending Tasks"
+                      employeeName={row.name}
                     />
                   </TableCell>
                 </TableRow>
