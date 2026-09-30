@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+ import mongoose from "mongoose";
 import Counter from "@/models/Counter";
 import Employee from "@/models/Employee";
 import Notification from "@/models/Notification";
@@ -19,18 +19,9 @@ import { AttendanceError } from "../../attendance/_lib/attendance";
 // database, the same way ADMIN users are provisioned today.
 export const TASK_MANAGE_ROLES = rolesForPermission(PERMISSIONS.TASK_MANAGE);
 
-// Task visibility rules (single source of truth - used by the tasks list, the
-// filter-options endpoint, the task detail/edit route and the notes route):
-//
-//   DIRECTOR        -> only tasks they CREATED / ASSIGNED (assigned by them)
-//                      plus tasks ASSIGNED to them.
-//                      Tasks created by / assigned to other directors are
-//                      never visible to them.
-//   everyone else   -> only tasks ASSIGNED to them (USER, MANAGER, HR,
-//                      ACCOUNTANT, ADMIN ...).
-//
-// Nobody gets an organization-wide view of tasks any more.
-const isDirector = (identity) => normalizeRole(identity.role) === ROLES.DIRECTOR;
+// Roles that can see every task in the organization rather than only
+// their own team's tasks (mirrors isOrganizationRole in lib/access.js).
+export const TASK_ORG_WIDE_ROLES = rolesForPermission(PERMISSIONS.TASK_READ_ALL);
 
 // Builds the tenant + visibility-scoped Mongo query used by GET /api/tasks,
 // so the tasks list, the filter-options endpoint, and single-task lookups all
@@ -39,9 +30,8 @@ export async function scopedTaskQuery(identity) {
   const query = tenantFilter(identity);
   if (isDirector(identity)) {
     query.$or = [
-      { createdByEmpId: identity.empId },
-      { assignedByEmpId: identity.empId },
-      { assignedToEmpIds: identity.empId },
+      { assignedToEmpIds: { $in: scopedEmpIds } },
+      { createdByEmpId: { $in: scopedEmpIds } },
     ];
   } else {
     // Matches when empId is one of the task's assignees (individual or team task).
@@ -57,10 +47,15 @@ export async function scopedTask(id, identity) {
   const task = await Task.findOne({ _id: id, orgId: identity.orgId });
   if (!task) throw new AttendanceError("Task not found.", 404);
 
-  const isAssignee = (task.assignedToEmpIds || []).includes(identity.empId);
-  const isCreator = task.createdByEmpId === identity.empId;
-  const isAssigner = task.assignedByEmpId === identity.empId;
-  if (isAssignee || (isDirector(identity) && (isCreator || isAssigner))) return task;
+  if (TASK_ORG_WIDE_ROLES.includes(identity.role)) return task;
+  if (task.createdByEmpId === identity.empId || (task.assignedToEmpIds || []).includes(identity.empId)) return task;
+  if (identity.role === "MANAGER") {
+    const teamIds = await visibleEmployeeIds(identity, true);
+    const assignedToEmpIds = task.assignedToEmpIds || [];
+    if (teamIds.some((empId) => assignedToEmpIds.includes(empId)) || teamIds.includes(task.createdByEmpId)) {
+      return task;
+    }
+  }
   throw new AttendanceError("You are not allowed to access this task.", 403);
 }
 
