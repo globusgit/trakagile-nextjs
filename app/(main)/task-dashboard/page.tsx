@@ -31,6 +31,21 @@ type TaskSummary = {
   endDate: string | null;
 };
 
+type CardStats = {
+  total: number;
+  pending: number;
+  completed: number;
+  suspended: number;
+};
+
+type DashboardCards = {
+  overall: CardStats;
+  assignedByMe: CardStats;
+  assignedToMe: CardStats;
+};
+
+const EMPTY_STATS: CardStats = { total: 0, pending: 0, completed: 0, suspended: 0 };
+
 type DashboardRow = {
   empId: string;
   name: string;
@@ -38,9 +53,11 @@ type DashboardRow = {
   assignedCount: number;
   completedCount: number;
   pendingCount: number;
+  suspendedCount: number;
   assignedTasks: TaskSummary[];
   completedTasks: TaskSummary[];
   pendingTasks: TaskSummary[];
+  suspendedTasks: TaskSummary[];
 };
 
 async function fetchTaskDashboard(search: string) {
@@ -60,13 +77,43 @@ function formatDate(value: string | null) {
 //   0 pending  -> green   (all caught up)
 //   1 pending  -> yellow  (watch)
 //   2+ pending -> red     (falling behind)
-function rowClassForPending(pendingCount: number) {
+//   no tasks assigned at all -> white
+function rowClassForRow(assignedCount: number, pendingCount: number) {
+  if (assignedCount === 0) return "bg-white hover:bg-slate-50 border-l-4 border-l-slate-200";
   if (pendingCount >= 2) return "bg-red-500 hover:bg-red-400 border-l-4 border-l-red-500";
   if (pendingCount === 1) return "bg-amber-500 hover:bg-amber-400 border-l-4 border-l-amber-400";
   return "bg-emerald-500 hover:bg-emerald-400 border-l-4 border-l-emerald-500";
 }
 
-function countBadgeClass(kind: "assigned" | "completed" | "pending") {
+// One summary card: big total + Pending / Completed / Suspended breakdown.
+function StatCard({ title, stats, accent }: { title: string; stats: CardStats; accent: string }) {
+  const items = [
+    { label: "Pending", value: stats.pending, color: "text-amber-600" },
+    { label: "Completed", value: stats.completed, color: "text-emerald-600" },
+    { label: "Suspended", value: stats.suspended, color: "text-red-600" },
+  ];
+  return (
+    <div className={`rounded-xl border border-slate-200 border-t-4 bg-white p-4 shadow-sm ${accent}`}>
+      <div className="flex items-baseline justify-between">
+        <h3 className="text-sm font-semibold text-slate-700">{title}</h3>
+        <div className="text-right">
+          <div className="text-3xl font-bold leading-none text-slate-900">{stats.total}</div>
+          <div className="mt-1 text-xs text-muted-foreground">Total</div>
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-3 gap-2 border-t pt-3">
+        {items.map((item) => (
+          <div key={item.label} className="text-center">
+            <div className={`text-xl font-semibold ${item.color}`}>{item.value}</div>
+            <div className="text-xs text-muted-foreground">{item.label}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function countBadgeClass(kind: "assigned" | "completed" | "pending" | "suspended") {
   if (kind === "completed") return "text-black";
   if (kind === "pending") return "text-black";
   return "text-black";
@@ -84,7 +131,7 @@ function TaskCountCell({
 }: {
   count: number;
   tasks: TaskSummary[];
-  kind: "assigned" | "completed" | "pending";
+  kind: "assigned" | "completed" | "pending" | "suspended";
   emptyLabel: string;
   title: string;
   employeeName: string;
@@ -175,6 +222,11 @@ export default function TaskDashboardPage() {
   });
 
   const rows: DashboardRow[] = data?.rows ?? [];
+  const cards: DashboardCards = data?.cards ?? {
+    overall: EMPTY_STATS,
+    assignedByMe: EMPTY_STATS,
+    assignedToMe: EMPTY_STATS,
+  };
 
   if (status === "loading") {
     return <div className="p-8 text-center text-gray-500">Loading session...</div>;
@@ -183,6 +235,12 @@ export default function TaskDashboardPage() {
   return (
     <div>
       <PageHeader title="Task Dashboard" />
+
+      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <StatCard title="Overall" stats={cards.overall} accent="border-t-cyan-500" />
+        <StatCard title="Tasks Assigned By Me" stats={cards.assignedByMe} accent="border-t-violet-500" />
+        <StatCard title="Tasks Assigned To Me" stats={cards.assignedToMe} accent="border-t-emerald-500" />
+      </div>
 
       <div className="mt-4 mb-4 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
         <div className="relative w-full max-w-xs">
@@ -196,6 +254,7 @@ export default function TaskDashboardPage() {
           />
         </div>
         <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full border border-slate-300 bg-white" /> No tasks</span>
           <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-emerald-700" /> 0 pending</span>
           <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-amber-700" /> 1 pending</span>
           <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-red-700" /> 2+ pending</span>
@@ -211,13 +270,14 @@ export default function TaskDashboardPage() {
               <TableHead className="font-bold text-center">Assigned Tasks</TableHead>
               <TableHead className="font-bold text-center">Completed Tasks</TableHead>
               <TableHead className="font-bold text-center">Pending Tasks</TableHead>
+              <TableHead className="font-bold text-center">Suspended Tasks</TableHead>
             </TableRow>
           </TableHeader>
 
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={5} className="py-6 text-center text-gray-500">
+                <TableCell colSpan={6} className="py-6 text-center text-gray-500">
                   Loading...
                 </TableCell>
               </TableRow>
@@ -225,7 +285,7 @@ export default function TaskDashboardPage() {
 
             {!!error && (
               <TableRow>
-                <TableCell colSpan={5} className="py-6 text-center text-red-500">
+                <TableCell colSpan={6} className="py-6 text-center text-red-500">
                   Failed to load the task dashboard.
                 </TableCell>
               </TableRow>
@@ -233,8 +293,8 @@ export default function TaskDashboardPage() {
 
             {!isLoading && !error && rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="py-6 text-center text-gray-500">
-                  You haven&apos;t assigned any tasks yet.
+                <TableCell colSpan={6} className="py-6 text-center text-gray-500">
+                  No employees found.
                 </TableCell>
               </TableRow>
             )}
@@ -242,7 +302,7 @@ export default function TaskDashboardPage() {
             {!isLoading &&
               !error &&
               rows.map((row) => (
-                <TableRow key={row.empId} className={rowClassForPending(row.pendingCount)}>
+                <TableRow key={row.empId} className={rowClassForRow(row.assignedCount, row.pendingCount)}>
                   <TableCell>{row.empId}</TableCell>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
@@ -277,6 +337,16 @@ export default function TaskDashboardPage() {
                       kind="pending"
                       emptyLabel="Nothing pending."
                       title="Pending Tasks"
+                      employeeName={row.name}
+                    />
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <TaskCountCell
+                      count={row.suspendedCount}
+                      tasks={row.suspendedTasks}
+                      kind="suspended"
+                      emptyLabel="Nothing suspended."
+                      title="Suspended Tasks"
                       employeeName={row.name}
                     />
                   </TableCell>

@@ -23,13 +23,32 @@ function taskSummary(task) {
   };
 }
 
+// Status buckets used everywhere on this page (cards AND table):
+//   completed -> Done
+//   suspended -> Suspended
+//   pending   -> everything else (New / Assigned / In Progress / Rejected)
+// so total === pending + completed + suspended.
+function statsFor(tasks) {
+  const stats = { total: tasks.length, pending: 0, completed: 0, suspended: 0 };
+  for (const task of tasks) {
+    if (task.status === "Done") stats.completed += 1;
+    else if (task.status === "Suspended") stats.suspended += 1;
+    else stats.pending += 1;
+  }
+  return stats;
+}
+
 // GET /api/tasks/dashboard - Task Dashboard module (Director only, see
-// lib/moduleAccess.ts "task-dashboard"). Strictly account-scoped: a
-// director only ever sees tasks THEY PERSONALLY assigned
-// (assignedByEmpId === the signed-in director's empId). Another director's
-// assignments to the very same employee never appear here - each director
-// gets their own private view of who they've assigned work to and how
-// those assignments are progressing.
+// lib/moduleAccess.ts "task-dashboard").
+//
+// Cards (top of the page):
+//   overall    -> every task the director assigned OR that was assigned to them
+//   assignedByMe -> tasks the director assigned to someone
+//   assignedToMe -> tasks assigned to the director
+//
+// Table: EVERY employee in the organisation, with counts of the tasks THIS
+// director assigned to them (another director's assignments never appear).
+// Employees with no tasks come back with zero counts (the UI shows them white).
 export async function GET(request) {
   try {
     await connectDB();
@@ -37,38 +56,54 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search")?.trim() || "";
 
-    // Only this director's own assignments - the account-based isolation
-    // the whole module is built around.
-    const tasks = await Task.find({
-      orgId: identity.orgId,
-      assignedByEmpId: identity.empId,
-      assignedToEmpIds: { $exists: true, $ne: [] },
-    })
-      .select("taskId description status assignedToEmpIds assignedAt completedDate closedAt")
-      .lean();
+    const [assignedByMe, assignedToMe] = await Promise.all([
+      Task.find({
+        orgId: identity.orgId,
+        assignedByEmpId: identity.empId,
+        assignedToEmpIds: { $exists: true, $ne: [] },
+      })
+        .select("taskId description status assignedToEmpIds assignedAt completedDate closedAt")
+        .lean(),
+      Task.find({
+        orgId: identity.orgId,
+        assignedToEmpIds: identity.empId,
+      })
+        .select("_id status")
+        .lean(),
+    ]);
 
-    // Bucket every task under each of its assignees (a task with more than
-    // one assignee - a "Team" task - counts toward every assignee).
+    // ---- Cards -----------------------------------------------------------
+    // Overall = union of the two sets, de-duplicated (a task the director
+    // assigned to themselves is in both sets but counts once).
+    const overallById = new Map();
+    for (const task of assignedByMe) overallById.set(String(task._id), task);
+    for (const task of assignedToMe) overallById.set(String(task._id), overallById.get(String(task._id)) || task);
+
+    const cards = {
+      overall: statsFor([...overallById.values()]),
+      assignedByMe: statsFor(assignedByMe),
+      assignedToMe: statsFor(assignedToMe),
+    };
+
+    // ---- Table -----------------------------------------------------------
+    // Bucket every task this director assigned under each of its assignees
+    // (a "Team" task counts toward every assignee).
     const byEmpId = new Map();
-    for (const task of tasks) {
+    for (const task of assignedByMe) {
       const summary = taskSummary(task);
       for (const empId of task.assignedToEmpIds || []) {
-        if (!byEmpId.has(empId)) byEmpId.set(empId, { assigned: [], completed: [], pending: [] });
+        if (!byEmpId.has(empId)) byEmpId.set(empId, { assigned: [], completed: [], pending: [], suspended: [] });
         const bucket = byEmpId.get(empId);
         bucket.assigned.push(summary);
         if (task.status === "Done") bucket.completed.push(summary);
+        else if (task.status === "Suspended") bucket.suspended.push(summary);
         else bucket.pending.push(summary);
       }
     }
 
-    // The table only lists employees this director has actually assigned
-    // something to - not the whole company roster.
-    const empIds = [...byEmpId.keys()];
-    if (empIds.length === 0) {
-      return Response.json({ rows: [], total: 0 });
-    }
-
-    const employeeQuery = { orgId: identity.orgId, empId: { $in: empIds } };
+    // All employees of the organisation (not just the ones with tasks).
+    // To hide inactive staff, add `status: "Active"` to this query.
+    const employeeQuery = { orgId: identity.orgId };
     if (search) {
       const pattern = new RegExp(escapeRegex(search), "i");
       employeeQuery.$or = [{ name: pattern }, { empId: pattern }];
@@ -80,7 +115,7 @@ export async function GET(request) {
       .lean();
 
     const rows = employees.map((employee) => {
-      const bucket = byEmpId.get(employee.empId) || { assigned: [], completed: [], pending: [] };
+      const bucket = byEmpId.get(employee.empId) || { assigned: [], completed: [], pending: [], suspended: [] };
       return {
         empId: employee.empId,
         name: employee.name,
@@ -88,13 +123,15 @@ export async function GET(request) {
         assignedCount: bucket.assigned.length,
         completedCount: bucket.completed.length,
         pendingCount: bucket.pending.length,
+        suspendedCount: bucket.suspended.length,
         assignedTasks: bucket.assigned,
         completedTasks: bucket.completed,
         pendingTasks: bucket.pending,
+        suspendedTasks: bucket.suspended,
       };
     });
 
-    return Response.json({ rows, total: rows.length });
+    return Response.json({ cards, rows, total: rows.length });
   } catch (error) {
     return errorResponse(error, "Unable to load the task dashboard.");
   }
