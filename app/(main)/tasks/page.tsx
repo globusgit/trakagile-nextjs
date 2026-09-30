@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/table";
 import { Pencil, UserPlus } from "lucide-react";
 import { useRegionalSettings } from "@/app/_components/RegionalSettingsProvider";
-import { formatRegionalDate } from "@/lib/regionalFormat.mjs";
+import { formatRegionalDate, formatRegionalDateTime } from "@/lib/regionalFormat.mjs";
 import EmployeeAvatar, { EmployeeNameTag } from "@/app/_components/EmployeeAvatar";
 import EmployeeSingleSelect from "@/app/_components/EmployeeSingleSelect";
 
@@ -70,6 +70,7 @@ type Task = {
   projectNo?: Reference;
   workOrderNo?: Reference;
   tenderNo?: Reference;
+  endDateTime?: string;
   completedDate?: string;
   closedAt?: string;
 };
@@ -627,6 +628,7 @@ export default function TasksPage() {
               <TableHead className="font-bold whitespace-nowrap">Project No</TableHead>
               <TableHead className="font-bold whitespace-nowrap">Work-Order No</TableHead>
               <TableHead className="font-bold whitespace-nowrap">Tender No</TableHead>
+              <TableHead className="font-bold whitespace-nowrap">End Date &amp; Time</TableHead>
               <TableHead className="font-bold whitespace-nowrap">Completed Date</TableHead>
             </TableRow>
             {/* Small searchable fields under Project No / Work-Order No / Tender No. */}
@@ -667,6 +669,7 @@ export default function TasksPage() {
                   className="h-7 w-full min-w-0 rounded border bg-white px-2 text-xs font-normal outline-none focus:border-cyan-600"
                 />
               </TableHead>
+              <TableHead />
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -713,6 +716,7 @@ export default function TasksPage() {
                   <TableCell><ReferenceCell reference={task.projectNo} /></TableCell>
                   <TableCell><ReferenceCell reference={task.workOrderNo} /></TableCell>
                   <TableCell><ReferenceCell reference={task.tenderNo} /></TableCell>
+                  <TableCell className="whitespace-nowrap">{task.endDateTime ? formatRegionalDateTime(task.endDateTime, regional) : "-"}</TableCell>
                   <TableCell className="whitespace-nowrap">{task.status === "Done" ? formatDate(task.completedDate, regional) : ""}</TableCell>
                 </TableRow>
               ))

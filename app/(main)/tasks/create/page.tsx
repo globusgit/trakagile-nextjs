@@ -47,6 +47,7 @@ export default function CreateTaskPage() {
   const [taskTypes, setTaskTypes] = useState<TaskTypeEntry[]>([]);
 
   const [description, setDescription] = useState("");
+  const [endDateTime, setEndDateTime] = useState("");
   const [taskSource, setTaskSource] = useState("");
   const [taskVertical, setTaskVertical] = useState("");
   const [taskType, setTaskType] = useState("");
@@ -186,6 +187,7 @@ export default function CreateTaskPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           description,
+          endDateTime: endDateTime || undefined,
           taskSource: taskSource || undefined,
           taskVertical: taskSource === "Project" ? taskVertical : undefined,
           taskType,
@@ -251,6 +253,16 @@ export default function CreateTaskPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>End Date &amp; Time</Label>
+              <input
+                type="datetime-local"
+                value={endDateTime}
+                onChange={(e) => setEndDateTime(e.target.value)}
+                className="h-10 w-full rounded-md border bg-transparent px-3 text-sm"
+              />
+            </div>
+
             <div className="space-y-2">
               <Label>Task Source</Label>
               <SearchableSelect

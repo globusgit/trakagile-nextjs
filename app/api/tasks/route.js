@@ -95,6 +95,15 @@ export async function POST(request) {
     const description = String(body.description || "").trim();
     if (!description) throw new AttendanceError("Task description is required.");
 
+    let endDateTime;
+    if (body.endDateTime) {
+      const parsedEndDateTime = new Date(body.endDateTime);
+      if (Number.isNaN(parsedEndDateTime.getTime())) {
+        throw new AttendanceError("Invalid end date and time.");
+      }
+      endDateTime = parsedEndDateTime;
+    }
+
     const taskSource = TASK_SOURCES.includes(body.taskSource) ? body.taskSource : undefined;
     const taskVertical = taskSource === "Project" ? String(body.taskVertical || "").trim() || undefined : undefined;
 
@@ -116,6 +125,7 @@ export async function POST(request) {
     const task = await Task.create({
       taskId: await nextTaskId(identity.orgId),
       description,
+      endDateTime,
       taskSource,
       taskVertical,
       taskType: String(body.taskType || "").trim() || undefined,

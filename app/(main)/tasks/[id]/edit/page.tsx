@@ -63,6 +63,7 @@ type Task = {
   projectNo?: Reference;
   workOrderNo?: Reference;
   tenderNo?: Reference;
+  endDateTime?: string;
   completedDate?: string;
   notes?: Note[];
 };
@@ -84,6 +85,14 @@ function formatDateTime(value?: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function toDateTimeLocal(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (number: number) => String(number).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function toReferenceValue(reference?: Reference): ReferenceValue {
@@ -140,6 +149,7 @@ export default function EditTaskPage() {
   const [taskType, setTaskType] = useState("");
   const [subTaskType, setSubTaskType] = useState("");
   const [taskStatus, setTaskStatus] = useState("");
+  const [endDateTime, setEndDateTime] = useState("");
   const [assignedToEmpIds, setAssignedToEmpIds] = useState<string[]>([]);
 
   const [saving, setSaving] = useState(false);
@@ -169,6 +179,7 @@ export default function EditTaskPage() {
         setTaskType(result.taskType || "");
         setSubTaskType(result.subTaskType || "");
         setTaskStatus(result.status);
+        setEndDateTime(toDateTimeLocal(result.endDateTime));
         setAssignedToEmpIds(result.assignedToEmpIds || []);
         setNotes(result.notes || []);
       } catch (error) {
@@ -299,6 +310,7 @@ export default function EditTaskPage() {
           tenderNo: cleanReference(tenderNo),
           taskType,
           subTaskType,
+          endDateTime: endDateTime || undefined,
           status: taskStatus,
           assignedToEmpIds,
         }),
@@ -458,6 +470,16 @@ export default function EditTaskPage() {
 
                     <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
                       <div className="space-y-2">
+                        <Label>End Date &amp; Time</Label>
+                        <input
+                          type="datetime-local"
+                          value={endDateTime}
+                          onChange={(e) => setEndDateTime(e.target.value)}
+                          className="h-10 w-full rounded-md border bg-transparent px-3 text-sm"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
                         <Label>Task Status</Label>
                         <select
                           className="h-10 w-full rounded-md border bg-transparent px-3 text-sm"
@@ -492,7 +514,8 @@ export default function EditTaskPage() {
                       <ReadOnlyField label="Work-Order No" value={task.workOrderNo?.number || ""} />
                       <ReadOnlyField label="Tender No" value={task.tenderNo?.number || ""} />
                     </div>
-                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+                      <ReadOnlyField label="End Date &amp; Time" value={formatDateTime(task.endDateTime)} />
                       <ReadOnlyField label="Task Status" value={task.status} />
                       <ReadOnlyField label="Completed Date" value={task.status === "Done" ? formatDate(task.completedDate) : ""} />
                     </div>

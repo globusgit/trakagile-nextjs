@@ -20,7 +20,14 @@ export const TASK_CLOSED_STATUSES = ["Done", "Rejected"];
 
 // Fixed list of task sources - the top of the Task Source -> Task Vertical (Project
 // only) -> Task Type -> Sub-Task Type hierarchy.
-export const TASK_SOURCES = ["Accounting", "Sales", "IT", "Project", "Internal", "Personal"] as const;
+export const TASK_SOURCES = [
+  "Accounting",
+  "Sales",
+  "IT",
+  "Project",
+  "Internal",
+  "Personal",
+] as const;
 
 // Shared shape for the Project No / Work-Order No / Tender No reference fields.
 // Only "number" is required to consider the reference "present" - the rest are
@@ -30,7 +37,7 @@ const referenceSchema = new mongoose.Schema(
     number: { type: String, trim: true },
     description: { type: String, trim: true },
     vertical: { type: String, trim: true },
-    subVertical: { type: String, trim: true }, // comma-separated if more than one
+    subVertical: { type: String, trim: true },
     status: { type: String, trim: true },
     state: { type: String, trim: true },
   },
@@ -39,8 +46,7 @@ const referenceSchema = new mongoose.Schema(
 
 // Append-only note log shown on the Edit Task page. Anyone with access to the
 // task may add a note; existing notes are never edited or removed via the API.
-// authorName is captured at write time (not re-derived later) so the log stays
-// a stable historical record even if the author's display name changes.
+// authorName is captured at write time so the log stays a stable historical record.
 const noteSchema = new mongoose.Schema(
   {
     text: { type: String, required: true, trim: true },
@@ -53,54 +59,177 @@ const noteSchema = new mongoose.Schema(
 
 const taskSchema = new mongoose.Schema(
   {
-    taskId: { type: String, required: true, trim: true }, // e.g. TSK-00001
-    description: { type: String, required: true, trim: true },
-    status: { type: String, enum: TASK_STATUSES, default: "New" },
+    taskId: {
+      type: String,
+      required: true,
+      trim: true,
+    },
 
-    // Task Source -> Task Vertical (only for "Project") -> Task Type -> Sub-Task Type.
-    // Task Type / Sub-Task Type are picked from the org's TaskType/SubTaskType
-    // taxonomy, scoped by taskSource (+ taskVertical when Project).
-    taskSource: { type: String, enum: TASK_SOURCES },
-    taskVertical: { type: String, trim: true }, // only set when taskSource === "Project"
-    taskType: { type: String, trim: true },
-    subTaskType: { type: String, trim: true },
+    description: {
+      type: String,
+      required: true,
+      trim: true,
+    },
 
-    // Creator (always set, read-only after creation)
-    createdBy: { type: mongoose.Types.ObjectId, ref: "User", required: true },
-    createdByEmpId: { type: String, required: true },
+    status: {
+      type: String,
+      enum: TASK_STATUSES,
+      default: "New",
+    },
 
-    // Assignment - a task can be assigned to one employee or a whole team.
-    // When assignedToEmpIds.length > 1 the Tasks list shows "Team" in that column.
-    assignedTo: [{ type: mongoose.Types.ObjectId, ref: "User" }],
-    assignedToEmpIds: [{ type: String }],
-    assignedBy: { type: mongoose.Types.ObjectId, ref: "User" },
-    assignedByEmpId: { type: String },
-    assignedAt: { type: Date },
+    // Task Source -> Task Vertical (only for "Project")
+    // -> Task Type -> Sub-Task Type.
+    taskSource: {
+      type: String,
+      enum: TASK_SOURCES,
+    },
 
-    // Optional reference numbers - shown only when present. A task with all
-    // three left empty is considered "Internal" (used for filtering/reporting;
-    // the Tasks list no longer shows a dedicated Internal column).
-    projectNo: { type: referenceSchema, default: undefined },
-    workOrderNo: { type: referenceSchema, default: undefined },
-    tenderNo: { type: referenceSchema, default: undefined },
+    taskVertical: {
+      type: String,
+      trim: true,
+    },
+
+    taskType: {
+      type: String,
+      trim: true,
+    },
+
+    subTaskType: {
+      type: String,
+      trim: true,
+    },
+
+    // Creator
+    createdBy: {
+      type: mongoose.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+
+    createdByEmpId: {
+      type: String,
+      required: true,
+    },
+
+    // Assignment
+    // A task can be assigned to one employee or a whole team.
+    assignedTo: [
+      {
+        type: mongoose.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+
+    assignedToEmpIds: [
+      {
+        type: String,
+      },
+    ],
+
+    assignedBy: {
+      type: mongoose.Types.ObjectId,
+      ref: "User",
+    },
+
+    assignedByEmpId: {
+      type: String,
+    },
+
+    assignedAt: {
+      type: Date,
+    },
+
+    // Optional Project / Work Order / Tender references.
+    projectNo: {
+      type: referenceSchema,
+      default: undefined,
+    },
+
+    workOrderNo: {
+      type: referenceSchema,
+      default: undefined,
+    },
+
+    tenderNo: {
+      type: referenceSchema,
+      default: undefined,
+    },
+
+    // ============================================================
+    // TASK END DATE & TIME
+    // ============================================================
+    // Stores the complete deadline selected from the Create/Edit
+    // Task "End Date & Time" field.
+    //
+    // Example:
+    // 2026-09-30T18:30:00
+    //
+    // This value is used by:
+    // - Create Task
+    // - Edit Task
+    // - Tasks listing table
+    endDateTime: {
+      type: Date,
+    },
 
     // Captured automatically when status becomes "Done".
-    completedDate: { type: Date },
-    // Captured automatically when status becomes "Done" or "Rejected" - freezes the Age column.
-    closedAt: { type: Date },
+    completedDate: {
+      type: Date,
+    },
 
-    // Append-only notes log - see noteSchema above. Displayed oldest-first on
-    // the Edit Task page; new notes are always pushed to the end.
-    notes: { type: [noteSchema], default: [] },
+    // Captured automatically when status becomes "Done" or "Rejected".
+    // This freezes the Age column.
+    closedAt: {
+      type: Date,
+    },
 
-    orgId: { type: String, required: true },
+    // Append-only notes log.
+    notes: {
+      type: [noteSchema],
+      default: [],
+    },
+
+    orgId: {
+      type: String,
+      required: true,
+    },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+  },
 );
 
-taskSchema.index({ orgId: 1, taskId: 1 }, { unique: true });
-taskSchema.index({ orgId: 1, status: 1 });
-taskSchema.index({ orgId: 1, assignedToEmpIds: 1 });
-taskSchema.index({ orgId: 1, createdByEmpId: 1 });
+// Indexes
+taskSchema.index(
+  {
+    orgId: 1,
+    taskId: 1,
+  },
+  {
+    unique: true,
+  },
+);
 
-export default mongoose.models.Task || mongoose.model("Task", taskSchema);
+taskSchema.index({
+  orgId: 1,
+  status: 1,
+});
+
+taskSchema.index({
+  orgId: 1,
+  assignedToEmpIds: 1,
+});
+
+taskSchema.index({
+  orgId: 1,
+  createdByEmpId: 1,
+});
+
+// Optional index for deadline/date based filtering and sorting.
+taskSchema.index({
+  orgId: 1,
+  endDateTime: 1,
+});
+
+export default mongoose.models.Task ||
+  mongoose.model("Task", taskSchema);

@@ -106,7 +106,17 @@ export async function PUT(request, { params }) {
       const nextStatus = body.status;
       if (nextStatus && !TASK_STATUSES.includes(nextStatus)) throw new AttendanceError("Invalid task status.");
 
+      let endDateTime;
+      if (body.endDateTime) {
+        const parsedEndDateTime = new Date(body.endDateTime);
+        if (Number.isNaN(parsedEndDateTime.getTime())) {
+          throw new AttendanceError("Invalid end date and time.");
+        }
+        endDateTime = parsedEndDateTime;
+      }
+
       const updates = {
+        endDateTime,
         projectNo: normalizeReference(body.projectNo),
         workOrderNo: normalizeReference(body.workOrderNo),
         tenderNo: normalizeReference(body.tenderNo),
