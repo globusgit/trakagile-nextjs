@@ -6,6 +6,12 @@
  * off here — flipping `enabled` back to `true` (or adding a role to
  * `roles`) brings it straight back, no other file needs to change.
  *
+ * Each organization gets its own copy of the enabled set when it is created
+ * (Organization.enabledModules). The `enabled` flags below are therefore the
+ * TEMPLATE for new organizations, and the fallback for organizations created
+ * before per-organization modules existed. Disabled modules stay defined
+ * here untouched, so nothing is deleted.
+ *
  * This file is the single source of truth used by:
  *  - SideNav.tsx            -> which links show in the sidebar
  *  - ModuleAccessGuard.tsx  -> blocks *direct URL* access to a disabled
@@ -56,7 +62,7 @@ export const MODULES: ModuleConfig[] = [
   { key: "dashboard", href: "/dashboard", enabled: false, roles: "all" },
   { key: "attendance", href: "/attendance", enabled: false, roles: "all" },
   { key: "attendance-calendar", href: "/attendance/calendar", enabled: false, roles: "all" },
-  { key: "history", href: "/attendance/history", enabled: true, roles: "all" },
+  { key: "history", href: "/attendance/history", enabled: false, roles: "all" },
   { key: "tasks", href: "/tasks", enabled: true, roles: "all" },
   { key: "notifications", href: "/notifications", enabled: true, roles: "all" },
   { key: "field-trips", href: "/field-trips", enabled: false, roles: "all" },
@@ -84,8 +90,38 @@ export function normalizeRole(role?: string | null) {
   return String(role || "").trim().toUpperCase();
 }
 
-export function isModuleEnabledForRole(moduleConfig: ModuleConfig, role?: string | null) {
-  if (!moduleConfig.enabled) return false;
+/**
+ * Keys of the modules currently switched on in MODULES. New organizations
+ * start with exactly this set; every disabled module stays disabled.
+ */
+export function defaultEnabledModuleKeys(): ModuleKey[] {
+  return MODULES.filter((m) => m.enabled).map((m) => m.key);
+}
+
+/**
+ * Turns whatever is stored on an organization into a safe list of known
+ * module keys. Missing/invalid/empty values fall back to the default set, so
+ * an organization can never end up with every module off (which would leave
+ * nowhere to redirect to).
+ */
+export function resolveEnabledModuleKeys(stored?: unknown): ModuleKey[] {
+  if (!Array.isArray(stored)) return defaultEnabledModuleKeys();
+  const known = new Set<string>(MODULES.map((m) => m.key));
+  const keys = [...new Set(stored.map(String))].filter((key) => known.has(key)) as ModuleKey[];
+  return keys.length ? keys : defaultEnabledModuleKeys();
+}
+
+/**
+ * `enabledKeys` is the organization's enabled module list. When omitted the
+ * global `enabled` flag on the module is used (previous behaviour).
+ */
+export function isModuleEnabledForRole(
+  moduleConfig: ModuleConfig,
+  role?: string | null,
+  enabledKeys?: readonly string[] | null,
+) {
+  const on = enabledKeys ? enabledKeys.includes(moduleConfig.key) : moduleConfig.enabled;
+  if (!on) return false;
   if (moduleConfig.roles === "all") return true;
   return moduleConfig.roles.includes(normalizeRole(role));
 }
@@ -101,18 +137,26 @@ export function findModuleForPath(pathname: string): ModuleConfig | undefined {
   );
 }
 
-export function isPathAllowed(pathname: string, role?: string | null) {
+export function isPathAllowed(
+  pathname: string,
+  role?: string | null,
+  enabledKeys?: readonly string[] | null,
+) {
   const moduleConfig = findModuleForPath(pathname);
   if (!moduleConfig) return true;
-  return isModuleEnabledForRole(moduleConfig, role);
+  return isModuleEnabledForRole(moduleConfig, role, enabledKeys);
 }
 
-/** First enabled module a role is allowed to land on, in sidebar order. */
-export function getDefaultHrefForRole(role?: string | null) {
-  const landingOrder: ModuleKey[] = ["history", "tasks", "notifications", "employees"];
+/**
+ * First enabled module a role is allowed to land on, in sidebar order:
+ * Task Dashboard (only for accounts that have it, i.e. DIRECTOR), Tasks,
+ * Notifications, Employees.
+ */
+export function getDefaultHrefForRole(role?: string | null, enabledKeys?: readonly string[] | null) {
+  const landingOrder: ModuleKey[] = ["task-dashboard", "tasks", "notifications", "employees"];
   for (const key of landingOrder) {
     const moduleConfig = MODULES.find((m) => m.key === key);
-    if (moduleConfig && isModuleEnabledForRole(moduleConfig, role)) return moduleConfig.href;
+    if (moduleConfig && isModuleEnabledForRole(moduleConfig, role, enabledKeys)) return moduleConfig.href;
   }
   // Fallback so the app never dead-ends even if every module above is
   // switched off for some role.
@@ -120,4 +164,4 @@ export function getDefaultHrefForRole(role?: string | null) {
 }
 
 /** Path used site-wide as "home" (post-login redirect, PageHeader back-link). */
-export const DEFAULT_LANDING_PATH = "/attendance/history";
+export const DEFAULT_LANDING_PATH = "/tasks";

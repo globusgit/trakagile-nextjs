@@ -22,21 +22,24 @@ import {
 } from "lucide-react";
 import styles from "./AppShell.module.css";
 import { MODULES, ModuleKey, isModuleEnabledForRole } from "@/lib/moduleAccess";
+import { useEnabledModules } from "./OrganizationModulesProvider";
 
 // Every nav item the app *can* show. Whether one actually renders is driven
 // entirely by lib/moduleAccess.ts (MODULES[key].enabled / .roles) — nothing
 // here needs to be commented out to turn a module off, and nothing is
 // deleted, so re-enabling a module later is just a one-line config change.
+// Array order = sidebar order: Task Dashboard (if the account has it), Tasks,
+// Notifications, Employees first.
 const NAV_ITEMS: { key: ModuleKey; label: string; href: string; icon: React.ReactNode }[] = [
+  { key: "task-dashboard", label: "Task Dashboard", href: "/task-dashboard", icon: <ClipboardList size={20} /> },
+  { key: "tasks", label: "Tasks", href: "/tasks", icon: <ListTodo size={20} /> },
+  { key: "notifications", label: "Notifications", href: "/notifications", icon: <Bell size={20} /> },
+  { key: "employees", label: "Employees", href: "/employees", icon: <User size={20} /> },
   { key: "dashboard", label: "Dashboard", href: "/dashboard", icon: <Home size={20} /> },
   { key: "attendance", label: "Attendance", href: "/attendance", icon: <CalendarCheck2 size={20} /> },
   { key: "attendance-calendar", label: "Attendance Calendar", href: "/attendance/calendar", icon: <CalendarCheck2 size={20} /> },
   { key: "history", label: "My History", href: "/attendance/history", icon: <ScrollText size={20} /> },
-  { key: "tasks", label: "Tasks", href: "/tasks", icon: <ListTodo size={20} /> },
-  { key: "notifications", label: "Notifications", href: "/notifications", icon: <Bell size={20} /> },
   { key: "live-tracking", label: "Live Tracking", href: "/live-tracking", icon: <MapPinned size={20} /> },
-  { key: "employees", label: "Employees", href: "/employees", icon: <User size={20} /> },
-  { key: "task-dashboard", label: "Task Dashboard", href: "/task-dashboard", icon: <ClipboardList size={20} /> },
   { key: "field-trips", label: "Field Trips", href: "/field-trips", icon: <BriefcaseBusiness size={20} /> },
   { key: "work-from-home", label: "Work From Home", href: "/work-from-home", icon: <House size={20} /> },
   { key: "leaves", label: "Leaves", href: "/leaves", icon: <ListCheckIcon size={20} /> },
@@ -52,6 +55,7 @@ export default function SideNav({ collapsed, isMobile }: { collapsed: boolean; i
   const { data: session } = useSession();
   const [unreadCount, setUnreadCount] = useState(0);
   const role = session?.user?.role;
+  const enabledModules = useEnabledModules();
 
   // "collapsed" means two different things depending on viewport: an icon-only
   // rail on desktop, or an open full-width drawer on mobile. Only the desktop
@@ -60,7 +64,7 @@ export default function SideNav({ collapsed, isMobile }: { collapsed: boolean; i
 
   const visibleItems = NAV_ITEMS.filter((item) => {
     const moduleConfig = MODULES.find((m) => m.key === item.key);
-    return moduleConfig ? isModuleEnabledForRole(moduleConfig, role) : false;
+    return moduleConfig ? isModuleEnabledForRole(moduleConfig, role, enabledModules) : false;
   });
 
   useEffect(() => {

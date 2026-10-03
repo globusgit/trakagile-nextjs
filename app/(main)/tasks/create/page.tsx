@@ -41,6 +41,7 @@ export default function CreateTaskPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
   const canManage = TASK_MANAGE_ROLES.includes(session?.user?.role ?? "");
+  const selfEmpId = session?.user?.empId ?? "";
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [taskVerticalOptions, setTaskVerticalOptions] = useState<string[]>([]);
@@ -105,6 +106,26 @@ export default function CreateTaskPage() {
       }
     })();
   }, [scopeReady, taskSource, taskVertical]);
+
+  // The logged-in user's own entry. The employee search is scoped/limited, so
+  // the user may not appear in it - always include them so their name shows
+  // in the Assign To field after clicking "Self Task".
+  const assigneeOptions = useMemo(() => {
+    if (!selfEmpId || employees.some((employee) => employee.empId === selfEmpId)) return employees;
+    return [
+      { _id: session?.user?.id ?? selfEmpId, empId: selfEmpId, name: session?.user?.name || selfEmpId },
+      ...employees,
+    ];
+  }, [employees, selfEmpId, session?.user?.id, session?.user?.name]);
+
+  const isSelfTask = assignedToEmpIds.length === 1 && assignedToEmpIds[0] === selfEmpId;
+
+  // "Self Task": assign the task to the logged-in user (replaces any other
+  // selection). Clicking again clears it.
+  const handleSelfTask = () => {
+    if (!selfEmpId) return;
+    setAssignedToEmpIds(isSelfTask ? [] : [selfEmpId]);
+  };
 
   const subTypeOptions = useMemo(
     () => taskTypes.find((entry) => entry.name === taskType)?.subTypes || [],
@@ -322,11 +343,25 @@ export default function CreateTaskPage() {
           </div>
 
           <div className="space-y-2">
-            <Label>Assign To</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label>Assign To</Label>
+              {canManage && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={isSelfTask ? "default" : "outline"}
+                  onClick={handleSelfTask}
+                  disabled={!selfEmpId}
+                  aria-pressed={isSelfTask}
+                >
+                  Self Task
+                </Button>
+              )}
+            </div>
             {canManage ? (
               <>
                 <EmployeeMultiSelect
-                  employees={employees}
+                  employees={assigneeOptions}
                   selectedEmpIds={assignedToEmpIds}
                   onChange={setAssignedToEmpIds}
                   placeholder="Leave unassigned (status: New)"

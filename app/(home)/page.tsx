@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { getSession, signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, CheckCircle2, Eye, EyeOff, Fingerprint, ShieldCheck, Sparkles } from "lucide-react";
-import { DEFAULT_LANDING_PATH } from "@/lib/moduleAccess";
+import { getDefaultHrefForRole } from "@/lib/moduleAccess";
 import styles from "./Login.module.css";
 
 export default function HomePage() {
@@ -42,14 +42,31 @@ export default function HomePage() {
       redirect: false,
     });
 
-    setLoading(false);
-
     if (res?.error) {
+      // Not an organization user: the System Admin signs in on this same page.
+      const platform = await fetch("/api/platform-admin/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: empId, password }),
+      }).catch(() => null);
+      setLoading(false);
+      if (platform?.ok) {
+        router.push("/sysadmin");
+        router.refresh();
+        return;
+      }
       setError("Invalid Employee ID or password.");
       return;
     }
 
-    router.push(DEFAULT_LANDING_PATH);
+    // Land on the first module this account has: Task Dashboard (if the
+    // account has it), then Tasks, Notifications, Employees. If the
+    // organization has switched a module off, ModuleAccessGuard moves the
+    // user on to the next one.
+    const session = await getSession();
+    setLoading(false);
+
+    router.push(getDefaultHrefForRole(session?.user?.role));
     router.refresh();
   };
 
