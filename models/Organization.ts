@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 
 const OrganizationSchema = new mongoose.Schema(
@@ -6,7 +7,7 @@ const OrganizationSchema = new mongoose.Schema(
     code: { type: String, required: true, uppercase: true, trim: true },
     status: { type: String, enum: ["ACTIVE", "INACTIVE"], default: "ACTIVE" },
     address: { type: String, required: true },
-    contactPerson: { type: String, required: true },
+    contactPerson: { type: String },
     contactEmail: { type: String, required: true },
     contactPhone: { type: String, required: true },
     contactDesignation: { type: String },
@@ -14,13 +15,27 @@ const OrganizationSchema = new mongoose.Schema(
     gstNumber: { type: String },
     panNumber: { type: String },
     registrationNumber: { type: String },
+
+    // Location and classification (System Admin "Create Organization" form).
+    city: { type: String },
+    district: { type: String },
+    state: { type: String },
+    country: { type: String },
+    pincode: { type: String },
+    industryType: { type: String },
+    registrationMode: { type: String },
+    organizationType: { type: String },
+
     timeZone: { type: String, default: "Asia/Kolkata" },
     locale: { type: String, default: "en-IN" },
     currency: { type: String, default: "INR", uppercase: true },
     countryCode: { type: String, default: "IN", uppercase: true },
     weekStartsOn: { type: Number, min: 0, max: 6, default: 1 },
 
-    // Add any other fields relevant to your organization
+    // Module keys (see lib/moduleAccess.ts) enabled for this organization.
+    // Set from the currently enabled modules when the organization is created.
+    // Left undefined on older organizations, which then use the defaults.
+    enabledModules: { type: [String], default: undefined },
   },
   { timestamps: true },
 );
