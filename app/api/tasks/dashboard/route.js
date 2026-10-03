@@ -7,13 +7,24 @@ function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// Which tasks feed the employee table below the cards:
+//   "all"  -> every task assigned to each employee, across ALL directors
+//             (task details from another director's tasks are hidden, only
+//             the counts / ID / status / dates are shown)
+//   "mine" -> only the tasks THIS director assigned (previous behaviour)
+const TABLE_SCOPE = "all";
+
+const PRIVATE_DESCRIPTION = "Private task (assigned by another director)";
+
 // Lightweight shape of a task used in the hover cards - only what the UI
 // needs (Task ID / description / assigned date / end date), not the full
-// Task document.
-function taskSummary(task) {
+// Task document. `restricted` tasks belong to another director, so their
+// description is not exposed.
+function taskSummary(task, restricted) {
   return {
     taskId: task.taskId,
-    description: task.description,
+    description: restricted ? PRIVATE_DESCRIPTION : task.description,
+    restricted,
     status: task.status,
     assignedAt: task.assignedAt || null,
     // "End date" = the date the task stopped being open: completedDate for
@@ -42,55 +53,51 @@ function statsFor(tasks) {
 // lib/moduleAccess.ts "task-dashboard").
 //
 // Cards (top of the page):
-//   overall    -> every task the director assigned OR that was assigned to them
-//   assignedByMe -> tasks the director assigned to someone
-//   assignedToMe -> tasks assigned to the director
+//   overall      -> EVERY task in the organization, across all directors
+//   assignedByMe -> tasks THIS director assigned to someone
+//   assignedToMe -> tasks assigned to THIS director
 //
-// Table: EVERY employee in the organisation, with counts of the tasks THIS
-// director assigned to them (another director's assignments never appear).
-// Employees with no tasks come back with zero counts (the UI shows them white).
+// Table: EVERY employee in the organization, with counts of their tasks
+// (see TABLE_SCOPE above). Employees with no tasks come back with zero
+// counts (the UI shows them white).
 export async function GET(request) {
   try {
     await connectDB();
     const identity = await requireAttendanceUser(["DIRECTOR"]);
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search")?.trim() || "";
+    const me = identity.empId;
 
-    const [assignedByMe, assignedToMe] = await Promise.all([
-      Task.find({
-        orgId: identity.orgId,
-        assignedByEmpId: identity.empId,
-        assignedToEmpIds: { $exists: true, $ne: [] },
-      })
-        .select("taskId description status assignedToEmpIds assignedAt completedDate closedAt")
-        .lean(),
-      Task.find({
-        orgId: identity.orgId,
-        assignedToEmpIds: identity.empId,
-      })
-        .select("_id status")
-        .lean(),
-    ]);
+    // One query for the whole organization; everything below is derived from it.
+    const allTasks = await Task.find({ orgId: identity.orgId })
+      .select("taskId description status createdByEmpId assignedByEmpId assignedToEmpIds assignedAt completedDate closedAt")
+      .lean();
+
+    const hasAssignees = (task) => (task.assignedToEmpIds || []).length > 0;
+    const assignedByMe = allTasks.filter((task) => task.assignedByEmpId === me && hasAssignees(task));
+    const assignedToMe = allTasks.filter((task) => (task.assignedToEmpIds || []).includes(me));
+
+    // A director may see the details of a task only if they created it,
+    // assigned it, or it was assigned to them.
+    const canSeeDetails = (task) =>
+      task.createdByEmpId === me ||
+      task.assignedByEmpId === me ||
+      (task.assignedToEmpIds || []).includes(me);
 
     // ---- Cards -----------------------------------------------------------
-    // Overall = union of the two sets, de-duplicated (a task the director
-    // assigned to themselves is in both sets but counts once).
-    const overallById = new Map();
-    for (const task of assignedByMe) overallById.set(String(task._id), task);
-    for (const task of assignedToMe) overallById.set(String(task._id), overallById.get(String(task._id)) || task);
-
     const cards = {
-      overall: statsFor([...overallById.values()]),
+      overall: statsFor(allTasks),
       assignedByMe: statsFor(assignedByMe),
       assignedToMe: statsFor(assignedToMe),
     };
 
     // ---- Table -----------------------------------------------------------
-    // Bucket every task this director assigned under each of its assignees
-    // (a "Team" task counts toward every assignee).
+    // Bucket every task under each of its assignees (a "Team" task counts
+    // toward every assignee).
+    const tableTasks = TABLE_SCOPE === "all" ? allTasks.filter(hasAssignees) : assignedByMe;
     const byEmpId = new Map();
-    for (const task of assignedByMe) {
-      const summary = taskSummary(task);
+    for (const task of tableTasks) {
+      const summary = taskSummary(task, !canSeeDetails(task));
       for (const empId of task.assignedToEmpIds || []) {
         if (!byEmpId.has(empId)) byEmpId.set(empId, { assigned: [], completed: [], pending: [], suspended: [] });
         const bucket = byEmpId.get(empId);
@@ -101,7 +108,7 @@ export async function GET(request) {
       }
     }
 
-    // All employees of the organisation (not just the ones with tasks).
+    // All employees of the organization (not just the ones with tasks).
     // To hide inactive staff, add `status: "Active"` to this query.
     const employeeQuery = { orgId: identity.orgId };
     if (search) {
@@ -131,7 +138,10 @@ export async function GET(request) {
       };
     });
 
-    return Response.json({ cards, rows, total: rows.length });
+    return Response.json(
+      { cards, rows, total: rows.length },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     return errorResponse(error, "Unable to load the task dashboard.");
   }

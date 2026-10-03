@@ -26,6 +26,7 @@ import EmployeeAvatar from "@/app/_components/EmployeeAvatar";
 type TaskSummary = {
   taskId: string;
   description: string;
+  restricted?: boolean;
   status: string;
   assignedAt: string | null;
   endDate: string | null;
@@ -189,7 +190,7 @@ function TaskCountCell({
                     <tr key={`${task.taskId}-${index}`} className="border-b last:border-b-0 hover:bg-slate-50">
                       <td className="px-3 py-2 text-muted-foreground">{index + 1}</td>
                       <td className="whitespace-nowrap px-3 py-2 font-semibold">{task.taskId}</td>
-                      <td className="min-w-[16rem] px-3 py-2 text-muted-foreground">{task.description}</td>
+                      <td className={`min-w-[16rem] px-3 py-2 text-muted-foreground ${task.restricted ? "italic" : ""}`}>{task.description}</td>
                       <td className="whitespace-nowrap px-3 py-2">
                         <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
                           {task.status}
@@ -219,6 +220,11 @@ export default function TaskDashboardPage() {
     queryFn: () => fetchTaskDashboard(search),
     placeholderData: keepPreviousData,
     enabled: !!orgId,
+    // Always show fresh numbers: other directors create/assign tasks too.
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchInterval: 30_000,
   });
 
   const rows: DashboardRow[] = data?.rows ?? [];
@@ -237,7 +243,7 @@ export default function TaskDashboardPage() {
       <PageHeader title="Task Dashboard" />
 
       <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-        <StatCard title="Overall" stats={cards.overall} accent="border-t-cyan-500" />
+        <StatCard title="Overall (All Directors)" stats={cards.overall} accent="border-t-cyan-500" />
         <StatCard title="Tasks Assigned By Me" stats={cards.assignedByMe} accent="border-t-violet-500" />
         <StatCard title="Tasks Assigned To Me" stats={cards.assignedToMe} accent="border-t-emerald-500" />
       </div>

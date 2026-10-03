@@ -343,16 +343,16 @@ export default function CreateTaskPage() {
           </div>
 
           <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-3">
               <Label>Assign To</Label>
               {canManage && (
                 <Button
                   type="button"
                   size="sm"
-                  variant={isSelfTask ? "default" : "outline"}
                   onClick={handleSelfTask}
                   disabled={!selfEmpId}
                   aria-pressed={isSelfTask}
+                  className={`h-7 bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 ${isSelfTask ? "ring-2 ring-blue-300 ring-offset-1" : ""}`}
                 >
                   Self Task
                 </Button>

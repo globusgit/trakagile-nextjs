@@ -24,6 +24,22 @@ export const TASK_MANAGE_ROLES = rolesForPermission(PERMISSIONS.TASK_MANAGE);
 // their own team's tasks (mirrors isOrganizationRole in lib/access.js).
 export const TASK_ORG_WIDE_ROLES = rolesForPermission(PERMISSIONS.TASK_READ_ALL);
 
+// Directors are the one org-wide role that is NOT given the whole
+// organization's tasks: each director only ever sees tasks they created,
+// tasks they assigned, and tasks assigned to them - never another director's.
+// (ADMIN and HR keep their org-wide view.)
+const isDirector = (role) => String(role || "").trim().toUpperCase() === "DIRECTOR";
+
+// Mongo clauses matching "this person created it, assigned it, or it was
+// assigned to them".
+function ownTaskClauses(empId) {
+  return [
+    { createdByEmpId: empId },
+    { assignedByEmpId: empId },
+    { assignedToEmpIds: empId },
+  ];
+}
+
 // empIds whose tasks this identity may see (self included).
 // visibleEmployeeIds returns null for organization roles, so fall back to self
 // in case such a role isn't in TASK_ORG_WIDE_ROLES (the org-wide check in the
@@ -39,7 +55,13 @@ async function taskScopeEmpIds(identity) {
 export async function scopedTaskQuery(identity) {
   const query = tenantFilter(identity);
 
-  // Org-wide roles see every task in the tenant.
+  // Directors only see their own tasks (created / assigned by / assigned to).
+  if (isDirector(identity.role)) {
+    query.$or = ownTaskClauses(identity.empId);
+    return query;
+  }
+
+  // Other org-wide roles (ADMIN, HR) see every task in the tenant.
   if (TASK_ORG_WIDE_ROLES.includes(identity.role)) return query;
 
   // Everyone else: tasks created by or assigned to themselves
@@ -58,6 +80,18 @@ export async function scopedTask(id, identity) {
   if (!mongoose.isValidObjectId(id)) throw new AttendanceError("Invalid task.");
   const task = await Task.findOne({ _id: id, orgId: identity.orgId });
   if (!task) throw new AttendanceError("Task not found.", 404);
+
+  if (isDirector(identity.role)) {
+    const assigned = task.assignedToEmpIds || [];
+    if (
+      task.createdByEmpId === identity.empId ||
+      task.assignedByEmpId === identity.empId ||
+      assigned.includes(identity.empId)
+    ) {
+      return task;
+    }
+    throw new AttendanceError("You are not allowed to access this task.", 403);
+  }
 
   if (TASK_ORG_WIDE_ROLES.includes(identity.role)) return task;
 

@@ -236,6 +236,28 @@ export default function EditTaskPage() {
   // recent note is immediately visible at the top of the panel.
   const displayNotes = useMemo(() => [...notes].reverse(), [notes]);
 
+  // The logged-in user's own entry. The employee search is scoped/limited, so
+  // the user may not appear in it - always include them so their name shows
+  // in the Assigned To field after clicking "Self Task".
+  const selfEmpId = session?.user?.empId ?? "";
+  const assigneeOptions = useMemo(() => {
+    if (!selfEmpId || employees.some((employee) => employee.empId === selfEmpId)) return employees;
+    return [
+      { _id: session?.user?.id ?? selfEmpId, empId: selfEmpId, name: session?.user?.name || selfEmpId },
+      ...employees,
+    ];
+  }, [employees, selfEmpId, session?.user?.id, session?.user?.name]);
+
+  const isSelfTask = assignedToEmpIds.length === 1 && assignedToEmpIds[0] === selfEmpId;
+  // Only offered while the task was created without an assignee.
+  const showSelfTaskButton = canManage && !!selfEmpId && !(task?.assignedToEmpIds?.length);
+
+  // "Self Task": assign the task to the logged-in user. Clicking again clears it.
+  const handleSelfTask = () => {
+    if (!selfEmpId) return;
+    setAssignedToEmpIds(isSelfTask ? [] : [selfEmpId]);
+  };
+
   const employeePhotoByEmpId = useMemo(() => {
     const map = new Map<string, string | undefined>();
     employees.forEach((employee) => map.set(employee.empId, employee.photo));
@@ -451,9 +473,22 @@ export default function EditTaskPage() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Assigned To</Label>
+                      <div className="flex items-center gap-3">
+                        <Label>Assigned To</Label>
+                        {showSelfTaskButton && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={handleSelfTask}
+                            aria-pressed={isSelfTask}
+                            className={`h-7 bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 ${isSelfTask ? "ring-2 ring-blue-300 ring-offset-1" : ""}`}
+                          >
+                            Self Task
+                          </Button>
+                        )}
+                      </div>
                       <EmployeeMultiSelect
-                        employees={employees}
+                        employees={assigneeOptions}
                         selectedEmpIds={assignedToEmpIds}
                         onChange={setAssignedToEmpIds}
                         placeholder="Unassigned"
