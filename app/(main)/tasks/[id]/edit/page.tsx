@@ -8,6 +8,7 @@ import PageHeader from "@/app/_components/PageHeader";
 import EmployeeMultiSelect from "@/app/_components/EmployeeMultiSelect";
 import SearchableSelect from "@/app/_components/SearchableSelect";
 import ReferenceFieldGroup, { EMPTY_REFERENCE, ReferenceValue } from "@/app/_components/ReferenceFieldGroup";
+import { TASK_SOURCES } from "@/app/_components/taskConstants";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -124,7 +125,7 @@ async function postJson(url: string, body: unknown) {
 function ReadOnlyField({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="space-y-2">
-      <Label className="text-muted-foreground">{label}</Label>
+      <Label className="text-foreground">{label}</Label>
       <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">{value || "-"}</div>
     </div>
   );
@@ -146,6 +147,10 @@ export default function EditTaskPage() {
   const [projectNo, setProjectNo] = useState<ReferenceValue>(EMPTY_REFERENCE);
   const [workOrderNo, setWorkOrderNo] = useState<ReferenceValue>(EMPTY_REFERENCE);
   const [tenderNo, setTenderNo] = useState<ReferenceValue>(EMPTY_REFERENCE);
+  const [description, setDescription] = useState("");
+  const [taskSource, setTaskSource] = useState("");
+  const [taskVertical, setTaskVertical] = useState("");
+  const [taskVerticalOptions, setTaskVerticalOptions] = useState<string[]>([]);
   const [taskType, setTaskType] = useState("");
   const [subTaskType, setSubTaskType] = useState("");
   const [taskStatus, setTaskStatus] = useState("");
@@ -176,6 +181,9 @@ export default function EditTaskPage() {
         setProjectNo(toReferenceValue(result.projectNo));
         setWorkOrderNo(toReferenceValue(result.workOrderNo));
         setTenderNo(toReferenceValue(result.tenderNo));
+        setDescription(result.description || "");
+        setTaskSource(result.taskSource || "");
+        setTaskVertical(result.taskVertical || "");
         setTaskType(result.taskType || "");
         setSubTaskType(result.subTaskType || "");
         setTaskStatus(result.status);
@@ -190,10 +198,8 @@ export default function EditTaskPage() {
     })();
   }, [id]);
 
-  // Task Source / Task Vertical are fixed at creation - Task Type options are
-  // looked up within that fixed scope.
-  const taskSource = task?.taskSource || "";
-  const taskVertical = task?.taskVertical || "";
+  // Task Source / Task Vertical are editable - Task Type options are looked up
+  // within the currently selected scope.
   const scopeReady = Boolean(taskSource) && (taskSource !== "Project" || Boolean(taskVertical));
 
   useEffect(() => {
@@ -204,6 +210,18 @@ export default function EditTaskPage() {
         if (response.ok) setEmployees((await response.json()).employees || []);
       } catch {
         // Non-fatal — the assignee picker will just be empty.
+      }
+    })();
+  }, [canManage]);
+
+  useEffect(() => {
+    if (!canManage) return;
+    (async () => {
+      try {
+        const response = await fetch("/api/task-verticals", { cache: "no-store" });
+        if (response.ok) setTaskVerticalOptions((await response.json()).taskVerticals || []);
+      } catch {
+        // Non-fatal.
       }
     })();
   }, [canManage]);
@@ -265,6 +283,31 @@ export default function EditTaskPage() {
   }, [employees]);
    
 
+  const handleTaskSourceChange = (nextValue: string) => {
+    const match = TASK_SOURCES.find((option) => option.toLowerCase() === nextValue.toLowerCase());
+    setTaskSource(match || "");
+    setTaskVertical("");
+    setTaskType("");
+    setSubTaskType("");
+  };
+
+  const handleTaskVerticalChange = (nextValue: string) => {
+    setTaskVertical(nextValue);
+    setTaskType("");
+    setSubTaskType("");
+  };
+
+  const handleAddTaskVertical = async (name: string) => {
+    try {
+      await postJson("/api/task-verticals", { name });
+      setTaskVerticalOptions((prev) => (prev.includes(name) ? prev : [...prev, name].sort()));
+      handleTaskVerticalChange(name);
+      toast.success("Task vertical added.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to add task vertical.");
+    }
+  };
+
   const handleTaskTypeChange = (nextValue: string) => {
     setTaskType(nextValue);
     setSubTaskType("");
@@ -321,17 +364,26 @@ export default function EditTaskPage() {
 
   const handleSubmit = async () => {
     setServerError("");
+    if (!description.trim()) {
+      setServerError("Task description is required.");
+      return;
+    }
     setSaving(true);
     try {
       const response = await fetch(`/api/tasks/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          description: description.trim(),
           projectNo: cleanReference(projectNo),
           workOrderNo: cleanReference(workOrderNo),
           tenderNo: cleanReference(tenderNo),
+          taskSource: taskSource || undefined,
+          taskVertical: taskSource === "Project" ? taskVertical : undefined,
           taskType,
           subTaskType,
+          // End Date & Time is no longer editable on this page - the existing
+          // value is sent back unchanged so saving never clears it.
           endDateTime: endDateTime || undefined,
           status: taskStatus,
           assignedToEmpIds,
@@ -371,9 +423,15 @@ export default function EditTaskPage() {
       ""
     );
 
+  const headerTitle = task
+    ? `${canManage ? "Edit Task" : "View Task"} – ${task.taskId} - ${task.createdByName || task.createdByEmpId}`
+    : canManage
+      ? "Edit Task"
+      : "View Task";
+
   return (
     <div className="space-y-4">
-      <PageHeader title={canManage ? "Edit Task" : "View Task"} />
+      <PageHeader title={headerTitle} subtitle="Manage and review your task workspace" />
 
       {loadingTask ? (
         <Card className="shadow-sm">
@@ -394,140 +452,205 @@ export default function EditTaskPage() {
           </CardContent>
         </Card>
       ) : task ? (
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+        // Notes column is a fixed, narrower width on large screens so the
+        // task form gets the remaining space.
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           {/* Left: all the editable/read-only task fields. */}
-          <Card className="shadow-sm lg:col-span-2">
+          <Card className="min-w-0 overflow-visible shadow-sm">
             <CardHeader>
               <CardTitle className="text-2xl">Task Information</CardTitle>
-              {canManage && (
+            {/*  {canManage && (
                 <p className="text-sm text-muted-foreground">
-                  Project No, Work-Order No, Tender No, Task Type, Sub-Task Type, Assigned To and Task Status can be edited here.
+                  Task Source, Task Vertical, Task Type, Sub-Task Type, Assigned To, Project No, Work-Order No, Tender No and Task Status can be edited here.
                 </p>
-              )}
+              )} */}
             </CardHeader>
             <CardContent>
-              <div className="space-y-8">
+              <div className="space-y-6">
                 {serverError && (
                   <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                     {serverError}
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                  <ReadOnlyField label="Task ID" value={task.taskId} />
-                  <ReadOnlyField label="Created By"
-                    value={<EmployeeNameTag name={task.createdByName || task.createdByEmpId} photo={task.createdByPhoto} size={20} />}
-                  />
+                {/* Description with Task Status beside it */}
+                <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+                  {canManage ? (
+                    <div className="space-y-2">
+                      <Label>Description</Label>
+                      <Textarea
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        placeholder="Describe the task..."
+                        rows={3}
+                      />
+                    </div>
+                  ) : (
+                    <ReadOnlyField label="Description" value={task.description} />
+                  )}
+                  {canManage ? (
+                    <div className="space-y-2">
+                      <Label>Task Status</Label>
+                      <select
+                        className="h-10 w-full rounded-md border bg-transparent px-3 text-sm"
+                        value={taskStatus}
+                        onChange={(e) => setTaskStatus(e.target.value)}
+                      >
+                        {TASK_STATUSES.map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <ReadOnlyField label="Task Status" value={task.status} />
+                  )}
                 </div>
 
-                <ReadOnlyField label="Description" value={task.description} />
+                {/* Three cards side by side on large screens, stacked on small ones. */}
+                <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-3">
+                  {/* Card 1: Sources */}
+                  <Card className="h-full min-w-0 overflow-visible bg-white pt-0 shadow-2xl shadow-cyan-700/40 ring-2 ring-cyan-700 transition-transform duration-200 hover:-translate-y-1">
+                    <CardHeader className="rounded-t-xl bg-linear-to-r from-cyan-900 to-cyan-600 py-3">
+                      <CardTitle className="text-base font-semibold tracking-wide text-white">Sources</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {canManage ? (
+                        <div className="grid grid-cols-1 gap-5">
+                          <div className="space-y-2">
+                            <Label>Task Source</Label>
+                            <SearchableSelect
+                              options={TASK_SOURCES}
+                              value={taskSource}
+                              onChange={handleTaskSourceChange}
+                              placeholder="Search task source..."
+                            />
+                          </div>
 
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                  <ReadOnlyField label="Task Source" value={task.taskSource || ""} />
-                  {task.taskSource === "Project" && <ReadOnlyField label="Task Vertical" value={task.taskVertical || ""} />}
+                          {taskSource === "Project" && (
+                            <div className="space-y-2">
+                              <Label>Task Vertical</Label>
+                              <SearchableSelect
+                                options={taskVerticalOptions}
+                                value={taskVertical}
+                                onChange={handleTaskVerticalChange}
+                                onAddNew={handleAddTaskVertical}
+                                placeholder="Search or add a vertical..."
+                              />
+                            </div>
+                          )}
+
+                          <div className="space-y-2">
+                            <Label>Task Type</Label>
+                            <SearchableSelect
+                              options={taskTypes.map((entry) => entry.name)}
+                              value={taskType}
+                              onChange={handleTaskTypeChange}
+                              onAddNew={handleAddTaskType}
+                              placeholder="Search or add a task type..."
+                              disabled={!scopeReady}
+                              disabledMessage={
+                                !taskSource
+                                  ? "Select a task source first."
+                                  : taskSource === "Project"
+                                    ? "Select a task vertical first."
+                                    : undefined
+                              }
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>Sub-Task Type</Label>
+                            <SearchableSelect
+                              options={subTypeOptions}
+                              value={subTaskType}
+                              onChange={setSubTaskType}
+                              onAddNew={handleAddSubTaskType}
+                              placeholder="Search or add a sub-task type..."
+                              disabled={!taskType}
+                              disabledMessage={!taskType ? "Select a task type first." : undefined}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 gap-5">
+                          <ReadOnlyField label="Task Source" value={task.taskSource || ""} />
+                          {task.taskSource === "Project" && (
+                            <ReadOnlyField label="Task Vertical" value={task.taskVertical || ""} />
+                          )}
+                          <ReadOnlyField label="Task Type" value={task.taskType || ""} />
+                          <ReadOnlyField label="Sub-Task Type" value={task.subTaskType || ""} />
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Card 2: Assigned */}
+                  <Card className="h-full min-w-0 overflow-visible bg-white pt-0 shadow-2xl shadow-indigo-700/40 ring-2 ring-indigo-700 transition-transform duration-200 hover:-translate-y-1">
+                    <CardHeader className="rounded-t-xl bg-linear-to-r from-indigo-900 to-indigo-600 py-3">
+                      <CardTitle className="text-base font-semibold tracking-wide text-white">Assigned</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 gap-5">
+                        <ReadOnlyField
+                          label="Assigned By"
+                          value={task.assignedByName ? <EmployeeNameTag name={task.assignedByName} photo={task.assignedByPhoto} size={20} /> : ""}
+                        />
+
+                        {canManage ? (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-3">
+                              <Label>Assigned To</Label>
+                              {showSelfTaskButton && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  onClick={handleSelfTask}
+                                  aria-pressed={isSelfTask}
+                                  className={`h-7 bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 ${isSelfTask ? "ring-2 ring-blue-300 ring-offset-1" : ""}`}
+                                >
+                                  Self Task
+                                </Button>
+                              )}
+                            </div>
+                            <EmployeeMultiSelect
+                              employees={assigneeOptions}
+                              selectedEmpIds={assignedToEmpIds}
+                              onChange={setAssignedToEmpIds}
+                              placeholder="Unassigned"
+                            />
+                            <p className="text-xs text-muted-foreground">Select multiple employees to assign this task to a team - the Tasks list will show &quot;Team&quot; for it.</p>
+                          </div>
+                        ) : (
+                          <ReadOnlyField label="Assigned To" value={assignedToDisplay} />
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Card 3: Time Lines (all read-only) */}
+                  <Card className="h-full min-w-0 overflow-visible bg-white pt-0 shadow-2xl shadow-teal-700/40 ring-2 ring-teal-700 transition-transform duration-200 hover:-translate-y-1">
+                    <CardHeader className="rounded-t-xl bg-linear-to-r from-teal-900 to-emerald-600 py-3">
+                      <CardTitle className="text-base font-semibold tracking-wide text-white">Time Lines</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 gap-5">
+                        <ReadOnlyField label="Create Date" value={formatDate(task.createdAt)} />
+                        <ReadOnlyField label="Assigned Date" value={formatDate(task.assignedAt)} />
+                        <ReadOnlyField label="Expected End Date" value={formatDateTime(task.endDateTime)} />
+                        <ReadOnlyField label="Actual End Date" value={task.status === "Done" ? formatDate(task.completedDate) : ""} />
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
-
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-                  <ReadOnlyField label="Created Date" value={formatDate(task.createdAt)} />
-                  <ReadOnlyField label="Assigned By"
-                    value={task.assignedByName ? <EmployeeNameTag name={task.assignedByName} photo={task.assignedByPhoto} size={20} /> : ""}
-                  />
-                  <ReadOnlyField label="Assigned Date" value={formatDate(task.assignedAt)} />
-                </div>
-
-                {!canManage && (
-                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                    <ReadOnlyField label="Task Type" value={[task.taskType, task.subTaskType].filter(Boolean).join(" / ")} />
-                    <ReadOnlyField label="Assigned To" value={assignedToDisplay} />
-                  </div>
-                )}
 
                 {canManage ? (
                   <>
-                    <div className="grid grid-cols-1 gap-6 border-t border-gray-100 pt-6 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Task Type</Label>
-                        <SearchableSelect
-                          options={taskTypes.map((entry) => entry.name)}
-                          value={taskType}
-                          onChange={handleTaskTypeChange}
-                          onAddNew={handleAddTaskType}
-                          placeholder="Search or add a task type..."
-                          disabled={!scopeReady}
-                          disabledMessage={!scopeReady ? "This task has no task source set." : undefined}
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label>Sub-Task Type</Label>
-                        <SearchableSelect
-                          options={subTypeOptions}
-                          value={subTaskType}
-                          onChange={setSubTaskType}
-                          onAddNew={handleAddSubTaskType}
-                          placeholder="Search or add a sub-task type..."
-                          disabled={!taskType}
-                          disabledMessage={!taskType ? "Select a task type first." : undefined}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-3">
-                        <Label>Assigned To</Label>
-                        {showSelfTaskButton && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={handleSelfTask}
-                            aria-pressed={isSelfTask}
-                            className={`h-7 bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 ${isSelfTask ? "ring-2 ring-blue-300 ring-offset-1" : ""}`}
-                          >
-                            Self Task
-                          </Button>
-                        )}
-                      </div>
-                      <EmployeeMultiSelect
-                        employees={assigneeOptions}
-                        selectedEmpIds={assignedToEmpIds}
-                        onChange={setAssignedToEmpIds}
-                        placeholder="Unassigned"
-                      />
-                      <p className="text-xs text-muted-foreground">Select multiple employees to assign this task to a team - the Tasks list will show &quot;Team&quot; for it.</p>
-                    </div>
-
                     <div className="grid grid-cols-1 gap-4 border-t border-gray-100 pt-6 md:grid-cols-3">
                       <ReferenceFieldGroup label="Project No" value={projectNo} onChange={setProjectNo} />
                       <ReferenceFieldGroup label="Work-Order No" value={workOrderNo} onChange={setWorkOrderNo} />
                       <ReferenceFieldGroup label="Tender No" value={tenderNo} onChange={setTenderNo} />
                     </div>
                     <p className="-mt-4 text-xs text-muted-foreground">Leave all three blank to mark this as an internal task.</p>
-
-                    <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-                      <div className="space-y-2">
-                        <Label>End Date &amp; Time</Label>
-                        <input
-                          type="datetime-local"
-                          value={endDateTime}
-                          onChange={(e) => setEndDateTime(e.target.value)}
-                          className="h-10 w-full rounded-md border bg-transparent px-3 text-sm"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label>Task Status</Label>
-                        <select
-                          className="h-10 w-full rounded-md border bg-transparent px-3 text-sm"
-                          value={taskStatus}
-                          onChange={(e) => setTaskStatus(e.target.value)}
-                        >
-                          {TASK_STATUSES.map((option) => (
-                            <option key={option} value={option}>{option}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <ReadOnlyField label="Completed Date" value={task.status === "Done" ? formatDate(task.completedDate) : ""} />
-                    </div>
 
                     <div className="flex justify-end gap-4 border-t border-gray-100 pt-6">
                       <Button
@@ -549,11 +672,6 @@ export default function EditTaskPage() {
                       <ReadOnlyField label="Work-Order No" value={task.workOrderNo?.number || ""} />
                       <ReadOnlyField label="Tender No" value={task.tenderNo?.number || ""} />
                     </div>
-                    <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-                      <ReadOnlyField label="End Date &amp; Time" value={formatDateTime(task.endDateTime)} />
-                      <ReadOnlyField label="Task Status" value={task.status} />
-                      <ReadOnlyField label="Completed Date" value={task.status === "Done" ? formatDate(task.completedDate) : ""} />
-                    </div>
                     <div className="flex justify-end border-t border-gray-100 pt-6">
                       <Button variant="outline" onClick={() => router.push("/tasks")}>Back</Button>
                     </div>
@@ -563,9 +681,9 @@ export default function EditTaskPage() {
             </CardContent>
           </Card>
 
-          {/* Right: Notes remain in the existing one-third-width column and
-              stay pinned while the task-information card scrolls. */}
-          <Card className="shadow-sm lg:col-span-1 lg:sticky lg:top-4 lg:self-start">
+          {/* Right: Notes - narrower fixed-width column, stays pinned while
+              the task-information card scrolls. */}
+          <Card className="min-w-0 shadow-sm lg:sticky lg:top-4 lg:self-start">
             <CardHeader>
               <CardTitle className="text-2xl">Notes</CardTitle>
               <p className="text-xs text-muted-foreground">

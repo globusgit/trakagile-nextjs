@@ -10,7 +10,16 @@ import { useEnabledModules } from "./OrganizationModulesProvider";
 // `backHref` overrides where the back arrow goes; pass null to hide it.
 // When omitted the arrow goes to the user's home page (first module they
 // have: Task Dashboard, Tasks, Notifications, Employees).
-export default function PageHeader({ title, backHref }: { title: string; backHref?: string | null }) {
+// `subtitle` overrides the default "Manage and review your ... workspace" line.
+export default function PageHeader({
+  title,
+  backHref,
+  subtitle,
+}: {
+  title: string;
+  backHref?: string | null;
+  subtitle?: string;
+}) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const enabledModules = useEnabledModules();
@@ -34,7 +43,7 @@ export default function PageHeader({ title, backHref }: { title: string; backHre
         )}
         <div className="min-w-0">
           <h1 className="text-lg font-semibold tracking-tight break-words sm:text-xl">{title}</h1>
-          <p className="mt-0.5 text-xs text-sky-100">Manage and review your {title.toLowerCase()} workspace</p>
+          <p className="mt-0.5 text-xs text-sky-100">{subtitle ?? `Manage and review your ${title.toLowerCase()} workspace`}</p>
         </div>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { connectDB } from "@/lib/mongoose";
-import { TASK_STATUSES } from "@/models/Task";
+import { TASK_SOURCES, TASK_STATUSES } from "@/models/Task";
 import User from "@/models/User";
 import { AttendanceError, errorResponse, requireAttendanceUser } from "../../attendance/_lib/attendance";
 import {
@@ -123,6 +123,24 @@ export async function PUT(request, { params }) {
         taskType: String(body.taskType || "").trim() || undefined,
         subTaskType: String(body.subTaskType || "").trim() || undefined,
       };
+
+      // Description is editable from the edit page. Only applied when the client
+      // sends it, and it can never be blanked out (same rule as task creation).
+      if (body.description !== undefined) {
+        const nextDescription = String(body.description || "").trim();
+        if (!nextDescription) throw new AttendanceError("Task description is required.");
+        updates.description = nextDescription;
+      }
+
+      // Task Source / Task Vertical are editable from the edit page. Only applied
+      // when the client sends taskSource; Task Vertical only applies to "Project".
+      if (body.taskSource !== undefined) {
+        const nextSource = String(body.taskSource || "").trim();
+        if (nextSource && !TASK_SOURCES.includes(nextSource)) throw new AttendanceError("Invalid task source.");
+        updates.taskSource = nextSource || undefined;
+        updates.taskVertical =
+          nextSource === "Project" ? String(body.taskVertical || "").trim() || undefined : undefined;
+      }
 
       if (Array.isArray(body.assignedToEmpIds)) {
         const nextAssigneeIds = [...new Set(body.assignedToEmpIds.filter(Boolean))];
