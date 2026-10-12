@@ -72,11 +72,6 @@ type Task = {
 type Employee = { _id: string; empId: string; name: string; photo?: string};
 type TaskTypeEntry = { name: string; subTypes: string[] };
 
-function formatDate(value?: string) {
-  if (!value) return "-";
-  return new Date(value).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-}
-
 function formatDateTime(value?: string) {
   if (!value) return "-";
   return new Date(value).toLocaleString("en-IN", {
@@ -634,10 +629,10 @@ export default function EditTaskPage() {
                     </CardHeader>
                     <CardContent>
                       <div className="grid grid-cols-1 gap-5">
-                        <ReadOnlyField label="Create Date" value={formatDate(task.createdAt)} />
-                        <ReadOnlyField label="Assigned Date" value={formatDate(task.assignedAt)} />
+                        <ReadOnlyField label="Create Date" value={formatDateTime(task.createdAt)} />
+                        <ReadOnlyField label="Assigned Date" value={formatDateTime(task.assignedAt)} />
                         <ReadOnlyField label="Expected End Date" value={formatDateTime(task.endDateTime)} />
-                        <ReadOnlyField label="Actual End Date" value={task.status === "Done" ? formatDate(task.completedDate) : ""} />
+                        <ReadOnlyField label="Actual End Date" value={task.status === "Done" ? formatDateTime(task.completedDate) : ""} />
                       </div>
                     </CardContent>
                   </Card>
