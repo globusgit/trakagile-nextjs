@@ -142,6 +142,12 @@ export async function PUT(request, { params }) {
           nextSource === "Project" ? String(body.taskVertical || "").trim() || undefined : undefined;
       }
 
+      // Vertical sent on its own (no taskSource) - the edit page's Vertical field
+      // applies to Internal and Project tasks alike, so it is saved as sent.
+      if (body.taskSource === undefined && body.taskVertical !== undefined) {
+        updates.taskVertical = String(body.taskVertical || "").trim() || undefined;
+      }
+
       if (Array.isArray(body.assignedToEmpIds)) {
         const nextAssigneeIds = [...new Set(body.assignedToEmpIds.filter(Boolean))];
         const currentAssigneeIds = task.assignedToEmpIds || [];

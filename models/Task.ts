@@ -89,6 +89,12 @@ const taskSchema = new mongoose.Schema(
       trim: true,
     },
 
+    // Sub-Vertical chosen on the Create Task page (only for "Project" tasks).
+    subVertical: {
+      type: String,
+      trim: true,
+    },
+
     taskType: {
       type: String,
       trim: true,

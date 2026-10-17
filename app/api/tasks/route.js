@@ -105,7 +105,8 @@ export async function POST(request) {
     }
 
     const taskSource = TASK_SOURCES.includes(body.taskSource) ? body.taskSource : undefined;
-    const taskVertical = taskSource === "Project" ? String(body.taskVertical || "").trim() || undefined : undefined;
+    // Vertical is saved for every task (Internal and Project alike).
+    const taskVertical = String(body.taskVertical || "").trim() || undefined;
 
     let assignedToEmpIds = [...new Set((body.assignedToEmpIds || []).filter(Boolean))];
     if (!canManage) {

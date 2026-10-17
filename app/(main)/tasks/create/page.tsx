@@ -7,12 +7,12 @@ import { toast } from "sonner";
 import PageHeader from "@/app/_components/PageHeader";
 import EmployeeMultiSelect from "@/app/_components/EmployeeMultiSelect";
 import SearchableSelect from "@/app/_components/SearchableSelect";
-import ReferenceFieldGroup, { EMPTY_REFERENCE, ReferenceValue } from "@/app/_components/ReferenceFieldGroup";
-import { TASK_SOURCES } from "@/app/_components/taskConstants";
+import { EMPTY_REFERENCE, ReferenceValue } from "@/app/_components/ReferenceFieldGroup";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 
 // Roles allowed to assign a task to someone else — everyone else's tasks are
 // always self-assigned. Keep in sync with TASK_MANAGE_ROLES in
@@ -20,7 +20,10 @@ import { Textarea } from "@/components/ui/textarea";
 const TASK_MANAGE_ROLES = ["ADMIN", "DIRECTOR", "MANAGER", "HR"];
 
 type Employee = { _id: string; empId: string; name: string };
-type TaskTypeEntry = { name: string; subTypes: string[] };
+
+// Task Type choices - same values and same saved field (taskType) as the Edit Task
+// page. "Project" tasks also capture Work-Order and Tender details.
+const TASK_TYPE_OPTIONS = ["Internal", "Project"];
 
 function cleanReference(value: ReferenceValue) {
   return value.number.trim() ? value : undefined;
@@ -37,6 +40,66 @@ async function postJson(url: string, body: unknown) {
   return result;
 }
 
+// Work-Order / Tender detail card - same look as the Edit Task page: Number and
+// Status on the top row, a large Description box underneath.
+const REFERENCE_CARD_TONES = {
+  workOrder: {
+    card: "border-amber-300 bg-amber-50/40",
+    header: "bg-amber-100 text-amber-900",
+  },
+  tender: {
+    card: "border-violet-300 bg-violet-50/40",
+    header: "bg-violet-100 text-violet-900",
+  },
+};
+
+function ReferenceDetailCard({
+  title,
+  numberLabel,
+  tone,
+  value,
+  onChange,
+}: {
+  title: string;
+  numberLabel: string;
+  tone: keyof typeof REFERENCE_CARD_TONES;
+  value: ReferenceValue;
+  onChange: (value: ReferenceValue) => void;
+}) {
+  const styles = REFERENCE_CARD_TONES[tone];
+  const set = (field: "number" | "description" | "status") =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      onChange({ ...value, [field]: e.target.value });
+
+  return (
+    <div className={`min-w-0 overflow-hidden rounded-lg border ${styles.card}`}>
+      <div className={`px-4 py-2 text-sm font-semibold ${styles.header}`}>{title}</div>
+      <div className="space-y-4 p-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>{numberLabel}</Label>
+            <Input placeholder={numberLabel} value={value.number} onChange={set("number")} className="bg-white" />
+          </div>
+          <div className="space-y-2">
+            <Label>Status</Label>
+            <Input placeholder="Status" value={value.status} onChange={set("status")} className="bg-white" />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label>Description</Label>
+          <Textarea
+            placeholder="Description"
+            rows={5}
+            value={value.description}
+            onChange={set("description")}
+            className="min-h-28 bg-white"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CreateTaskPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
@@ -45,16 +108,14 @@ export default function CreateTaskPage() {
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [taskVerticalOptions, setTaskVerticalOptions] = useState<string[]>([]);
-  const [taskTypes, setTaskTypes] = useState<TaskTypeEntry[]>([]);
+  const [subVerticalOptions, setSubVerticalOptions] = useState<string[]>([]);
 
   const [description, setDescription] = useState("");
   const [endDateTime, setEndDateTime] = useState("");
-  const [taskSource, setTaskSource] = useState("");
+  const [taskType, setTaskType] = useState(""); // Internal | Project
   const [taskVertical, setTaskVertical] = useState("");
-  const [taskType, setTaskType] = useState("");
-  const [subTaskType, setSubTaskType] = useState("");
+  const [subTaskType, setSubTaskType] = useState(""); // saved as the task's Sub-vertical
   const [assignedToEmpIds, setAssignedToEmpIds] = useState<string[]>([]);
-  const [projectNo, setProjectNo] = useState<ReferenceValue>(EMPTY_REFERENCE);
   const [workOrderNo, setWorkOrderNo] = useState<ReferenceValue>(EMPTY_REFERENCE);
   const [tenderNo, setTenderNo] = useState<ReferenceValue>(EMPTY_REFERENCE);
   const [descriptionError, setDescriptionError] = useState(false);
@@ -78,34 +139,30 @@ export default function CreateTaskPage() {
   useEffect(() => {
     (async () => {
       try {
-        const response = await fetch("/api/task-verticals", { cache: "no-store" });
-        if (response.ok) setTaskVerticalOptions((await response.json()).taskVerticals || []);
+        const response = await fetch("/api/verticals", { cache: "no-store" });
+        if (response.ok) setTaskVerticalOptions((await response.json()).verticals || []);
       } catch {
         // Non-fatal.
       }
     })();
   }, []);
 
-  // Task Type options depend on Task Source (+ Task Vertical for "Project").
-  // Reset downstream selections whenever the scope they depend on changes.
-  const scopeReady = taskSource && (taskSource !== "Project" || taskVertical);
-
+  // Sub-vertical options depend on the selected Vertical.
   useEffect(() => {
     (async () => {
-      if (!scopeReady) {
-        setTaskTypes([]);
+      if (!taskVertical) {
+        setSubVerticalOptions([]);
         return;
       }
       try {
-        const params = new URLSearchParams({ taskSource });
-        if (taskSource === "Project") params.set("taskVertical", taskVertical);
-        const response = await fetch(`/api/task-types?${params}`, { cache: "no-store" });
-        if (response.ok) setTaskTypes((await response.json()).taskTypes || []);
+        const params = new URLSearchParams({ vertical: taskVertical });
+        const response = await fetch(`/api/sub-verticals?${params}`, { cache: "no-store" });
+        if (response.ok) setSubVerticalOptions((await response.json()).subVerticals || []);
       } catch {
         // Non-fatal.
       }
     })();
-  }, [scopeReady, taskSource, taskVertical]);
+  }, [taskVertical]);
 
   // The logged-in user's own entry. The employee search is scoped/limited, so
   // the user may not appear in it - always include them so their name shows
@@ -118,6 +175,7 @@ export default function CreateTaskPage() {
     ];
   }, [employees, selfEmpId, session?.user?.id, session?.user?.name]);
 
+  const isProject = taskType === "Project";
   const isSelfTask = assignedToEmpIds.length === 1 && assignedToEmpIds[0] === selfEmpId;
 
   // "Self Task": assign the task to the logged-in user (replaces any other
@@ -127,71 +185,41 @@ export default function CreateTaskPage() {
     setAssignedToEmpIds(isSelfTask ? [] : [selfEmpId]);
   };
 
-  const subTypeOptions = useMemo(
-    () => taskTypes.find((entry) => entry.name === taskType)?.subTypes || [],
-    [taskTypes, taskType],
-  );
-
-  const handleTaskSourceChange = (nextValue: string) => {
-    const match = TASK_SOURCES.find((option) => option.toLowerCase() === nextValue.toLowerCase());
-    setTaskSource(match || "");
-    setTaskVertical("");
-    setTaskType("");
-    setSubTaskType("");
-  };
-
-  const handleTaskVerticalChange = (nextValue: string) => {
-    setTaskVertical(nextValue);
-    setTaskType("");
-    setSubTaskType("");
-  };
-
+  // Switching away from "Project" clears the Tender / Work-Order cards (they only
+  // apply to projects). Vertical and Sub-Vertical are kept for every task type.
   const handleTaskTypeChange = (nextValue: string) => {
     setTaskType(nextValue);
+    if (nextValue !== "Project") {
+      setWorkOrderNo(EMPTY_REFERENCE);
+      setTenderNo(EMPTY_REFERENCE);
+    }
+  };
+
+  // Sub-verticals belong to a vertical, so changing it clears the sub-vertical.
+  const handleTaskVerticalChange = (nextValue: string) => {
+    setTaskVertical(nextValue);
     setSubTaskType("");
   };
 
   const handleAddTaskVertical = async (name: string) => {
     try {
-      await postJson("/api/task-verticals", { name });
+      await postJson("/api/verticals", { name });
       setTaskVerticalOptions((prev) => (prev.includes(name) ? prev : [...prev, name].sort()));
       handleTaskVerticalChange(name);
-      toast.success("Task vertical added.");
+      toast.success("Vertical added.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to add task vertical.");
+      toast.error(error instanceof Error ? error.message : "Unable to add vertical.");
     }
   };
 
-  const handleAddTaskType = async (name: string) => {
+  const handleAddSubVertical = async (name: string) => {
     try {
-      await postJson("/api/task-types", { name, taskSource, taskVertical: taskSource === "Project" ? taskVertical : undefined });
-      setTaskTypes((prev) => (prev.some((entry) => entry.name === name) ? prev : [...prev, { name, subTypes: [] }]));
-      handleTaskTypeChange(name);
-      toast.success("Task type added.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to add task type.");
-    }
-  };
-
-  const handleAddSubTaskType = async (name: string) => {
-    try {
-      await postJson("/api/task-types/sub-types", {
-        name,
-        taskType,
-        taskSource,
-        taskVertical: taskSource === "Project" ? taskVertical : undefined,
-      });
-      setTaskTypes((prev) =>
-        prev.map((entry) =>
-          entry.name === taskType && !entry.subTypes.includes(name)
-            ? { ...entry, subTypes: [...entry.subTypes, name] }
-            : entry,
-        ),
-      );
+      await postJson("/api/sub-verticals", { vertical: taskVertical, name });
+      setSubVerticalOptions((prev) => (prev.includes(name) ? prev : [...prev, name].sort()));
       setSubTaskType(name);
-      toast.success("Sub-task type added.");
+      toast.success("Sub-vertical added.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to add sub-task type.");
+      toast.error(error instanceof Error ? error.message : "Unable to add sub-vertical.");
     }
   };
 
@@ -201,6 +229,16 @@ export default function CreateTaskPage() {
       setDescriptionError(true);
       return;
     }
+    if (isProject) {
+      const incomplete = [
+        { label: "Work-Order No", value: workOrderNo },
+        { label: "Tender No", value: tenderNo },
+      ].find(({ value }) => !value.number.trim() && (value.description.trim() || value.status.trim()));
+      if (incomplete) {
+        setServerError(`Enter the ${incomplete.label}, or clear its description and status.`);
+        return;
+      }
+    }
     setLoading(true);
     try {
       const response = await fetch("/api/tasks", {
@@ -209,14 +247,12 @@ export default function CreateTaskPage() {
         body: JSON.stringify({
           description,
           endDateTime: endDateTime || undefined,
-          taskSource: taskSource || undefined,
-          taskVertical: taskSource === "Project" ? taskVertical : undefined,
           taskType,
-          subTaskType,
+          taskVertical: taskVertical.trim() || undefined,
+          subTaskType: subTaskType.trim() || undefined,
           assignedToEmpIds: canManage ? assignedToEmpIds : [],
-          projectNo: cleanReference(projectNo),
-          workOrderNo: cleanReference(workOrderNo),
-          tenderNo: cleanReference(tenderNo),
+          workOrderNo: isProject ? cleanReference(workOrderNo) : undefined,
+          tenderNo: isProject ? cleanReference(tenderNo) : undefined,
         }),
       });
       const result = await response.json().catch(() => ({}));
@@ -285,59 +321,40 @@ export default function CreateTaskPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Task Source</Label>
-              <SearchableSelect
-                options={TASK_SOURCES}
-                value={taskSource}
-                onChange={handleTaskSourceChange}
-                placeholder="Search task source..."
-              />
-            </div>
-
-            {taskSource === "Project" && (
-              <div className="space-y-2">
-                <Label>Task Vertical</Label>
-                <SearchableSelect
-                  options={taskVerticalOptions}
-                  value={taskVertical}
-                  onChange={handleTaskVerticalChange}
-                  onAddNew={handleAddTaskVertical}
-                  placeholder="Search or add a vertical..."
-                />
-              </div>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-            <div className="space-y-2">
               <Label>Task Type</Label>
-              <SearchableSelect
-                options={taskTypes.map((entry) => entry.name)}
+              <select
+                className="h-10 w-full rounded-md border bg-transparent px-3 text-sm"
                 value={taskType}
-                onChange={handleTaskTypeChange}
-                onAddNew={handleAddTaskType}
-                placeholder="Search or add a task type..."
-                disabled={!scopeReady}
-                disabledMessage={
-                  !taskSource
-                    ? "Select a task source first."
-                    : taskSource === "Project"
-                      ? "Select a task vertical first."
-                      : undefined
-                }
+                onChange={(e) => handleTaskTypeChange(e.target.value)}
+              >
+                <option value="">Select task type</option>
+                {TASK_TYPE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Vertical</Label>
+              <SearchableSelect
+                options={taskVerticalOptions}
+                value={taskVertical}
+                onChange={handleTaskVerticalChange}
+                onAddNew={handleAddTaskVertical}
+                placeholder="Search or add a vertical..."
               />
             </div>
 
             <div className="space-y-2">
-              <Label>Sub-Task Type</Label>
+              <Label>Sub-vertical</Label>
               <SearchableSelect
-                options={subTypeOptions}
+                options={subVerticalOptions}
                 value={subTaskType}
                 onChange={setSubTaskType}
-                onAddNew={handleAddSubTaskType}
-                placeholder="Search or add a sub-task type..."
-                disabled={!taskType}
-                disabledMessage={!taskType ? "Select a task type first." : undefined}
+                onAddNew={handleAddSubVertical}
+                placeholder="Search or add a sub-vertical..."
+                disabled={!taskVertical}
+                disabledMessage={!taskVertical ? "Select a vertical first." : undefined}
               />
             </div>
           </div>
@@ -378,12 +395,24 @@ export default function CreateTaskPage() {
             )}
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <ReferenceFieldGroup label="Project No" value={projectNo} onChange={setProjectNo} />
-            <ReferenceFieldGroup label="Work-Order No" value={workOrderNo} onChange={setWorkOrderNo} />
-            <ReferenceFieldGroup label="Tender No" value={tenderNo} onChange={setTenderNo} />
-          </div>
-          <p className="-mt-4 text-xs text-muted-foreground">Leave all three blank to mark this as an internal task.</p>
+          {isProject && (
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+              <ReferenceDetailCard
+                title="Work-Order Details"
+                numberLabel="Work-Order No"
+                tone="workOrder"
+                value={workOrderNo}
+                onChange={setWorkOrderNo}
+              />
+              <ReferenceDetailCard
+                title="Tender Details"
+                numberLabel="Tender No"
+                tone="tender"
+                value={tenderNo}
+                onChange={setTenderNo}
+              />
+            </div>
+          )}
 
           <div className="flex justify-end gap-4 border-t border-gray-100 pt-6">
             <Button

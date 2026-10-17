@@ -7,18 +7,110 @@ import { toast } from "sonner";
 import PageHeader from "@/app/_components/PageHeader";
 import EmployeeMultiSelect from "@/app/_components/EmployeeMultiSelect";
 import SearchableSelect from "@/app/_components/SearchableSelect";
-import ReferenceFieldGroup, { EMPTY_REFERENCE, ReferenceValue } from "@/app/_components/ReferenceFieldGroup";
-import { TASK_SOURCES } from "@/app/_components/taskConstants";
+import { EMPTY_REFERENCE, ReferenceValue } from "@/app/_components/ReferenceFieldGroup";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { EmployeeNameTag } from "@/app/_components/EmployeeAvatar";
+import HoverPanel from "@/app/_components/HoverPanel";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogMedia,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Check, Pause, Play, X, type LucideIcon } from "lucide-react";
 
 // Roles allowed to edit tasks — keep in sync with TASK_MANAGE_ROLES
 // in app/api/tasks/_lib/tasks.js
 const TASK_MANAGE_ROLES = ["ADMIN", "DIRECTOR", "MANAGER", "HR"];
-const TASK_STATUSES = ["New", "Assigned", "In Progress", "Done", "Suspended", "Rejected"];
+
+// Task Type choices on the edit page. "Project" tasks also capture
+// Work-Order No and Tender No details.
+const TASK_TYPE_OPTIONS = ["Internal", "Project"];
+
+// Status action buttons shown in place of the old Task Status dropdown.
+// Colours match the status badges used in the Tasks listing.
+type StatusActionKey = "start" | "resume" | "done" | "reject" | "suspend";
+
+type StatusAction = {
+  label: string;
+  nextStatus: string;
+  // Completes the sentence "Are you sure you want to ...?"
+  confirmText: string;
+  Icon: LucideIcon;
+  buttonClass: string;
+  mediaClass: string;
+};
+
+const STATUS_ACTIONS: Record<StatusActionKey, StatusAction> = {
+  start: {
+    label: "Start",
+    nextStatus: "In Progress",
+    confirmText: "start this task",
+    Icon: Play,
+    buttonClass: "bg-sky-600 hover:bg-sky-700 focus-visible:ring-sky-300",
+    mediaClass: "bg-sky-100 text-sky-700",
+  },
+  resume: {
+    label: "Resume",
+    nextStatus: "In Progress",
+    confirmText: "resume this task",
+    Icon: Play,
+    buttonClass: "bg-sky-600 hover:bg-sky-700 focus-visible:ring-sky-300",
+    mediaClass: "bg-sky-100 text-sky-700",
+  },
+  done: {
+    label: "Done",
+    nextStatus: "Done",
+    confirmText: "mark this task as done",
+    Icon: Check,
+    buttonClass: "bg-emerald-600 hover:bg-emerald-700 focus-visible:ring-emerald-300",
+    mediaClass: "bg-emerald-100 text-emerald-700",
+  },
+  reject: {
+    label: "Reject",
+    nextStatus: "Rejected",
+    confirmText: "reject this task",
+    Icon: X,
+    buttonClass: "bg-red-600 hover:bg-red-700 focus-visible:ring-red-300",
+    mediaClass: "bg-red-100 text-red-700",
+  },
+  suspend: {
+    label: "Suspend",
+    nextStatus: "Suspended",
+    confirmText: "suspend this task",
+    Icon: Pause,
+    buttonClass: "bg-orange-500 hover:bg-orange-600 focus-visible:ring-orange-300",
+    mediaClass: "bg-orange-100 text-orange-700",
+  },
+};
+
+// Which buttons are offered for each (current) status.
+//   New / Assigned -> Reject, Suspend, Start
+//   In Progress    -> Reject, Suspend, Done
+//   Suspended      -> Reject, Resume, Done
+//   Done / Rejected -> none (task is closed)
+function getStatusActionKeys(status: string): StatusActionKey[] {
+  switch (status) {
+    case "New":
+    case "Assigned":
+      return ["reject", "suspend", "start"];
+    case "In Progress":
+      return ["reject", "suspend", "done"];
+    case "Suspended":
+      return ["reject", "resume", "done"];
+    default:
+      return [];
+  }
+}
 
 type Reference = {
   number?: string;
@@ -70,7 +162,6 @@ type Task = {
 };
 
 type Employee = { _id: string; empId: string; name: string; photo?: string};
-type TaskTypeEntry = { name: string; subTypes: string[] };
 
 function formatDateTime(value?: string) {
   if (!value) return "-";
@@ -126,6 +217,98 @@ function ReadOnlyField({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
+// Small card for a Work-Order / Tender reference: Number + Status on the top
+// row, with a large Description box underneath (it holds the most text).
+// Only these three are edited here; the reference's other stored details
+// (vertical, sub-vertical, state) are carried through unchanged on save.
+const REFERENCE_CARD_TONES = {
+  workOrder: {
+    card: "border-amber-300 bg-amber-50/40",
+    header: "bg-amber-100 text-amber-900",
+  },
+  tender: {
+    card: "border-violet-300 bg-violet-50/40",
+    header: "bg-violet-100 text-violet-900",
+  },
+};
+
+function ReferenceDetailCard({
+  title,
+  numberLabel,
+  tone,
+  value,
+  onChange,
+  readOnly = false,
+}: {
+  title: string;
+  numberLabel: string;
+  tone: keyof typeof REFERENCE_CARD_TONES;
+  value: ReferenceValue;
+  onChange?: (value: ReferenceValue) => void;
+  readOnly?: boolean;
+}) {
+  const styles = REFERENCE_CARD_TONES[tone];
+  const set = (field: "number" | "description" | "status") =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      onChange?.({ ...value, [field]: e.target.value });
+
+  return (
+    <div className={`min-w-0 overflow-hidden rounded-lg border ${styles.card}`}>
+      <div className={`px-4 py-2 text-sm font-semibold ${styles.header}`}>{title}</div>
+      <div className="space-y-4 p-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {readOnly ? (
+            <>
+              <ReadOnlyField label={numberLabel} value={value.number} />
+              <ReadOnlyField label="Status" value={value.status} />
+            </>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label>{numberLabel}</Label>
+                <Input placeholder={numberLabel} value={value.number} onChange={set("number")} className="bg-white" />
+              </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Input placeholder="Status" value={value.status} onChange={set("status")} className="bg-white" />
+              </div>
+            </>
+          )}
+        </div>
+        {readOnly ? (
+          <ReadOnlyField
+            label="Description"
+            value={<div className="min-h-24 whitespace-pre-wrap">{value.description}</div>}
+          />
+        ) : (
+          <div className="space-y-2">
+            <Label>Description</Label>
+            <Textarea
+              placeholder="Description"
+              rows={5}
+              value={value.description}
+              onChange={set("description")}
+              className="min-h-28 bg-white"
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Read-only value shown as plain text on one line - "Label : value" - with no
+// surrounding box. Labels share a fixed width so the colons line up.
+function TextRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex items-start gap-2 text-sm">
+      <span className="w-36 shrink-0 font-medium text-foreground">{label}</span>
+      <span>:</span>
+      <div className="min-w-0 break-words">{value || "-"}</div>
+    </div>
+  );
+}
+
 export default function EditTaskPage() {
   const router = useRouter();
   const params = useParams();
@@ -137,13 +320,11 @@ export default function EditTaskPage() {
   const [loadingTask, setLoadingTask] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [taskTypes, setTaskTypes] = useState<TaskTypeEntry[]>([]);
 
   const [projectNo, setProjectNo] = useState<ReferenceValue>(EMPTY_REFERENCE);
   const [workOrderNo, setWorkOrderNo] = useState<ReferenceValue>(EMPTY_REFERENCE);
   const [tenderNo, setTenderNo] = useState<ReferenceValue>(EMPTY_REFERENCE);
   const [description, setDescription] = useState("");
-  const [taskSource, setTaskSource] = useState("");
   const [taskVertical, setTaskVertical] = useState("");
   const [taskVerticalOptions, setTaskVerticalOptions] = useState<string[]>([]);
   const [taskType, setTaskType] = useState("");
@@ -154,6 +335,9 @@ export default function EditTaskPage() {
 
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
+
+  // Status button the user clicked that is waiting for "Are you sure?" confirmation.
+  const [pendingAction, setPendingAction] = useState<StatusActionKey | null>(null);
 
   // Notes log - anyone who can view this task can add a note. New notes are
   // appended to the end of the underlying list (see handleAddNote), but the
@@ -177,7 +361,6 @@ export default function EditTaskPage() {
         setWorkOrderNo(toReferenceValue(result.workOrderNo));
         setTenderNo(toReferenceValue(result.tenderNo));
         setDescription(result.description || "");
-        setTaskSource(result.taskSource || "");
         setTaskVertical(result.taskVertical || "");
         setTaskType(result.taskType || "");
         setSubTaskType(result.subTaskType || "");
@@ -192,10 +375,6 @@ export default function EditTaskPage() {
       }
     })();
   }, [id]);
-
-  // Task Source / Task Vertical are editable - Task Type options are looked up
-  // within the currently selected scope.
-  const scopeReady = Boolean(taskSource) && (taskSource !== "Project" || Boolean(taskVertical));
 
   useEffect(() => {
     if (!canManage) return;
@@ -220,29 +399,6 @@ export default function EditTaskPage() {
       }
     })();
   }, [canManage]);
-
-  useEffect(() => {
-    if (!canManage) return;
-    (async () => {
-      if (!scopeReady) {
-        setTaskTypes([]);
-        return;
-      }
-      try {
-        const params = new URLSearchParams({ taskSource });
-        if (taskSource === "Project") params.set("taskVertical", taskVertical);
-        const response = await fetch(`/api/task-types?${params}`, { cache: "no-store" });
-        if (response.ok) setTaskTypes((await response.json()).taskTypes || []);
-      } catch {
-        // Non-fatal.
-      }
-    })();
-  }, [canManage, scopeReady, taskSource, taskVertical]);
-
-  const subTypeOptions = useMemo(
-    () => taskTypes.find((entry) => entry.name === taskType)?.subTypes || [],
-    [taskTypes, taskType],
-  );
 
   // Notes are stored/saved in chronological order (each new note is appended
   // to the end - see handleAddNote), but displayed newest-first so the most
@@ -271,6 +427,20 @@ export default function EditTaskPage() {
     setAssignedToEmpIds(isSelfTask ? [] : [selfEmpId]);
   };
 
+  // Task Status is read-only text; it only changes through the action buttons.
+  // "New" and "Assigned" are both shown as "New" here.
+  const displayStatus = taskStatus === "Assigned" ? "New" : taskStatus;
+  // Action buttons only make sense once somebody is assigned to the task.
+  const statusActionKeys = assignedToEmpIds.length > 0 ? getStatusActionKeys(taskStatus) : [];
+  const pending = pendingAction ? STATUS_ACTIONS[pendingAction] : null;
+
+  const handleConfirmStatusAction = () => {
+    if (!pending) return;
+    setTaskStatus(pending.nextStatus);
+    setPendingAction(null);
+    toast.success(`Status changed to ${pending.nextStatus}. Click "Save Changes" to apply it.`);
+  };
+
   const employeePhotoByEmpId = useMemo(() => {
     const map = new Map<string, string | undefined>();
     employees.forEach((employee) => map.set(employee.empId, employee.photo));
@@ -278,18 +448,12 @@ export default function EditTaskPage() {
   }, [employees]);
    
 
-  const handleTaskSourceChange = (nextValue: string) => {
-    const match = TASK_SOURCES.find((option) => option.toLowerCase() === nextValue.toLowerCase());
-    setTaskSource(match || "");
-    setTaskVertical("");
-    setTaskType("");
-    setSubTaskType("");
-  };
+  // "Project" tasks show Work-Order No / Tender No fields; "Internal" ones don't.
+  const isProjectTask = taskType === "Project";
+  const isInternalTask = taskType === "Internal";
 
   const handleTaskVerticalChange = (nextValue: string) => {
     setTaskVertical(nextValue);
-    setTaskType("");
-    setSubTaskType("");
   };
 
   const handleAddTaskVertical = async (name: string) => {
@@ -300,44 +464,6 @@ export default function EditTaskPage() {
       toast.success("Task vertical added.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to add task vertical.");
-    }
-  };
-
-  const handleTaskTypeChange = (nextValue: string) => {
-    setTaskType(nextValue);
-    setSubTaskType("");
-  };
-
-  const handleAddTaskType = async (name: string) => {
-    try {
-      await postJson("/api/task-types", { name, taskSource, taskVertical: taskSource === "Project" ? taskVertical : undefined });
-      setTaskTypes((prev) => (prev.some((entry) => entry.name === name) ? prev : [...prev, { name, subTypes: [] }]));
-      handleTaskTypeChange(name);
-      toast.success("Task type added.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to add task type.");
-    }
-  };
-
-  const handleAddSubTaskType = async (name: string) => {
-    try {
-      await postJson("/api/task-types/sub-types", {
-        name,
-        taskType,
-        taskSource,
-        taskVertical: taskSource === "Project" ? taskVertical : undefined,
-      });
-      setTaskTypes((prev) =>
-        prev.map((entry) =>
-          entry.name === taskType && !entry.subTypes.includes(name)
-            ? { ...entry, subTypes: [...entry.subTypes, name] }
-            : entry,
-        ),
-      );
-      setSubTaskType(name);
-      toast.success("Sub-task type added.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to add sub-task type.");
     }
   };
 
@@ -363,6 +489,16 @@ export default function EditTaskPage() {
       setServerError("Task description is required.");
       return;
     }
+    if (isProjectTask) {
+      const incomplete = [
+        { label: "Work-Order No", value: workOrderNo },
+        { label: "Tender No", value: tenderNo },
+      ].find(({ value }) => !value.number.trim() && (value.description.trim() || value.status.trim()));
+      if (incomplete) {
+        setServerError(`Enter the ${incomplete.label}, or clear its description and status.`);
+        return;
+      }
+    }
     setSaving(true);
     try {
       const response = await fetch(`/api/tasks/${id}`, {
@@ -371,12 +507,14 @@ export default function EditTaskPage() {
         body: JSON.stringify({
           description: description.trim(),
           projectNo: cleanReference(projectNo),
-          workOrderNo: cleanReference(workOrderNo),
-          tenderNo: cleanReference(tenderNo),
-          taskSource: taskSource || undefined,
-          taskVertical: taskSource === "Project" ? taskVertical : undefined,
+          // Internal tasks carry no Work-Order No / Tender No.
+          workOrderNo: isInternalTask ? undefined : cleanReference(workOrderNo),
+          tenderNo: isInternalTask ? undefined : cleanReference(tenderNo),
+          // Task Type (Internal / Project), Vertical and Sub-vertical. Task Source
+          // is no longer editable here and is left as stored.
+          taskVertical: taskVertical.trim(),
           taskType,
-          subTaskType,
+          subTaskType: subTaskType.trim(),
           // End Date & Time is no longer editable on this page - the existing
           // value is sent back unchanged so saving never clears it.
           endDateTime: endDateTime || undefined,
@@ -468,62 +606,79 @@ export default function EditTaskPage() {
                   </div>
                 )}
 
-                {/* Description with Task Status beside it */}
-                <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
-                  {canManage ? (
-                    <div className="space-y-2">
-                      <Label>Description</Label>
-                      <Textarea
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        placeholder="Describe the task..."
-                        rows={3}
-                      />
-                    </div>
-                  ) : (
-                    <ReadOnlyField label="Description" value={task.description} />
-                  )}
-                  {canManage ? (
-                    <div className="space-y-2">
-                      <Label>Task Status</Label>
-                      <select
-                        className="h-10 w-full rounded-md border bg-transparent px-3 text-sm"
-                        value={taskStatus}
-                        onChange={(e) => setTaskStatus(e.target.value)}
-                      >
-                        {TASK_STATUSES.map((option) => (
-                          <option key={option} value={option}>{option}</option>
-                        ))}
-                      </select>
-                    </div>
-                  ) : (
-                    <ReadOnlyField label="Task Status" value={task.status} />
-                  )}
-                </div>
+                {/* Two columns (70% / 30%) on large screens, stacked on small ones. */}
+                <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[7fr_3fr]">
+                  {/* Left column: Description, Task Status, Sources */}
+                  <div className="min-w-0 space-y-6">
+                    {canManage ? (
+                      <div className="space-y-2">
+                        <Label>Description</Label>
+                        <Textarea
+                          value={description}
+                          onChange={(e) => setDescription(e.target.value)}
+                          placeholder="Describe the task..."
+                          rows={3}
+                        />
+                      </div>
+                    ) : (
+                      <ReadOnlyField label="Description" value={task.description} />
+                    )}
 
-                {/* Three cards side by side on large screens, stacked on small ones. */}
-                <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-3">
+                    {/* Task Status: plain read-only text, with the action icon buttons below it */}
+                    <div className="space-y-3">
+                      <TextRow label="Task Status" value={canManage ? displayStatus : task.status} />
+                      {canManage && statusActionKeys.length > 0 && (
+                        <div className="flex items-center gap-2">
+                          {statusActionKeys.map((key) => {
+                            const action = STATUS_ACTIONS[key];
+                            return (
+                              <HoverPanel
+                                key={key}
+                                panelClassName="w-max whitespace-nowrap"
+                                trigger={
+                                  <button
+                                    type="button"
+                                    onClick={() => setPendingAction(key)}
+                                    disabled={saving}
+                                    aria-label={action.label}
+                                    className={`flex size-9 items-center justify-center rounded-full text-white shadow-sm outline-none transition-colors focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${action.buttonClass}`}
+                                  >
+                                    <action.Icon className="size-4" strokeWidth={2.5} />
+                                  </button>
+                                }
+                                panel={action.label}
+                              />
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
                   {/* Card 1: Sources */}
-                  <Card className="h-full min-w-0 overflow-visible bg-white pt-0 shadow-2xl shadow-cyan-700/40 ring-2 ring-cyan-700 transition-transform duration-200 hover:-translate-y-1">
-                    <CardHeader className="rounded-t-xl bg-linear-to-r from-cyan-900 to-cyan-600 py-3">
-                      <CardTitle className="text-base font-semibold tracking-wide text-white">Sources</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {canManage ? (
-                        <div className="grid grid-cols-1 gap-5">
-                          <div className="space-y-2">
-                            <Label>Task Source</Label>
-                            <SearchableSelect
-                              options={TASK_SOURCES}
-                              value={taskSource}
-                              onChange={handleTaskSourceChange}
-                              placeholder="Search task source..."
-                            />
-                          </div>
-
-                          {taskSource === "Project" && (
+                    <Card className="min-w-0 overflow-visible bg-white pt-0 shadow-2xl shadow-cyan-700/40 ring-2 ring-cyan-700 transition-transform duration-200 hover:-translate-y-1">
+                      <CardHeader className="rounded-t-xl bg-linear-to-r from-cyan-900 to-cyan-600 py-3">
+                        <CardTitle className="text-base font-semibold tracking-wide text-white">Sources</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {canManage ? (
+                          <div className="grid grid-cols-1 gap-5">
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                             <div className="space-y-2">
-                              <Label>Task Vertical</Label>
+                              <Label>Task Type</Label>
+                              <select
+                                className="h-10 w-full rounded-md border bg-transparent px-3 text-sm"
+                                value={TASK_TYPE_OPTIONS.includes(taskType) ? taskType : ""}
+                                onChange={(e) => setTaskType(e.target.value)}
+                              >
+                                <option value="" disabled>Select task type</option>
+                                {TASK_TYPE_OPTIONS.map((option) => (
+                                  <option key={option} value={option}>{option}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label>Vertical</Label>
                               <SearchableSelect
                                 options={taskVerticalOptions}
                                 value={taskVertical}
@@ -532,121 +687,131 @@ export default function EditTaskPage() {
                                 placeholder="Search or add a vertical..."
                               />
                             </div>
-                          )}
 
-                          <div className="space-y-2">
-                            <Label>Task Type</Label>
-                            <SearchableSelect
-                              options={taskTypes.map((entry) => entry.name)}
-                              value={taskType}
-                              onChange={handleTaskTypeChange}
-                              onAddNew={handleAddTaskType}
-                              placeholder="Search or add a task type..."
-                              disabled={!scopeReady}
-                              disabledMessage={
-                                !taskSource
-                                  ? "Select a task source first."
-                                  : taskSource === "Project"
-                                    ? "Select a task vertical first."
-                                    : undefined
-                              }
-                            />
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label>Sub-Task Type</Label>
-                            <SearchableSelect
-                              options={subTypeOptions}
-                              value={subTaskType}
-                              onChange={setSubTaskType}
-                              onAddNew={handleAddSubTaskType}
-                              placeholder="Search or add a sub-task type..."
-                              disabled={!taskType}
-                              disabledMessage={!taskType ? "Select a task type first." : undefined}
-                            />
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-1 gap-5">
-                          <ReadOnlyField label="Task Source" value={task.taskSource || ""} />
-                          {task.taskSource === "Project" && (
-                            <ReadOnlyField label="Task Vertical" value={task.taskVertical || ""} />
-                          )}
-                          <ReadOnlyField label="Task Type" value={task.taskType || ""} />
-                          <ReadOnlyField label="Sub-Task Type" value={task.subTaskType || ""} />
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  {/* Card 2: Assigned */}
-                  <Card className="h-full min-w-0 overflow-visible bg-white pt-0 shadow-2xl shadow-indigo-700/40 ring-2 ring-indigo-700 transition-transform duration-200 hover:-translate-y-1">
-                    <CardHeader className="rounded-t-xl bg-linear-to-r from-indigo-900 to-indigo-600 py-3">
-                      <CardTitle className="text-base font-semibold tracking-wide text-white">Assigned</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-1 gap-5">
-                        <ReadOnlyField
-                          label="Assigned By"
-                          value={task.assignedByName ? <EmployeeNameTag name={task.assignedByName} photo={task.assignedByPhoto} size={20} /> : ""}
-                        />
-
-                        {canManage ? (
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-3">
-                              <Label>Assigned To</Label>
-                              {showSelfTaskButton && (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  onClick={handleSelfTask}
-                                  aria-pressed={isSelfTask}
-                                  className={`h-7 bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 ${isSelfTask ? "ring-2 ring-blue-300 ring-offset-1" : ""}`}
-                                >
-                                  Self Task
-                                </Button>
-                              )}
+                            <div className="space-y-2">
+                              <Label>Sub-vertical</Label>
+                              <Input
+                                value={subTaskType}
+                                onChange={(e) => setSubTaskType(e.target.value)}
+                                placeholder="Sub-vertical"
+                              />
                             </div>
-                            <EmployeeMultiSelect
-                              employees={assigneeOptions}
-                              selectedEmpIds={assignedToEmpIds}
-                              onChange={setAssignedToEmpIds}
-                              placeholder="Unassigned"
-                            />
-                            <p className="text-xs text-muted-foreground">Select multiple employees to assign this task to a team - the Tasks list will show &quot;Team&quot; for it.</p>
+                            </div>
+
+                            {isProjectTask && (
+                              <div className="grid grid-cols-1 gap-4 border-t border-gray-100 pt-5 xl:grid-cols-2">
+                                <ReferenceDetailCard
+                                  title="Work-Order Details"
+                                  numberLabel="Work-Order No"
+                                  tone="workOrder"
+                                  value={workOrderNo}
+                                  onChange={setWorkOrderNo}
+                                />
+                                <ReferenceDetailCard
+                                  title="Tender Details"
+                                  numberLabel="Tender No"
+                                  tone="tender"
+                                  value={tenderNo}
+                                  onChange={setTenderNo}
+                                />
+                              </div>
+                            )}
                           </div>
                         ) : (
-                          <ReadOnlyField label="Assigned To" value={assignedToDisplay} />
+                          <div className="grid grid-cols-1 gap-5">
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                              <ReadOnlyField label="Task Type" value={task.taskType || ""} />
+                              <ReadOnlyField label="Vertical" value={task.taskVertical || ""} />
+                              <ReadOnlyField label="Sub-vertical" value={task.subTaskType || ""} />
+                            </div>
+                            {task.taskType === "Project" && (
+                              <div className="grid grid-cols-1 gap-4 border-t border-gray-100 pt-5 xl:grid-cols-2">
+                                <ReferenceDetailCard
+                                  readOnly
+                                  title="Work-Order Details"
+                                  numberLabel="Work-Order No"
+                                  tone="workOrder"
+                                  value={toReferenceValue(task.workOrderNo)}
+                                />
+                                <ReferenceDetailCard
+                                  readOnly
+                                  title="Tender Details"
+                                  numberLabel="Tender No"
+                                  tone="tender"
+                                  value={toReferenceValue(task.tenderNo)}
+                                />
+                              </div>
+                            )}
+                          </div>
                         )}
-                      </div>
-                    </CardContent>
-                  </Card>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Right column: Assigned, Time Lines */}
+                  <div className="min-w-0 space-y-6">
+                  {/* Card 2: Assigned */}
+                    <Card className="min-w-0 overflow-visible bg-white pt-0 shadow-2xl shadow-indigo-700/40 ring-2 ring-indigo-700 transition-transform duration-200 hover:-translate-y-1">
+                      <CardHeader className="rounded-t-xl bg-linear-to-r from-indigo-900 to-indigo-600 py-3">
+                        <CardTitle className="text-base font-semibold tracking-wide text-white">Assigned</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-1 gap-5">
+                          <TextRow
+                            label="Assigned By"
+                            value={task.assignedByName ? <EmployeeNameTag name={task.assignedByName} photo={task.assignedByPhoto} size={20} /> : ""}
+                          />
+
+                          {canManage ? (
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-3">
+                                <Label>Assigned To</Label>
+                                {showSelfTaskButton && (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    onClick={handleSelfTask}
+                                    aria-pressed={isSelfTask}
+                                    className={`h-7 bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 ${isSelfTask ? "ring-2 ring-blue-300 ring-offset-1" : ""}`}
+                                  >
+                                    Self Task
+                                  </Button>
+                                )}
+                              </div>
+                              <EmployeeMultiSelect
+                                employees={assigneeOptions}
+                                selectedEmpIds={assignedToEmpIds}
+                                onChange={setAssignedToEmpIds}
+                                placeholder="Unassigned"
+                              />
+                              <p className="text-xs text-muted-foreground">Select multiple employees to assign this task to a team - the Tasks list will show &quot;Team&quot; for it.</p>
+                            </div>
+                          ) : (
+                            <ReadOnlyField label="Assigned To" value={assignedToDisplay} />
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
 
                   {/* Card 3: Time Lines (all read-only) */}
-                  <Card className="h-full min-w-0 overflow-visible bg-white pt-0 shadow-2xl shadow-teal-700/40 ring-2 ring-teal-700 transition-transform duration-200 hover:-translate-y-1">
-                    <CardHeader className="rounded-t-xl bg-linear-to-r from-teal-900 to-emerald-600 py-3">
-                      <CardTitle className="text-base font-semibold tracking-wide text-white">Time Lines</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-1 gap-5">
-                        <ReadOnlyField label="Create Date" value={formatDateTime(task.createdAt)} />
-                        <ReadOnlyField label="Assigned Date" value={formatDateTime(task.assignedAt)} />
-                        <ReadOnlyField label="Expected End Date" value={formatDateTime(task.endDateTime)} />
-                        <ReadOnlyField label="Actual End Date" value={task.status === "Done" ? formatDateTime(task.completedDate) : ""} />
-                      </div>
-                    </CardContent>
-                  </Card>
+                    <Card className="min-w-0 overflow-visible bg-white pt-0 shadow-2xl shadow-teal-700/40 ring-2 ring-teal-700 transition-transform duration-200 hover:-translate-y-1">
+                      <CardHeader className="rounded-t-xl bg-linear-to-r from-teal-900 to-emerald-600 py-3">
+                        <CardTitle className="text-base font-semibold tracking-wide text-white">Time Lines</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-1 gap-4">
+                          <TextRow label="Create Date" value={formatDateTime(task.createdAt)} />
+                          <TextRow label="Assigned Date" value={formatDateTime(task.assignedAt)} />
+                          <TextRow label="Expected End Date" value={formatDateTime(task.endDateTime)} />
+                          <TextRow label="Actual End Date" value={task.status === "Done" ? formatDateTime(task.completedDate) : ""} />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
                 </div>
 
                 {canManage ? (
                   <>
-                    <div className="grid grid-cols-1 gap-4 border-t border-gray-100 pt-6 md:grid-cols-3">
-                      <ReferenceFieldGroup label="Project No" value={projectNo} onChange={setProjectNo} />
-                      <ReferenceFieldGroup label="Work-Order No" value={workOrderNo} onChange={setWorkOrderNo} />
-                      <ReferenceFieldGroup label="Tender No" value={tenderNo} onChange={setTenderNo} />
-                    </div>
-                    <p className="-mt-4 text-xs text-muted-foreground">Leave all three blank to mark this as an internal task.</p>
-
                     <div className="flex justify-end gap-4 border-t border-gray-100 pt-6">
                       <Button
                         variant="outline"
@@ -664,8 +829,6 @@ export default function EditTaskPage() {
                   <>
                     <div className="grid grid-cols-1 gap-6 border-t border-gray-100 pt-6 md:grid-cols-3">
                       <ReadOnlyField label="Project No" value={task.projectNo?.number || ""} />
-                      <ReadOnlyField label="Work-Order No" value={task.workOrderNo?.number || ""} />
-                      <ReadOnlyField label="Tender No" value={task.tenderNo?.number || ""} />
                     </div>
                     <div className="flex justify-end border-t border-gray-100 pt-6">
                       <Button variant="outline" onClick={() => router.push("/tasks")}>Back</Button>
@@ -735,6 +898,37 @@ export default function EditTaskPage() {
           </Card>
         </div>
       ) : null}
+
+      {/* "Are you sure?" confirmation for the status icon buttons */}
+      <AlertDialog
+        open={pendingAction !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingAction(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            {pending && (
+              <AlertDialogMedia className={pending.mediaClass}>
+                <pending.Icon />
+              </AlertDialogMedia>
+            )}
+            <AlertDialogTitle>Confirm {pending?.label}</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to {pending?.confirmText}?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>No, cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmStatusAction}
+              className={`text-white ${pending?.buttonClass ?? ""}`}
+            >
+              Yes, {pending?.label}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
